@@ -1274,6 +1274,50 @@
     .spot-media-btn .icon { font-size: 16px; }
   }
 
+  /* === Spot Modal 新版 layout === */
+  .spot-modal-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 22px; border-bottom: 1px solid var(--line);
+    flex-shrink: 0; position: sticky; top: 0; z-index: 2;
+    background: var(--bg-elevated);
+  }
+  .spot-modal-head h2 em { font-style: italic; color: var(--accent); font-weight: 500; }
+  .spot-modal-close {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--bg-card); border: 1px solid var(--line);
+    color: var(--ink-secondary); cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .spot-modal-close:hover, .spot-modal-close:active {
+    background: var(--danger); border-color: var(--danger); color: #fff;
+    transform: scale(1.1);
+  }
+  .spot-modal-body {
+    flex: 1; overflow-y: auto; padding: 18px 22px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .spot-modal-foot {
+    display: flex; gap: 8px; padding: 12px 22px;
+    border-top: 1px solid var(--line); background: var(--bg-elevated);
+    flex-shrink: 0; flex-wrap: wrap;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  }
+  /* 地圖容器在 modal body 內 */
+  .spot-detail-map {
+    width: 100%; height: 280px; border-radius: 4px;
+    border: 1px solid var(--line); margin-top: 16px;
+    background: var(--bg-card);
+  }
+  @media (max-width: 768px) {
+    .spot-modal-head { padding: 14px 16px; }
+    .spot-modal-head h2 { font-size: 18px; }
+    .spot-modal-body { padding: 14px 16px; }
+    .spot-modal-foot { padding: 10px 16px; gap: 6px; }
+    .spot-modal-foot .btn { padding: 10px 12px; font-size: 12px; }
+    .spot-detail-map { height: 220px; }
+  }
+
   @media (max-width: 768px) {
     .travel-hero { padding: 22px 18px; }
     .travel-hero h1 { font-size: 32px; }
@@ -1915,6 +1959,91 @@
           <div class="setting-label">語音語速<small>慢 → 快</small></div>
           <input type="range" min="0.7" max="1.5" step="0.1" value="1.0" id="ttsRate" oninput="updateTtsRate(this.value)" style="width:160px;">
         </div>
+        <div class="setting-row">
+          <div class="setting-label">語音引擎<small>選擇 TTS 來源</small></div>
+          <select id="ttsProvider" onchange="onTtsProviderChange(this.value)" class="form-select" style="width:auto; min-width:140px;">
+            <option value="browser">瀏覽器（免費）</option>
+            <option value="openai">OpenAI TTS（真人）</option>
+            <option value="azure">Azure Speech（台灣腔）</option>
+          </select>
+        </div>
+
+        <!-- 瀏覽器聲音選擇 -->
+        <div id="ttsBrowserSection" style="display:none; padding:14px; background:var(--bg-elevated); border-radius:4px; border-left:2px solid var(--accent); margin-top:8px;">
+          <div class="setting-row" style="border:none; padding:6px 0;">
+            <div class="setting-label" style="font-size:13.5px;">聲音<small>不同裝置有不同預設聲音</small></div>
+            <select id="ttsBrowserVoice" onchange="onBrowserVoiceChange(this.value)" class="form-select" style="width:auto; min-width:200px; max-width:60%;"></select>
+          </div>
+          <button class="btn btn-sm" onclick="previewTts()" style="margin-top:8px;">🔊 試聽當前設定</button>
+        </div>
+
+        <!-- OpenAI 設定 -->
+        <div id="ttsOpenaiSection" style="display:none; padding:14px; background:var(--bg-elevated); border-radius:4px; border-left:2px solid var(--accent-warm); margin-top:8px;">
+          <div style="font-size:11.5px; color:var(--ink-secondary); margin-bottom:10px; line-height:1.6;">
+            從 <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent);">platform.openai.com</a> 申請 API Key。每百萬字符約 US$0.60（gpt-4o-mini-tts）。
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label class="form-label">OpenAI API Key</label>
+            <input type="password" id="ttsOpenaiKey" class="form-input" placeholder="sk-..." onblur="onOpenaiKeyChange(this.value)">
+          </div>
+          <div class="form-row" style="margin-bottom:10px;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">模型</label>
+              <select id="ttsOpenaiModel" class="form-select" onchange="trvSettings.ttsOpenaiModel = this.value; saveTravelKey(TRAVEL_STORAGE.settings, trvSettings)">
+                <option value="tts-1">tts-1（快、便宜）</option>
+                <option value="tts-1-hd">tts-1-hd（高品質）</option>
+                <option value="gpt-4o-mini-tts">gpt-4o-mini-tts（最自然）</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">聲音</label>
+              <select id="ttsOpenaiVoice" class="form-select" onchange="trvSettings.ttsOpenaiVoice = this.value; saveTravelKey(TRAVEL_STORAGE.settings, trvSettings)">
+                <option value="nova">nova（女 · 推薦）</option>
+                <option value="shimmer">shimmer（女 · 柔和）</option>
+                <option value="alloy">alloy（中性）</option>
+                <option value="echo">echo（男 · 沉穩）</option>
+                <option value="fable">fable（英式）</option>
+                <option value="onyx">onyx（男 · 低沉）</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-sm" onclick="previewTts()">🔊 試聽</button>
+        </div>
+
+        <!-- Azure 設定 -->
+        <div id="ttsAzureSection" style="display:none; padding:14px; background:var(--bg-elevated); border-radius:4px; border-left:2px solid var(--accent-warm); margin-top:8px;">
+          <div style="font-size:11.5px; color:var(--ink-secondary); margin-bottom:10px; line-height:1.6;">
+            從 <a href="https://portal.azure.com/" target="_blank" style="color:var(--accent);">Azure Portal</a> 建立 Speech Service（免費 F0 方案，每月 50 萬字符）。
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label class="form-label">Azure Subscription Key</label>
+            <input type="password" id="ttsAzureKey" class="form-input" placeholder="key1 或 key2" onblur="onAzureKeyChange(this.value)">
+          </div>
+          <div class="form-row" style="margin-bottom:10px;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Region</label>
+              <select id="ttsAzureRegion" class="form-select" onchange="trvSettings.ttsAzureRegion = this.value; saveTravelKey(TRAVEL_STORAGE.settings, trvSettings)">
+                <option value="eastasia">eastasia（香港）</option>
+                <option value="southeastasia">southeastasia（新加坡）</option>
+                <option value="japaneast">japaneast（東京）</option>
+                <option value="koreacentral">koreacentral（首爾）</option>
+                <option value="westus2">westus2（美國）</option>
+                <option value="westeurope">westeurope（歐洲）</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">聲音（台灣腔）</label>
+              <select id="ttsAzureVoice" class="form-select" onchange="trvSettings.ttsAzureVoice = this.value; saveTravelKey(TRAVEL_STORAGE.settings, trvSettings)">
+                <option value="zh-TW-HsiaoChenNeural">小臻 HsiaoChen（女 · 推薦）</option>
+                <option value="zh-TW-HsiaoYuNeural">小宇 HsiaoYu（女 · 甜美）</option>
+                <option value="zh-TW-YunJheNeural">允哲 YunJhe（男 · 沉穩）</option>
+                <option value="zh-CN-XiaoxiaoNeural">曉曉 Xiaoxiao（女 · 大陸腔）</option>
+                <option value="zh-CN-YunyangNeural">雲揚 Yunyang（男 · 大陸腔新聞）</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-sm" onclick="previewTts()">🔊 試聽</button>
+        </div>
       </div>
       <div class="checklist-section">
         <h3><span class="num">02</span>同團聯繫（LINE）</h3>
@@ -2460,17 +2589,20 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <!-- ============ Spot Detail Modal ============ -->
   <div class="modal-backdrop" id="spotModal">
-    <div class="modal" style="max-width:680px;">
-      <h2 id="spotModalTitle">景點 <em>詳細</em></h2>
-      <div id="spotModalBody" style="font-size:14px; line-height:1.75; color:var(--ink-secondary); max-height:50vh; overflow-y:auto;"></div>
-      <div id="spotMiniMap" style="height:260px; margin-top:14px; border-radius:4px; border:1px solid var(--line); display:none;"></div>
-      <div class="form-actions" style="justify-content:flex-end;">
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn" id="ttsBtn" onclick="ttsSpot()">🔊 語音導覽</button>
-          <button class="btn" onclick="navigateSpot()">⊕ 開啟導航</button>
-          <button class="btn" onclick="shareSpotLine()">→ LINE 分享</button>
-          <button class="btn btn-primary" onclick="closeSpotModal()">關閉</button>
-        </div>
+    <div class="modal spot-modal-flex" style="max-width:680px; padding:0; max-height:92vh; display:flex; flex-direction:column;">
+      <!-- 頂部固定列：標題 + 浮動 X -->
+      <div class="spot-modal-head">
+        <h2 id="spotModalTitle" style="margin:0; flex:1; font-size:22px;">景點 <em>詳細</em></h2>
+        <button class="spot-modal-close" onclick="closeSpotModal()" title="關閉">✕</button>
+      </div>
+      <!-- 內文捲動區 -->
+      <div id="spotModalBody" class="spot-modal-body" style="font-size:14px; line-height:1.75; color:var(--ink-secondary);"></div>
+      <!-- 底部 action bar 固定（手機隨時可點） -->
+      <div class="spot-modal-foot">
+        <button class="btn" id="ttsBtn" onclick="ttsSpot()">🔊 語音</button>
+        <button class="btn" onclick="navigateSpot()">⊕ 導航</button>
+        <button class="btn" onclick="shareSpotLine()">→ LINE</button>
+        <button class="btn btn-primary" onclick="closeSpotModal()" style="margin-left:auto;">關閉</button>
       </div>
     </div>
   </div>
@@ -4385,7 +4517,18 @@ ${userQuery}`;
   let trvShopping = [];
   let trvButlerHistory = [];
   let trvGather = null; // { date, time, desc, warn, warn2 }
-  let trvSettings = { senior: false, tts: true, ttsRate: 1.0, notify: false, popup: true, sound: true };
+  let trvSettings = {
+    senior: false, tts: true, ttsRate: 1.0, notify: false, popup: true, sound: true,
+    // 語音引擎設定
+    ttsProvider: 'browser',           // 'browser' | 'openai' | 'azure'
+    ttsBrowserVoice: '',              // 瀏覽器選定的 voice name
+    ttsOpenaiKey: '',
+    ttsOpenaiModel: 'tts-1',          // tts-1 | tts-1-hd | gpt-4o-mini-tts
+    ttsOpenaiVoice: 'nova',           // alloy/echo/fable/onyx/nova/shimmer
+    ttsAzureKey: '',
+    ttsAzureRegion: 'eastasia',
+    ttsAzureVoice: 'zh-TW-HsiaoChenNeural'
+  };
   let trvBudgetTotal = 43000;
   let trvLineGroup = '';
   let trvMap = null;
@@ -5165,11 +5308,13 @@ ${baseSchema}
     const imgHtml = cachedImg
       ? `<img class="spot-detail-image" src="${cachedImg}" alt="" onerror="this.style.display='none'">`
       : `<div id="spotImgPlaceholder"></div>`;
+    const mapHtml = s.gps ? `<div id="spotDetailMap" class="spot-detail-map"></div>` : '';
     document.getElementById('spotModalBody').innerHTML = `
       ${imgHtml}
       <div style="font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:0.15em; margin-bottom:10px;">${escape(s.time)} · ${escape(s.type)}</div>
       <div>${escape(s.desc || '尚無描述')}</div>
       ${mediaActions}
+      ${mapHtml}
     `;
     // 沒快取時，非同步嘗試抓
     if (!cachedImg && s.gps && s.type === '景點') {
@@ -5179,17 +5324,13 @@ ${baseSchema}
         }
       });
     }
-    const miniMap = document.getElementById('spotMiniMap');
     if (s.gps && typeof L !== 'undefined') {
-      miniMap.style.display = 'block';
       setTimeout(() => {
         if (trvSpotMiniMap) { trvSpotMiniMap.remove(); trvSpotMiniMap = null; }
-        trvSpotMiniMap = L.map('spotMiniMap').setView(s.gps, 12);
+        trvSpotMiniMap = L.map('spotDetailMap').setView(s.gps, 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 18 }).addTo(trvSpotMiniMap);
         L.marker(s.gps).addTo(trvSpotMiniMap).bindPopup(`<strong>${escape(s.name)}</strong>`).openPopup();
       }, 200);
-    } else {
-      miniMap.style.display = 'none';
     }
     document.getElementById('spotModal').classList.add('active');
     // 顯示已快取的 AI 介紹（如有）
@@ -5304,17 +5445,201 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     window.open(url, '_blank');
   }
 
-  // ===== TTS =====
+  // ===== TTS（多引擎）=====
+  let trvTtsAudio = null; // 當前播放的 audio 元素
+
   function ttsRead(text) {
     if (!trvSettings.tts) { showToast('語音導覽已關閉'); return; }
-    if (!('speechSynthesis' in window)) { showToast('此瀏覽器不支援語音'); return; }
+    if (!text || !text.trim()) return;
     ttsCancel();
+    const provider = trvSettings.ttsProvider || 'browser';
+    if (provider === 'openai') return ttsReadOpenAI(text);
+    if (provider === 'azure') return ttsReadAzure(text);
+    return ttsReadBrowser(text);
+  }
+
+  function ttsCancel() {
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    if (trvTtsAudio) {
+      try { trvTtsAudio.pause(); trvTtsAudio.src = ''; } catch (e) {}
+      trvTtsAudio = null;
+    }
+  }
+
+  // === 瀏覽器 TTS ===
+  function ttsReadBrowser(text) {
+    if (!('speechSynthesis' in window)) { showToast('此瀏覽器不支援語音'); return; }
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-TW';
     u.rate = trvSettings.ttsRate || 1.0;
+    // 套用選擇的聲音
+    const voices = speechSynthesis.getVoices();
+    if (trvSettings.ttsBrowserVoice) {
+      const v = voices.find(v => v.name === trvSettings.ttsBrowserVoice);
+      if (v) u.voice = v;
+    } else {
+      // 自動挑最好的（依優先順序）
+      const best = pickBestBrowserVoice(voices);
+      if (best) u.voice = best;
+    }
     speechSynthesis.speak(u);
   }
-  function ttsCancel() { if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+
+  function pickBestBrowserVoice(voices) {
+    // 偏好順序：iOS Premium > Microsoft Neural > Google > 其他 zh-TW > zh-CN > 任何 zh
+    const ranking = [
+      v => v.lang.startsWith('zh-TW') && /premium/i.test(v.name),
+      v => v.lang.startsWith('zh-TW') && /(neural|natural|enhanced)/i.test(v.name),
+      v => v.lang.startsWith('zh-TW') && /(hsiao|yating|meijia|tingting|tian-tian)/i.test(v.name),
+      v => v.lang.startsWith('zh-TW') && /(google|microsoft)/i.test(v.name),
+      v => v.lang.startsWith('zh-TW'),
+      v => v.lang.startsWith('zh-HK'),
+      v => v.lang.startsWith('zh-CN') && /(xiaoxiao|yunyang)/i.test(v.name),
+      v => v.lang.startsWith('zh-CN'),
+      v => v.lang.startsWith('zh')
+    ];
+    for (const rank of ranking) {
+      const found = voices.find(rank);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function loadBrowserVoices() {
+    const sel = document.getElementById('ttsBrowserVoice');
+    if (!sel) return;
+    const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('zh'));
+    if (voices.length === 0) {
+      sel.innerHTML = '<option value="">（瀏覽器尚未載入聲音清單）</option>';
+      return;
+    }
+    // 排序：zh-TW 在最前
+    voices.sort((a, b) => {
+      const sa = a.lang.startsWith('zh-TW') ? 0 : a.lang.startsWith('zh-HK') ? 1 : a.lang.startsWith('zh-CN') ? 2 : 3;
+      const sb = b.lang.startsWith('zh-TW') ? 0 : b.lang.startsWith('zh-HK') ? 1 : b.lang.startsWith('zh-CN') ? 2 : 3;
+      return sa - sb;
+    });
+    const best = pickBestBrowserVoice(voices);
+    sel.innerHTML = voices.map(v => {
+      const tag = v.localService ? '' : ' · 雲端';
+      const selAttr = (trvSettings.ttsBrowserVoice === v.name || (!trvSettings.ttsBrowserVoice && v === best)) ? 'selected' : '';
+      return `<option value="${escape(v.name)}" ${selAttr}>${escape(v.name)} (${escape(v.lang)}${tag})</option>`;
+    }).join('');
+  }
+
+  // 部分瀏覽器要等 voiceschanged 才有 voices
+  if ('speechSynthesis' in window) {
+    speechSynthesis.onvoiceschanged = () => {
+      try { loadBrowserVoices(); } catch (e) {}
+    };
+  }
+
+  // === OpenAI TTS ===
+  async function ttsReadOpenAI(text) {
+    const key = trvSettings.ttsOpenaiKey;
+    if (!key) { showToast('請先填入 OpenAI API Key'); return; }
+    try {
+      const res = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + key,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: trvSettings.ttsOpenaiModel || 'tts-1',
+          voice: trvSettings.ttsOpenaiVoice || 'nova',
+          input: text,
+          speed: trvSettings.ttsRate || 1.0
+        })
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`${res.status}: ${errText.slice(0, 200)}`);
+      }
+      const blob = await res.blob();
+      playTtsBlob(blob);
+    } catch (e) {
+      showToast('OpenAI TTS 失敗：' + e.message);
+      console.warn(e);
+    }
+  }
+
+  // === Azure Speech ===
+  async function ttsReadAzure(text) {
+    const key = trvSettings.ttsAzureKey;
+    const region = trvSettings.ttsAzureRegion || 'eastasia';
+    const voice = trvSettings.ttsAzureVoice || 'zh-TW-HsiaoChenNeural';
+    if (!key) { showToast('請先填入 Azure Subscription Key'); return; }
+    const langMatch = voice.match(/^([a-z]{2}-[A-Z]{2})/);
+    const lang = langMatch ? langMatch[1] : 'zh-TW';
+    const rate = trvSettings.ttsRate || 1.0;
+    const ratePercent = Math.round((rate - 1) * 100); // 0%, +20%, -10%, etc
+    const ssml = `<speak version="1.0" xml:lang="${lang}">
+  <voice name="${voice}">
+    <prosody rate="${ratePercent >= 0 ? '+' : ''}${ratePercent}%">${escapeXml(text)}</prosody>
+  </voice>
+</speak>`;
+    try {
+      const res = await fetch(`https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': key,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+          'User-Agent': 'personal-studio'
+        },
+        body: ssml
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`${res.status}: ${errText.slice(0, 200)}`);
+      }
+      const blob = await res.blob();
+      playTtsBlob(blob);
+    } catch (e) {
+      showToast('Azure Speech 失敗：' + e.message);
+      console.warn(e);
+    }
+  }
+
+  function escapeXml(s) {
+    return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
+  }
+
+  function playTtsBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    trvTtsAudio = new Audio(url);
+    trvTtsAudio.onended = () => { URL.revokeObjectURL(url); trvTtsAudio = null; };
+    trvTtsAudio.play().catch(e => showToast('播放失敗：' + e.message));
+  }
+
+  // === Settings handlers ===
+  function onTtsProviderChange(v) {
+    trvSettings.ttsProvider = v;
+    saveTravelKey(TRAVEL_STORAGE.settings, trvSettings);
+    showTtsSections();
+  }
+  function showTtsSections() {
+    document.getElementById('ttsBrowserSection').style.display = trvSettings.ttsProvider === 'browser' ? 'block' : 'none';
+    document.getElementById('ttsOpenaiSection').style.display = trvSettings.ttsProvider === 'openai' ? 'block' : 'none';
+    document.getElementById('ttsAzureSection').style.display = trvSettings.ttsProvider === 'azure' ? 'block' : 'none';
+  }
+  function onBrowserVoiceChange(v) {
+    trvSettings.ttsBrowserVoice = v;
+    saveTravelKey(TRAVEL_STORAGE.settings, trvSettings);
+  }
+  function onOpenaiKeyChange(v) {
+    trvSettings.ttsOpenaiKey = v.trim();
+    saveTravelKey(TRAVEL_STORAGE.settings, trvSettings);
+  }
+  function onAzureKeyChange(v) {
+    trvSettings.ttsAzureKey = v.trim();
+    saveTravelKey(TRAVEL_STORAGE.settings, trvSettings);
+  }
+  function previewTts() {
+    const sample = '你好，這是語音導覽試聽。我們現在在九寨溝，正前方就是著名的五彩池。';
+    ttsRead(sample);
+  }
 
   // ===== Wikipedia 縮圖 =====
   const WIKI_CACHE_KEY = 'travel_wiki_cache_v1';
@@ -6018,6 +6343,17 @@ ${daysBrief}
     document.getElementById('soundSwitch')?.classList.toggle('on', !!trvSettings.sound);
     const r = document.getElementById('ttsRate');
     if (r) r.value = trvSettings.ttsRate || 1.0;
+    // TTS 引擎 UI 狀態
+    const pSel = document.getElementById('ttsProvider');
+    if (pSel) pSel.value = trvSettings.ttsProvider || 'browser';
+    showTtsSections();
+    document.getElementById('ttsOpenaiKey').value = trvSettings.ttsOpenaiKey || '';
+    document.getElementById('ttsOpenaiModel').value = trvSettings.ttsOpenaiModel || 'tts-1';
+    document.getElementById('ttsOpenaiVoice').value = trvSettings.ttsOpenaiVoice || 'nova';
+    document.getElementById('ttsAzureKey').value = trvSettings.ttsAzureKey || '';
+    document.getElementById('ttsAzureRegion').value = trvSettings.ttsAzureRegion || 'eastasia';
+    document.getElementById('ttsAzureVoice').value = trvSettings.ttsAzureVoice || 'zh-TW-HsiaoChenNeural';
+    loadBrowserVoices();
     // 多人功能 UI 狀態
     const multiSw = document.getElementById('multiSwitch');
     if (multiSw) multiSw.classList.toggle('on', !!trvMultiConfig.enabled);
