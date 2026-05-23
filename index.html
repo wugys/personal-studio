@@ -1452,9 +1452,64 @@
   }
 
   @media (max-width: 768px) {
-    .trips-header h1 { font-size: 26px; }
-    .trip-cover { height: 130px; }
-    .trip-card.add-new { min-height: 200px; }
+    /* === 旅遊列表 · 手機緊湊 list 樣式 === */
+    .trips-header { margin-bottom: 12px; padding-bottom: 10px; gap: 6px; }
+    .trips-header h1 { font-size: 20px; }
+    .trips-header p { font-size: 12px; margin-top: 0; }
+    .trips-grid { grid-template-columns: 1fr; gap: 10px; }
+
+    .trip-card {
+      flex-direction: row; min-height: auto;
+      border-radius: 6px; align-items: stretch;
+    }
+    .trip-cover {
+      width: 96px; height: auto; flex-shrink: 0;
+      min-height: 96px;
+    }
+    .trip-cover-overlay { display: none; }
+
+    .trip-dday {
+      top: 6px; right: 6px; padding: 4px 8px; border-radius: 4px;
+    }
+    .trip-dday-num { font-size: 14px; }
+    .trip-dday-label { font-size: 7.5px; margin-top: 2px; }
+
+    .trip-body {
+      padding: 10px 12px; gap: 4px; flex: 1; min-width: 0;
+    }
+    .trip-title {
+      font-size: 15px; line-height: 1.25;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .trip-dates { font-size: 10.5px; margin-bottom: 2px; }
+    .trip-destination {
+      font-size: 11px; margin-bottom: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .trip-meta {
+      gap: 8px; padding-top: 6px; font-size: 10px;
+      flex-wrap: wrap;
+    }
+    .trip-meta strong { font-size: 11px; }
+    /* 隱藏旅行社（手機太擠）*/
+    .trip-meta span:last-child[style*="margin-left"] {
+      display: none;
+    }
+
+    /* 新增卡片 */
+    .trip-card.add-new {
+      min-height: 70px; padding: 14px;
+      flex-direction: row; align-items: center; justify-content: center;
+    }
+    .trip-card.add-new .glyph { font-size: 32px; margin-bottom: 0; margin-right: 12px; }
+    .trip-card.add-new .name { font-size: 15px; display: inline; margin-right: 8px; }
+    .trip-card.add-new .hint { display: none; }
+
+    /* MY DRAFT 徽章縮小 */
+    .trip-cover > div[style*="MY"] {
+      top: 6px !important; left: 6px !important;
+      padding: 2px 5px !important; font-size: 7.5px !important;
+    }
   }
 
   /* === New Trip Wizard === */
