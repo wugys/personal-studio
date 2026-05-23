@@ -1219,6 +1219,46 @@
     .trip-cover { height: 130px; }
     .trip-card.add-new { min-height: 200px; }
   }
+
+  /* === New Trip Wizard === */
+  .wiz-mode-tabs {
+    display: flex; gap: 4px; background: var(--bg-card); padding: 4px;
+    border-radius: 4px; border: 1px solid var(--line); margin-bottom: 18px;
+  }
+  .wiz-mode-btn {
+    flex: 1; padding: 10px 12px; background: transparent; border: none;
+    color: var(--ink-secondary); font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+    border-radius: 2px; transition: all 0.2s;
+  }
+  .wiz-mode-btn:hover { color: var(--ink-primary); }
+  .wiz-mode-btn.active { background: var(--accent); color: var(--bg-base); }
+  .wiz-section { display: none; }
+  .wiz-section.active { display: block; }
+
+  .wiz-hint {
+    padding: 10px 14px; background: rgba(212, 165, 116, 0.06);
+    border-left: 2px solid var(--accent); border-radius: 2px;
+    font-size: 12.5px; color: var(--ink-secondary); line-height: 1.55;
+    margin-bottom: 14px;
+  }
+  .wiz-loading {
+    padding: 20px; text-align: center; color: var(--accent);
+    font-family: var(--mono); font-size: 12px;
+  }
+  .wiz-loading::before {
+    content: '◌'; font-size: 24px; display: inline-block;
+    animation: spin 1.5s linear infinite; margin-right: 8px;
+    vertical-align: middle;
+  }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .wiz-result {
+    background: var(--bg-card); border: 1px solid var(--accent);
+    border-radius: 4px; padding: 14px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.6;
+    max-height: 240px; overflow-y: auto; white-space: pre-wrap;
+    margin-top: 10px;
+  }
 </style>
 </head>
 <body>
@@ -1740,6 +1780,10 @@
           <input type="file" id="travelImportFile" accept=".json" style="display:none" onchange="importTravelData(event)">
           <button class="btn" onclick="resetTravelData()" style="color:var(--danger); border-color:var(--danger);">⌫ 清除所有旅遊資料</button>
         </div>
+        <div id="deleteTripWrap" style="margin-top:14px; display:none;">
+          <div style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); margin-bottom:8px; letter-spacing:0.1em;">USER-CREATED TRIP</div>
+          <button class="btn" onclick="deleteCurrentTrip()" style="color:var(--danger); border-color:var(--danger);">⌫ 刪除這趟旅遊</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1914,6 +1958,95 @@ alter publication supabase_realtime add table party_locations;</pre>
         <div class="more-item" onclick="closeMoreSheet();setTravelTab('settings')">
           <div class="more-item-icon">⚙</div>
           <div class="more-item-label">設定</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 新增旅遊 Wizard Modal ============ -->
+  <div class="modal-backdrop" id="newTripModal">
+    <div class="modal" style="max-width: 680px;">
+      <h2>新增 <em>旅遊規劃</em></h2>
+
+      <div class="wiz-mode-tabs">
+        <button class="wiz-mode-btn active" data-mode="ai" onclick="setWizMode('ai')">✦ AI 生成</button>
+        <button class="wiz-mode-btn" data-mode="parse" onclick="setWizMode('parse')">⌫ 貼文字解析</button>
+        <button class="wiz-mode-btn" data-mode="manual" onclick="setWizMode('manual')">✎ 手動建立</button>
+      </div>
+
+      <!-- AI 生成 -->
+      <div class="wiz-section active" id="wizSection-ai">
+        <div class="wiz-hint">
+          描述要去哪、幾天、想要的風格，AI 會幫你產生完整行程結構。例如：「我想去日本東京 5 天，4 月 1 日出發，喜歡賞櫻、藝術館、深度體驗，預算 NT$50000」
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Anthropic API Key（與其他模組共用）</label>
+          <input type="password" class="form-input" id="wizApiKey" placeholder="sk-ant-...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">告訴 AI 你要什麼樣的旅遊</label>
+          <textarea class="form-textarea" id="wizAiPrompt" style="min-height: 110px;" placeholder="例如：我想去日本京都 7 天，4/15 出發，喜歡寺廟、美食、傳統文化體驗，住 4 星級酒店"></textarea>
+        </div>
+      </div>
+
+      <!-- 貼文字解析 -->
+      <div class="wiz-section" id="wizSection-parse">
+        <div class="wiz-hint">
+          貼上既有旅行社的行程文字（從 PDF / 網頁複製），AI 會幫你拆解成結構化行程。建議完整貼整份行程資訊。
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Anthropic API Key</label>
+          <input type="password" class="form-input" id="wizApiKey2" placeholder="sk-ant-...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">貼上行程文字</label>
+          <textarea class="form-textarea" id="wizParseText" style="min-height: 180px; font-family:var(--mono); font-size:12px;" placeholder="第 1 天 台北 → 大阪
+航班：CI 152 09:00...
+午餐：日式定食..."></textarea>
+        </div>
+      </div>
+
+      <!-- 手動建立 -->
+      <div class="wiz-section" id="wizSection-manual">
+        <div class="wiz-hint">
+          只填基本資料建立空殼旅遊，建立後進入該行程再慢慢加每日景點。
+        </div>
+        <div class="form-group">
+          <label class="form-label">旅遊名稱</label>
+          <input type="text" class="form-input" id="wizManualTitle" placeholder="例如：京都賞櫻 · 7 天">
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">出發日期</label>
+            <input type="date" class="form-input" id="wizManualStart">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">結束日期</label>
+            <input type="date" class="form-input" id="wizManualEnd">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">目的地</label>
+          <input type="text" class="form-input" id="wizManualDest" placeholder="例如：京都 · 大阪 · 奈良">
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">旅行社 / 自由行</label>
+            <input type="text" class="form-input" id="wizManualAgency" placeholder="可留空">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">團費 NT$</label>
+            <input type="number" class="form-input" id="wizManualCost" placeholder="50000">
+          </div>
+        </div>
+      </div>
+
+      <div id="wizStatus" style="display:none;"></div>
+
+      <div class="form-actions" style="justify-content:flex-end;">
+        <div class="form-actions-right">
+          <button type="button" class="btn" onclick="closeNewTripModal()">取消</button>
+          <button type="button" class="btn btn-primary" id="wizSubmitBtn" onclick="submitNewTrip()">建立旅遊</button>
         </div>
       </div>
     </div>
@@ -3466,7 +3599,7 @@ ${userQuery}`;
 
   loadOpps();
 
-  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal'].forEach(id => {
+  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', (e) => {
       if (e.target.id === id) e.currentTarget.classList.remove('active');
@@ -3496,7 +3629,8 @@ ${userQuery}`;
     settings: 'travel_settings_v1',
     lineGroup: 'travel_line_group_v1',
     butlerKey: 'studio_ai_key_v1', // 共用既有的 key
-    multiConfig: 'travel_multi_config_v1' // V4 多人功能設定
+    multiConfig: 'travel_multi_config_v1', // V4 多人功能設定
+    customTrips: 'travel_custom_trips_v1'  // 使用者自建的 trip 陣列
   };
 
   // ===== 旅遊列表（trips index）=====
@@ -3884,6 +4018,23 @@ ${userQuery}`;
   };
 
   // ===== Trips List =====
+  async function loadCustomTrips() {
+    try {
+      const raw = await readKey(TRAVEL_STORAGE.customTrips);
+      if (!raw) return;
+      const custom = JSON.parse(raw);
+      // 把每個 custom trip 合併進 ITINERARIES（內建的 jiuzhai/aux 不會被覆蓋，除非同 ID）
+      custom.forEach(t => {
+        t._userCreated = true; // 標記為使用者建立
+        ITINERARIES[t.id] = t;
+      });
+    } catch (e) { console.warn('loadCustomTrips fail:', e); }
+  }
+  async function saveCustomTrips() {
+    const custom = Object.values(ITINERARIES).filter(t => t._userCreated);
+    await writeKey(TRAVEL_STORAGE.customTrips, JSON.stringify(custom));
+  }
+
   function loadTrips() {
     // 從所有 ITINERARIES 生成 TRIPS 索引
     TRIPS = Object.values(ITINERARIES).map(it => ({
@@ -3927,11 +4078,15 @@ ${userQuery}`;
         : `<div class="trip-cover-placeholder" data-trip-cover="${escape(t.id)}"></div>`;
       const dateRange = `${startD.getMonth()+1}/${startD.getDate()} – ${endD.getMonth()+1}/${endD.getDate()}`;
       const fullDate = `${startD.getFullYear()}.${String(startD.getMonth()+1).padStart(2,'0')}.${String(startD.getDate()).padStart(2,'0')} → ${String(endD.getMonth()+1).padStart(2,'0')}.${String(endD.getDate()).padStart(2,'0')}`;
+      const userBadge = t.itinerary._userCreated
+        ? `<div style="position:absolute; top:14px; left:14px; z-index:2; background:rgba(212,165,116,0.85); color:var(--bg-base); font-family:var(--mono); font-size:9px; padding:3px 8px; border-radius:2px; letter-spacing:0.15em; text-transform:uppercase; font-weight:600;">MY · DRAFT</div>`
+        : '';
       return `
         <div class="trip-card ${st.state}" onclick="openTrip('${escape(t.id)}')">
           <div class="trip-cover">
             ${cover}
             <div class="trip-cover-overlay"></div>
+            ${userBadge}
             <div class="trip-dday ${st.state}">
               <div class="trip-dday-num">${escape(st.label)}</div>
               <div class="trip-dday-label">${escape(st.sub)}</div>
@@ -3978,8 +4133,262 @@ ${userQuery}`;
     showView('travelView');
   }
 
-  function addNewTrip() {
-    showToast('「+ 新增旅遊」之後上線：手動建立 / 從 PDF 匯入 / AI 規劃');
+  // ===== 新增旅遊 Wizard =====
+  let wizMode = 'ai';
+
+  async function addNewTrip() {
+    // 預填 API key
+    const k = await readKey(TRAVEL_STORAGE.butlerKey);
+    if (k) {
+      document.getElementById('wizApiKey').value = k;
+      document.getElementById('wizApiKey2').value = k;
+    }
+    setWizMode('ai');
+    document.getElementById('wizStatus').style.display = 'none';
+    document.getElementById('wizSubmitBtn').disabled = false;
+    document.getElementById('newTripModal').classList.add('active');
+  }
+  function closeNewTripModal() { document.getElementById('newTripModal').classList.remove('active'); }
+  function setWizMode(mode) {
+    wizMode = mode;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    document.querySelectorAll('.wiz-section').forEach(s => s.classList.remove('active'));
+    document.getElementById('wizSection-' + mode).classList.add('active');
+    document.getElementById('wizStatus').style.display = 'none';
+  }
+  function setWizStatus(html, type) {
+    const el = document.getElementById('wizStatus');
+    el.style.display = 'block';
+    el.innerHTML = type === 'loading' ? `<div class="wiz-loading">${html}</div>`
+      : type === 'error' ? `<div class="wiz-hint" style="background:rgba(201,123,106,0.08); border-left-color:var(--danger); color:#d4a499;">${html}</div>`
+      : type === 'ok' ? `<div class="wiz-hint" style="background:rgba(106,140,105,0.08); border-left-color:#9bc59a; color:#9bc59a;">${html}</div>`
+      : `<div class="wiz-result">${html}</div>`;
+  }
+
+  async function submitNewTrip() {
+    document.getElementById('wizSubmitBtn').disabled = true;
+    try {
+      if (wizMode === 'manual') {
+        await submitManualTrip();
+      } else if (wizMode === 'ai') {
+        await submitAiTrip();
+      } else if (wizMode === 'parse') {
+        await submitParseTrip();
+      }
+    } finally {
+      document.getElementById('wizSubmitBtn').disabled = false;
+    }
+  }
+
+  async function submitManualTrip() {
+    const title = document.getElementById('wizManualTitle').value.trim();
+    const start = document.getElementById('wizManualStart').value;
+    const end = document.getElementById('wizManualEnd').value;
+    if (!title || !start || !end) { setWizStatus('⚠ 請填寫旅遊名稱與出發/結束日期', 'error'); return; }
+    if (end < start) { setWizStatus('⚠ 結束日期不能早於出發日期', 'error'); return; }
+    // 生成空 days 陣列
+    const days = [];
+    const startD = new Date(start + 'T00:00:00');
+    const endD = new Date(end + 'T00:00:00');
+    const wkArr = ['日','一','二','三','四','五','六'];
+    let n = 1;
+    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().slice(0, 10);
+      days.push({
+        day: n++,
+        date: dateStr,
+        weekday: wkArr[d.getDay()],
+        title: `第 ${n - 1} 天`,
+        subtitle: '尚未規劃',
+        spots: []
+      });
+    }
+    const newTrip = {
+      id: 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      _userCreated: true,
+      title,
+      destination: document.getElementById('wizManualDest').value.trim() || '',
+      agency: document.getElementById('wizManualAgency').value.trim() || '',
+      cost: Number(document.getElementById('wizManualCost').value) || null,
+      coverImageWiki: (document.getElementById('wizManualDest').value.trim().split(/[·、,]/)[0] || '').trim() || null,
+      startDate: start,
+      endDate: end,
+      flights: [],
+      days
+    };
+    ITINERARIES[newTrip.id] = newTrip;
+    await saveCustomTrips();
+    loadTrips();
+    renderTripsList();
+    closeNewTripModal();
+    showToast('已建立新旅遊，點開可繼續編輯');
+  }
+
+  async function submitAiTrip() {
+    const apiKey = document.getElementById('wizApiKey').value.trim();
+    const userPrompt = document.getElementById('wizAiPrompt').value.trim();
+    if (!apiKey) { setWizStatus('⚠ 請填入 Anthropic API Key', 'error'); return; }
+    if (!userPrompt) { setWizStatus('⚠ 請描述你要什麼樣的旅遊', 'error'); return; }
+    await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
+    setWizStatus('AI 正在規劃行程…約 15~30 秒', 'loading');
+    const sys = buildTripGenSystem('generate');
+    try {
+      const trip = await callAiForTrip(apiKey, sys, userPrompt);
+      await acceptGeneratedTrip(trip, 'AI');
+    } catch (e) {
+      setWizStatus('⚠ AI 規劃失敗：' + (e.message || e), 'error');
+    }
+  }
+
+  async function submitParseTrip() {
+    const apiKey = document.getElementById('wizApiKey2').value.trim();
+    const text = document.getElementById('wizParseText').value.trim();
+    if (!apiKey) { setWizStatus('⚠ 請填入 Anthropic API Key', 'error'); return; }
+    if (!text || text.length < 50) { setWizStatus('⚠ 行程文字太短，請貼完整一點（至少 50 字）', 'error'); return; }
+    await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
+    setWizStatus('AI 正在解析行程…約 15~30 秒', 'loading');
+    const sys = buildTripGenSystem('parse');
+    try {
+      const trip = await callAiForTrip(apiKey, sys, text);
+      await acceptGeneratedTrip(trip, '解析');
+    } catch (e) {
+      setWizStatus('⚠ 解析失敗：' + (e.message || e), 'error');
+    }
+  }
+
+  function buildTripGenSystem(mode) {
+    const example = JSON.stringify({
+      title: '東京賞櫻 · 5 天',
+      destination: '東京 · 富士山',
+      agency: '自由行',
+      cost: 50000,
+      coverImageWiki: '東京',
+      startDate: '2026-04-01',
+      endDate: '2026-04-05',
+      flights: [
+        { code: 'CI 100', from: '桃園', to: '東京成田', dep: '09:00', arr: '13:30' }
+      ],
+      days: [
+        {
+          day: 1, date: '2026-04-01', weekday: '三',
+          title: '台北 → 東京 → 淺草',
+          subtitle: '淺草寺 · 雷門 · 晴空塔',
+          spots: [
+            { time: '09:00', type: '航班', name: 'CI 100 桃園 → 成田', desc: '中華航空。' },
+            { time: '15:00', type: '景點', name: '淺草寺', desc: '東京最古老寺廟。', gps: [35.7148, 139.7967], wikiTitle: '淺草寺' },
+            { time: '19:00', type: '餐', name: '晚餐 · 蕎麥麵', desc: '' },
+            { time: '21:00', type: '住宿', name: 'APA Hotel Asakusa', desc: '' }
+          ]
+        }
+      ]
+    }, null, 2);
+
+    const baseSchema = `
+回傳格式必須是合法 JSON，結構嚴格按照以下範例（不要包含 markdown 程式碼框，直接輸出 JSON）：
+
+${example}
+
+【欄位規範】
+- id 不要產生（系統會自動產生）
+- type 只能是這四個值之一："景點"、"餐"、"住宿"、"航班"
+- gps 為 [緯度, 經度] 浮點數陣列，只在 type="景點" 且有明確地點時提供；找不到精確 GPS 可省略
+- wikiTitle：景點對應的中文 Wikipedia 條目（找不到可省略）
+- 每天至少 4 個 spot；多日行程每天時段要符合邏輯（早→中→下午→晚→住宿）
+- 日期週幾用「日/一/二/三/四/五/六」
+- weekday 對應星期幾的中文字
+- cost 若使用者沒提到就估算合理金額（NT$）
+- coverImageWiki 用最有代表性的景點名（會用來抓 Wikipedia 縮圖）
+`;
+
+    if (mode === 'parse') {
+      return `你是行程解析助手。使用者會貼上一段旅行社的行程文字，請仔細解析其結構，提取每日景點、餐廳、住宿、航班，轉成 JSON 格式。
+
+${baseSchema}
+
+【解析原則】
+- 保留原文重要描述（景點介紹、典故、特色）
+- 餐廳的菜色/餐標保留
+- 住宿酒店名稱、地址保留
+- 航班資訊（班次、時間、城市）完整
+- 沒寫的時間用合理估計（例：景點通常上午或下午、餐廳依用餐時段）
+
+直接輸出 JSON，不要任何說明文字、不要 markdown 程式碼框。`;
+    }
+    return `你是旅遊規劃師。根據使用者描述產生一份完整且實用的多日行程。
+
+${baseSchema}
+
+【規劃原則】
+- 從機場接送 / 飯店入住開始，到返程結束
+- 每天安排 4~6 個景點/活動，分上下午
+- 著名景點要寫清楚介紹、歷史、特色（每個 desc 30~80 字）
+- 餐廳建議當地特色料理或著名店家
+- 住宿建議實際存在的飯店名稱
+- 路線合理（不要早上跑很北、下午又繞回南）
+- 預算合理
+
+直接輸出 JSON，不要任何說明文字、不要 markdown 程式碼框。`;
+  }
+
+  async function callAiForTrip(apiKey, system, userInput) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 8000,
+        system,
+        messages: [{ role: 'user', content: userInput }]
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'API error');
+    let text = data.content?.[0]?.text || '';
+    // 移除可能的 markdown 程式碼框
+    text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+    // 嘗試找 JSON 物件起點
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) throw new Error('回應不是 JSON');
+    text = text.slice(start, end + 1);
+    let json;
+    try { json = JSON.parse(text); }
+    catch (e) { throw new Error('JSON 解析失敗：' + e.message); }
+    // 驗證
+    if (!json.title || !json.startDate || !json.endDate || !Array.isArray(json.days)) {
+      throw new Error('JSON 結構不符合：缺少 title / startDate / endDate / days');
+    }
+    return json;
+  }
+
+  async function acceptGeneratedTrip(trip, label) {
+    // 給它一個 ID
+    trip.id = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    trip._userCreated = true;
+    // 加 weekday（如果 AI 沒給）
+    const wkArr = ['日','一','二','三','四','五','六'];
+    trip.days.forEach((d, i) => {
+      if (!d.weekday && d.date) {
+        const dt = new Date(d.date + 'T00:00:00');
+        d.weekday = wkArr[dt.getDay()] || '一';
+      }
+      if (!d.day) d.day = i + 1;
+      if (!Array.isArray(d.spots)) d.spots = [];
+    });
+    ITINERARIES[trip.id] = trip;
+    await saveCustomTrips();
+    loadTrips();
+    renderTripsList();
+    setWizStatus(`✓ ${escape(label)}成功 · ${escape(trip.title)} · ${trip.days.length} 天`, 'ok');
+    setTimeout(() => {
+      closeNewTripModal();
+      openTrip(trip.id);
+    }, 1200);
   }
 
   // ===== Loaders =====
@@ -4056,6 +4465,9 @@ ${userQuery}`;
       }
     } catch (e) {}
     applyTravelSettings();
+    // 顯示/隱藏刪除按鈕（只有使用者建立的 trip 才能刪）
+    const delWrap = document.getElementById('deleteTripWrap');
+    if (delWrap) delWrap.style.display = ITINERARY._userCreated ? 'block' : 'none';
     renderTravelHero();
     renderTimeline();
     renderChecklist();
@@ -5187,6 +5599,24 @@ ${daysBrief}
     };
     reader.readAsText(file);
   }
+  async function deleteCurrentTrip() {
+    if (!ITINERARY._userCreated) { showToast('內建旅遊無法刪除'); return; }
+    if (!confirm(`確定刪除「${ITINERARY.title}」？這趟旅遊的所有清單、花費、購物紀錄都會一併刪除，無法復原。`)) return;
+    const id = ITINERARY.id;
+    // 刪除該 trip 所有 storage
+    const suffixes = ['checklist','expenses','shopping','butler','gather','budget'];
+    for (const s of suffixes) {
+      await writeKey(`travel_${id}_${s}`, '');
+    }
+    // 從 ITINERARIES 移除
+    delete ITINERARIES[id];
+    await saveCustomTrips();
+    activeTripId = null;
+    ITINERARY = ITINERARIES.jiuzhai_2026 || Object.values(ITINERARIES)[0];
+    showView('tripsView');
+    showToast('已刪除該趟旅遊');
+  }
+
   async function resetTravelData() {
     if (!confirm('確定清除所有旅遊資料？此動作無法復原。')) return;
     if (!confirm('再次確認：所有清單、花費、購物、AI 對話、集合設定都將清除！')) return;
@@ -5433,8 +5863,10 @@ ${daysBrief}
       loadTravel();
       setTravelTab('home');
     } else if (id === 'tripsView') {
-      loadTrips();
-      renderTripsList();
+      loadCustomTrips().then(() => {
+        loadTrips();
+        renderTripsList();
+      });
       closeMoreSheet();
     } else {
       // 離開旅遊模組時關閉 sheet
