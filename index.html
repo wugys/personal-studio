@@ -141,6 +141,86 @@
 
   .groups-container { display: flex; flex-direction: column; gap: 32px; }
 
+  /* === Level 1：群組總覽大卡片 === */
+  .groups-overview {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .group-overview-card {
+    background: var(--bg-card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 24px;
+    cursor: pointer; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex; flex-direction: column; gap: 14px;
+    position: relative; overflow: hidden;
+    min-height: 200px;
+  }
+  .group-overview-card::before {
+    content: ''; position: absolute; top: -40%; right: -10%;
+    width: 60%; height: 200%; opacity: 0.4;
+    background: radial-gradient(circle, rgba(212, 165, 116, 0.1) 0%, transparent 70%);
+    transition: opacity 0.4s;
+  }
+  .group-overview-card:hover, .group-overview-card:active {
+    border-color: var(--accent); transform: translateY(-3px);
+    box-shadow: var(--shadow-lg); background: var(--bg-card-hover);
+  }
+  .group-overview-card:hover::before { opacity: 0.8; }
+  .group-overview-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    z-index: 1; position: relative;
+  }
+  .group-overview-icon {
+    font-size: 36px; line-height: 1; color: var(--accent);
+    font-family: var(--serif); font-style: italic;
+  }
+  .group-overview-count {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em;
+    color: var(--ink-tertiary); text-transform: uppercase;
+    padding: 4px 10px; background: var(--bg-elevated); border-radius: 2px;
+  }
+  .group-overview-name {
+    font-family: var(--serif); font-size: 26px; font-weight: 500;
+    letter-spacing: -0.01em; z-index: 1; position: relative;
+  }
+  .group-overview-en {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    color: var(--ink-tertiary); text-transform: uppercase;
+    margin-top: -8px; z-index: 1; position: relative;
+  }
+  .group-overview-preview {
+    font-size: 12.5px; color: var(--ink-secondary); line-height: 1.6;
+    z-index: 1; position: relative; margin-top: auto;
+  }
+  .group-overview-preview .item {
+    display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0;
+    background: var(--bg-elevated); border-radius: 2px;
+    border: 1px solid var(--line); font-size: 11.5px;
+  }
+  .group-overview-arrow {
+    font-family: var(--serif); font-style: italic; color: var(--accent);
+    font-size: 16px; align-self: flex-end; transition: transform 0.3s;
+    z-index: 1; position: relative;
+  }
+  .group-overview-card:hover .group-overview-arrow { transform: translateX(6px); }
+
+  /* Level 2：返回按鈕 + 群組大標 */
+  .group-detail-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+  }
+  .group-detail-title {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  .group-detail-title h2 {
+    font-family: var(--serif); font-size: 32px; font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  .group-detail-title h2 em { font-style: italic; color: var(--accent); }
+  .group-detail-title-en {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-tertiary);
+    letter-spacing: 0.2em;
+  }
+
   .group {
     border: 1px solid var(--line); border-radius: 6px; background: var(--bg-group);
     padding: 28px; transition: all 0.3s; position: relative;
@@ -2546,6 +2626,8 @@ alter publication supabase_realtime add table party_locations;</pre>
   let modules = [];
   let apis = [];
   let viewMode = 'grouped';
+  let dashLevel = 'overview'; // 'overview' | 'group'
+  let currentGroupId = null;
   let currentFilter = 'all';
   let dragModuleId = null;
 
@@ -2725,58 +2807,112 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   function renderGrouped() {
+    // 依當前 level 決定渲染：overview (Level 1) 或 detail (Level 2)
+    if (dashLevel === 'overview') renderGroupsOverview();
+    else renderGroupDetail();
+  }
+
+  function renderGroupsOverview() {
     const container = document.getElementById('groupedView');
     const sortedGroups = groups.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
     const ungrouped = modules.filter(m => !m.groupId || !groups.find(g => g.id === m.groupId));
 
-    let html = sortedGroups.map(g => {
-      const inGroup = modules.filter(m => m.groupId === g.id).sort((a, b) => (a.order || 0) - (b.order || 0));
-      // 為「投資中心」群組加入子分區
-      let bodyHtml = '';
-      if (inGroup.length === 0) {
-        bodyHtml = '<div class="group-empty">將模組拖曳到這裡，或新增模組時指定群組</div>';
-      } else if (g.id === 'g_invest') {
-        bodyHtml = renderInvestmentSubsections(inGroup);
-      } else {
-        bodyHtml = inGroup.map(m => moduleCardHtml(m)).join('');
-      }
+    let html = '<div class="groups-overview">';
+    html += sortedGroups.map(g => {
+      const inGroup = modules.filter(m => m.groupId === g.id);
+      const preview = inGroup.slice(0, 4).map(m => `<span class="item">${escape(m.icon || '◇')} ${escape(m.name)}</span>`).join('');
+      const moreCount = inGroup.length > 4 ? `<span class="item">+${inGroup.length - 4}</span>` : '';
       return `
-        <div class="group" data-group-id="${g.id}"
+        <div class="group-overview-card" onclick="enterGroup('${g.id}')"
           ondragover="onGroupDragOver(event)" ondragleave="onGroupDragLeave(event)"
           ondrop="onGroupDrop(event, '${g.id}')">
-          <div class="group-header">
-            <div class="group-title-wrap">
-              <span class="group-emoji">${escape(g.emoji || '◆')}</span>
-              <h3 class="group-title">${escape(g.name)}</h3>
-              ${g.nameEn ? `<span class="group-name-en">${escape(g.nameEn)}</span>` : ''}
-              <span class="group-count">${inGroup.length} 項</span>
-            </div>
-            <div class="group-actions">
-              <button class="icon-btn" onclick="openGroupModal('${g.id}')" title="編輯">✎</button>
-            </div>
+          <div class="group-overview-top">
+            <span class="group-overview-icon">${escape(g.emoji || '◆')}</span>
+            <span class="group-overview-count">${inGroup.length} 項</span>
           </div>
-          <div class="group-body-wrap">${bodyHtml}</div>
+          <div>
+            <div class="group-overview-name">${escape(g.name)}</div>
+            ${g.nameEn ? `<div class="group-overview-en">${escape(g.nameEn)}</div>` : ''}
+          </div>
+          <div class="group-overview-preview">
+            ${preview}${moreCount}
+          </div>
+          <div class="group-overview-arrow">進入 →</div>
         </div>
       `;
     }).join('');
 
     if (ungrouped.length > 0) {
+      const preview = ungrouped.slice(0, 4).map(m => `<span class="item">${escape(m.icon || '◇')} ${escape(m.name)}</span>`).join('');
       html += `
-        <div class="group ungrouped-section" data-group-id=""
+        <div class="group-overview-card" style="border-style:dashed;" onclick="enterGroup('')"
           ondragover="onGroupDragOver(event)" ondragleave="onGroupDragLeave(event)"
           ondrop="onGroupDrop(event, '')">
-          <div class="group-header">
-            <div class="group-title-wrap">
-              <span class="group-emoji">◌</span>
-              <h3 class="group-title">未分組</h3>
-              <span class="group-count">${ungrouped.length} 項</span>
-            </div>
+          <div class="group-overview-top">
+            <span class="group-overview-icon">◌</span>
+            <span class="group-overview-count">${ungrouped.length} 項</span>
           </div>
-          <div class="group-body">${ungrouped.map(m => moduleCardHtml(m)).join('')}</div>
+          <div>
+            <div class="group-overview-name">未分組</div>
+            <div class="group-overview-en">UNGROUPED</div>
+          </div>
+          <div class="group-overview-preview">${preview}</div>
+          <div class="group-overview-arrow">進入 →</div>
         </div>
       `;
     }
+    html += '</div>';
     container.innerHTML = html;
+  }
+
+  function renderGroupDetail() {
+    const container = document.getElementById('groupedView');
+    const g = currentGroupId ? groups.find(x => x.id === currentGroupId) : null;
+    const inGroup = currentGroupId
+      ? modules.filter(m => m.groupId === currentGroupId).sort((a, b) => (a.order || 0) - (b.order || 0))
+      : modules.filter(m => !m.groupId || !groups.find(gg => gg.id === m.groupId));
+
+    let bodyHtml;
+    if (inGroup.length === 0) {
+      bodyHtml = '<div class="group-empty">這個群組還沒有模組</div>';
+    } else if (currentGroupId === 'g_invest') {
+      bodyHtml = renderInvestmentSubsections(inGroup);
+    } else {
+      bodyHtml = `<div class="group-body">${inGroup.map(m => moduleCardHtml(m)).join('')}</div>`;
+    }
+
+    container.innerHTML = `
+      <div class="group-detail-header">
+        <button class="back-btn" onclick="backToGroupsOverview()" style="margin:0;">← 全部群組</button>
+        ${currentGroupId ? `
+          <button class="icon-btn" onclick="openGroupModal('${currentGroupId}')" title="編輯群組">✎ 編輯群組</button>
+        ` : ''}
+      </div>
+      <div class="group-detail-title">
+        <span style="font-family:var(--serif); font-style:italic; color:var(--accent); font-size:36px;">${escape(g ? g.emoji || '◆' : '◌')}</span>
+        <h2>${escape(g ? g.name : '未分組')}</h2>
+        ${g && g.nameEn ? `<span class="group-detail-title-en">${escape(g.nameEn)}</span>` : ''}
+        <span class="group-count" style="margin-left:auto;">${inGroup.length} 項</span>
+      </div>
+      <div class="group" data-group-id="${currentGroupId || ''}" style="padding: 20px 0; border:none; background:transparent;"
+        ondragover="onGroupDragOver(event)" ondragleave="onGroupDragLeave(event)"
+        ondrop="onGroupDrop(event, '${currentGroupId || ''}')">
+        <div class="group-body-wrap">${bodyHtml}</div>
+      </div>
+    `;
+  }
+
+  function enterGroup(groupId) {
+    dashLevel = 'group';
+    currentGroupId = groupId;
+    renderDashboard();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function backToGroupsOverview() {
+    dashLevel = 'overview';
+    currentGroupId = null;
+    renderDashboard();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function renderInvestmentSubsections(inGroup) {
@@ -5868,8 +6004,13 @@ ${daysBrief}
         renderTripsList();
       });
       closeMoreSheet();
+    } else if (id === 'dashboardView') {
+      // 回到儀表板時 reset 到群組總覽層
+      dashLevel = 'overview';
+      currentGroupId = null;
+      renderDashboard();
+      closeMoreSheet();
     } else {
-      // 離開旅遊模組時關閉 sheet
       closeMoreSheet();
     }
   };
