@@ -327,9 +327,84 @@
   .module:hover .module-arrow { transform: translateX(3px); }
 
   .view { display: none; }
-  .view.active { display: block; animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+  .view.active { display: block; animation: viewSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+  .view.active.backward { animation: viewSlideInBack 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes viewSlideIn {
+    from { opacity: 0; transform: translateX(40px) scale(0.98); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  @keyframes viewSlideInBack {
+    from { opacity: 0; transform: translateX(-40px) scale(0.98); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* === 全域 Breadcrumb 導覽列 === */
+  .breadcrumb-bar {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(14, 13, 11, 0.94); backdrop-filter: blur(10px);
+    margin: -24px -32px 16px; padding: 10px 32px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+    overflow-x: auto; scrollbar-width: none;
+    min-height: 42px;
+  }
+  .breadcrumb-bar::-webkit-scrollbar { display: none; }
+  .bc-back {
+    flex-shrink: 0; padding: 6px 10px; background: transparent;
+    border: 1px solid var(--line); border-radius: 4px; color: var(--ink-secondary);
+    font-family: var(--mono); font-size: 11px; cursor: pointer;
+    transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .bc-back:hover, .bc-back:active { border-color: var(--accent); color: var(--accent); background: var(--bg-card); transform: translateX(-2px); }
+  .bc-back:disabled { opacity: 0.3; cursor: not-allowed; }
+  .bc-home {
+    flex-shrink: 0; padding: 6px 10px; background: transparent;
+    border: 1px solid var(--line); border-radius: 4px; color: var(--ink-secondary);
+    font-family: var(--serif); font-style: italic; font-size: 14px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .bc-home:hover, .bc-home:active { border-color: var(--accent); color: var(--accent); background: var(--bg-card); }
+  .bc-trail {
+    display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+    overflow: hidden; min-width: 0;
+  }
+  .bc-item {
+    background: transparent; border: none; padding: 6px 4px; cursor: pointer;
+    color: var(--ink-secondary); font-family: var(--sans); font-size: 12.5px;
+    white-space: nowrap; transition: color 0.2s; max-width: 240px;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .bc-item:hover, .bc-item:active { color: var(--accent); }
+  .bc-item.current { color: var(--ink-primary); font-weight: 500; cursor: default; }
+  .bc-sep { color: var(--ink-muted); font-family: var(--mono); font-size: 12px; }
+
+  @media (max-width: 768px) {
+    .breadcrumb-bar { margin: -14px -14px 12px; padding: 8px 14px; }
+    .bc-back, .bc-home { padding: 7px 10px; }
+    .bc-item { font-size: 12px; max-width: 140px; }
+  }
+
+  /* === 強化點擊反饋 === */
+  .module, .api-card, .opp-card, .home-card, .trip-card,
+  .qa-chip, .group-overview-card, .more-item, .day-card-head, .shop-card {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .module:active, .api-card:active, .opp-card:active,
+  .home-card:active, .trip-card:active, .group-overview-card:active,
+  .more-item:active, .day-card-head:active {
+    transform: scale(0.97) !important;
+    transition: transform 0.1s !important;
+  }
+  .qa-chip:active, .spot-mini-btn:active, .tab-btn:active,
+  .travel-tab:active, .filter-tab:active, .btn:active,
+  .icon-btn:active, .bc-item:active, .bc-back:active, .bc-home:active {
+    transform: scale(0.94) !important;
+    transition: transform 0.08s !important;
+  }
+  /* Ripple-ish flash on tap for primary buttons */
+  .btn-primary:active { box-shadow: 0 0 0 4px rgba(212, 165, 116, 0.3); }
 
   .back-btn {
     display: inline-flex; align-items: center; gap: 10px; padding: 10px 0;
@@ -1143,23 +1218,61 @@
     background: var(--bg-elevated);
   }
   .spot-media-actions {
-    display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 14px;
-    padding: 12px; background: var(--bg-elevated); border-radius: 4px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+    margin: 12px 0 14px; padding: 12px;
+    background: var(--bg-elevated); border-radius: 4px;
     border-left: 2px solid var(--accent);
   }
   .spot-media-actions .label {
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
-    color: var(--ink-tertiary); width: 100%; margin-bottom: 4px;
+    color: var(--ink-tertiary); grid-column: 1 / -1; margin-bottom: 4px;
     text-transform: uppercase;
   }
   .spot-media-btn {
-    padding: 8px 12px; font-family: var(--mono); font-size: 10.5px;
+    padding: 12px 4px; font-family: var(--mono); font-size: 10.5px;
     background: var(--bg-card); border: 1px solid var(--line);
-    color: var(--ink-secondary); border-radius: 2px; cursor: pointer;
-    text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
-    transition: all 0.2s;
+    color: var(--ink-secondary); border-radius: 4px; cursor: pointer;
+    text-decoration: none; display: flex; flex-direction: column;
+    align-items: center; gap: 5px; transition: all 0.2s;
+    text-align: center; line-height: 1.2;
   }
-  .spot-media-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--bg-card-hover); }
+  .spot-media-btn:hover, .spot-media-btn:active { border-color: var(--accent); color: var(--accent); background: var(--bg-card-hover); }
+  .spot-media-btn .icon { font-size: 18px; line-height: 1; }
+  .spot-media-btn .label-cn { font-size: 11px; color: var(--ink-primary); }
+  .spot-media-btn:hover .label-cn { color: var(--accent); }
+
+  /* AI 深度介紹 */
+  .spot-ai-section {
+    margin: 14px 0; padding: 14px;
+    background: var(--bg-card); border: 1px solid var(--line);
+    border-left: 2px solid var(--accent-warm); border-radius: 4px;
+  }
+  .spot-ai-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; flex-wrap: wrap; gap: 8px;
+  }
+  .spot-ai-header h4 {
+    font-family: var(--serif); font-size: 14px; font-weight: 500;
+    color: var(--accent);
+  }
+  .spot-ai-body {
+    font-size: 13px; line-height: 1.7; color: var(--ink-secondary);
+    white-space: pre-wrap; max-height: 320px; overflow-y: auto;
+  }
+  .spot-ai-loading {
+    text-align: center; padding: 18px; color: var(--accent);
+    font-family: var(--mono); font-size: 11px;
+  }
+  .spot-ai-loading::before {
+    content: '◌'; font-size: 18px; display: inline-block;
+    animation: spin 1.5s linear infinite; margin-right: 6px;
+  }
+
+  @media (max-width: 768px) {
+    .spot-media-actions { grid-template-columns: repeat(4, 1fr); }
+    .spot-media-btn { padding: 10px 2px; font-size: 9.5px; }
+    .spot-media-btn .icon { font-size: 16px; }
+  }
 
   @media (max-width: 768px) {
     .travel-hero { padding: 22px 18px; }
@@ -1345,6 +1458,13 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <div class="page">
+  <!-- Breadcrumb 全域導覽 -->
+  <nav class="breadcrumb-bar" id="breadcrumbBar" style="display:none;">
+    <button class="bc-back" id="bcBackBtn" onclick="goBack()" title="上一頁">← 上一頁</button>
+    <button class="bc-home" onclick="goHome()" title="儀表板首頁">🏠</button>
+    <div class="bc-trail" id="bcTrail"></div>
+  </nav>
+
   <header class="header">
     <div class="brand">
       <div class="brand-mark">PERSONAL · STUDIO · MMXXVI</div>
@@ -2750,10 +2870,149 @@ alter publication supabase_realtime add table party_locations;</pre>
     el.className = type === 'syncing' ? 'syncing' : '';
   }
 
-  function showView(id) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
+  // === View History Stack ===
+  let viewHistory = ['dashboardView'];
+  let suppressHistory = false; // 內部跳轉時用，避免重複推入
+
+  function showView(id, opts = {}) {
+    const cur = document.querySelector('.view.active');
+    const backward = !!opts.backward;
+    document.querySelectorAll('.view').forEach(v => {
+      v.classList.remove('active');
+      v.classList.remove('backward');
+    });
+    const target = document.getElementById(id);
+    if (backward) target.classList.add('backward');
+    // 強制重排觸發動畫
+    void target.offsetWidth;
+    target.classList.add('active');
+
+    if (!suppressHistory && !backward) {
+      // 推進 history（避免連續相同）
+      if (viewHistory[viewHistory.length - 1] !== id) {
+        viewHistory.push(id);
+        if (viewHistory.length > 30) viewHistory.shift();
+      }
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    renderBreadcrumb();
+  }
+
+  function goBack() {
+    if (viewHistory.length <= 1) {
+      // 已在首頁
+      goHome();
+      return;
+    }
+    viewHistory.pop(); // 移除當前
+    const prev = viewHistory[viewHistory.length - 1];
+    suppressHistory = true;
+    showView(prev, { backward: true });
+    suppressHistory = false;
+  }
+
+  function goHome() {
+    viewHistory = ['dashboardView'];
+    suppressHistory = true;
+    showView('dashboardView', { backward: true });
+    suppressHistory = false;
+  }
+
+  // === Breadcrumb 自動生成 ===
+  function buildBreadcrumb() {
+    const trail = [];
+    const activeView = document.querySelector('.view.active')?.id || 'dashboardView';
+
+    // 始終加首頁
+    trail.push({ label: '首頁', action: () => goHome() });
+
+    // Dashboard 內的 group 層
+    if (activeView === 'dashboardView') {
+      if (dashLevel === 'group' && currentGroupId !== null) {
+        const g = groups.find(x => x.id === currentGroupId);
+        trail.push({ label: g ? g.name : '未分組', action: null, current: true });
+      } else {
+        // 在 dashboard overview，trail 只有首頁，標記首頁為 current
+        trail[0].current = true; trail[0].action = null;
+      }
+      return trail;
+    }
+
+    // 根據 view 取對應 module 與群組
+    const viewToModuleId = {
+      apiView: 'm_apis',
+      doubleView: 'm_double',
+      leverageView: 'm_leverage',
+      tripsView: 'm_travel',
+      travelView: 'm_travel'
+    };
+    const moduleId = viewToModuleId[activeView];
+    if (moduleId) {
+      const m = modules.find(x => x.id === moduleId);
+      if (m && m.groupId) {
+        const g = groups.find(x => x.id === m.groupId);
+        if (g) {
+          trail.push({
+            label: g.name,
+            action: () => { suppressHistory = false; goHome(); setTimeout(() => enterGroup(g.id), 50); }
+          });
+        }
+      }
+      if (m) {
+        trail.push({
+          label: m.name,
+          action: activeView === 'travelView'
+            ? () => { suppressHistory = false; showView('tripsView'); }
+            : null,
+          current: activeView !== 'travelView'
+        });
+      }
+    }
+
+    // travelView：再加 trip 名稱與 panel
+    if (activeView === 'travelView' && ITINERARY) {
+      trail.push({
+        label: ITINERARY.title,
+        action: trvActiveTab === 'home' ? null : () => setTravelTab('home'),
+        current: trvActiveTab === 'home'
+      });
+      if (trvActiveTab && trvActiveTab !== 'home') {
+        const tabLabels = {
+          timeline: '行程導覽', map: '地圖', gather: '集合倒數',
+          checklist: '行前清單', budget: '預算記錄', shopping: '購物記錄',
+          butler: 'AI 管家', info: '保險 eSIM', settings: '設定'
+        };
+        trail.push({ label: tabLabels[trvActiveTab] || trvActiveTab, action: null, current: true });
+      }
+    }
+
+    return trail;
+  }
+
+  function renderBreadcrumb() {
+    const bar = document.getElementById('breadcrumbBar');
+    const trail = buildBreadcrumb();
+    // 在 dashboard 首頁時隱藏 breadcrumb
+    if (trail.length === 1 && trail[0].current) {
+      bar.style.display = 'none';
+      return;
+    }
+    bar.style.display = 'flex';
+
+    const trailEl = document.getElementById('bcTrail');
+    trailEl.innerHTML = trail.map((t, i) => {
+      const sep = i > 0 ? `<span class="bc-sep">›</span>` : '';
+      if (t.current || !t.action) {
+        return `${sep}<span class="bc-item current">${escape(t.label)}</span>`;
+      }
+      return `${sep}<button class="bc-item" onclick="(window.__bcActions||{})['${i}']()">${escape(t.label)}</button>`;
+    }).join('');
+    // 綁定動作（避免 inline 字串 escape 問題）
+    window.__bcActions = {};
+    trail.forEach((t, i) => { if (t.action) window.__bcActions[i] = t.action; });
+
+    // 上一頁按鈕狀態
+    document.getElementById('bcBackBtn').disabled = viewHistory.length <= 1;
   }
 
   function setViewMode(mode) {
@@ -2906,12 +3165,14 @@ alter publication supabase_realtime add table party_locations;</pre>
     dashLevel = 'group';
     currentGroupId = groupId;
     renderDashboard();
+    renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   function backToGroupsOverview() {
     dashLevel = 'overview';
     currentGroupId = null;
     renderDashboard();
+    renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -4629,12 +4890,21 @@ ${baseSchema}
       const isActive = b.dataset.bb === tab || (b.dataset.bb === 'more' && !['home','timeline','map','budget'].includes(tab));
       b.classList.toggle('active', isActive);
     });
-    document.querySelectorAll('.travel-panel').forEach(p => p.classList.remove('active'));
+    // panel 切換含動畫
+    const oldPanel = document.querySelector('.travel-panel.active');
+    if (oldPanel && oldPanel.id !== 'trvPanel-' + tab) {
+      oldPanel.classList.remove('active');
+    }
     const panel = document.getElementById('trvPanel-' + tab);
-    if (panel) panel.classList.add('active');
+    if (panel) {
+      // 強制重排觸發動畫
+      void panel.offsetWidth;
+      panel.classList.add('active');
+    }
     if (tab === 'map') setTimeout(() => initBigMap(), 50);
     if (tab === 'timeline') refreshGpsSilent();
     if (tab === 'home') renderHomeStats();
+    renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -4848,15 +5118,46 @@ ${baseSchema}
     const s = d.spots[idx];
     trvCurrentSpot = s;
     document.getElementById('spotModalTitle').innerHTML = `${escape(s.name)} <em>· DAY ${day}</em>`;
-    const q = encodeURIComponent(cleanSpotName(s.name));
+    const cleanName = cleanSpotName(s.name);
+    const q = encodeURIComponent(cleanName);
     const streetView = s.gps ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${s.gps[0]},${s.gps[1]}` : '';
+    const mapsDir = s.gps ? `https://www.google.com/maps/dir/?api=1&destination=${s.gps[0]},${s.gps[1]}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
     const mediaActions = `
       <div class="spot-media-actions">
-        <div class="label">看更多媒體</div>
-        <a class="spot-media-btn" href="https://www.google.com/search?q=${q}&tbm=isch" target="_blank">📷 Google 圖片</a>
-        <a class="spot-media-btn" href="https://www.youtube.com/results?search_query=${q}" target="_blank">🎬 YouTube</a>
-        ${streetView ? `<a class="spot-media-btn" href="${streetView}" target="_blank">🗺 街景</a>` : ''}
-        <a class="spot-media-btn" href="https://zh.wikipedia.org/wiki/${q}" target="_blank">📖 Wikipedia</a>
+        <div class="label">深度探索</div>
+        <a class="spot-media-btn" href="https://www.google.com/search?q=${encodeURIComponent(cleanName + ' 美食 必吃')}" target="_blank">
+          <span class="icon">🍜</span><span class="label-cn">美食</span>
+        </a>
+        <a class="spot-media-btn" href="https://www.google.com/search?q=${encodeURIComponent(cleanName + ' 好玩 攻略')}" target="_blank">
+          <span class="icon">🎮</span><span class="label-cn">好玩</span>
+        </a>
+        <a class="spot-media-btn" href="https://www.google.com/search?q=${encodeURIComponent(cleanName + ' 深度旅遊 歷史 文化')}" target="_blank">
+          <span class="icon">🌍</span><span class="label-cn">深度</span>
+        </a>
+        <a class="spot-media-btn" href="https://www.google.com/search?q=${encodeURIComponent(cleanName + ' 必買 伴手禮')}" target="_blank">
+          <span class="icon">🛍</span><span class="label-cn">購物</span>
+        </a>
+        <a class="spot-media-btn" href="https://www.youtube.com/results?search_query=${encodeURIComponent(cleanName + ' 旅遊')}" target="_blank">
+          <span class="icon">🎬</span><span class="label-cn">YouTube</span>
+        </a>
+        <a class="spot-media-btn" href="https://www.google.com/search?q=${q}&tbm=isch" target="_blank">
+          <span class="icon">📷</span><span class="label-cn">圖片</span>
+        </a>
+        ${streetView ? `<a class="spot-media-btn" href="${streetView}" target="_blank">
+          <span class="icon">🛣</span><span class="label-cn">街景</span>
+        </a>` : `<a class="spot-media-btn" href="${mapsDir}" target="_blank">
+          <span class="icon">🗺</span><span class="label-cn">地圖</span>
+        </a>`}
+        <a class="spot-media-btn" href="https://zh.wikipedia.org/wiki/${q}" target="_blank">
+          <span class="icon">📖</span><span class="label-cn">維基</span>
+        </a>
+      </div>
+      <div class="spot-ai-section">
+        <div class="spot-ai-header">
+          <h4>✦ AI 深度介紹</h4>
+          <button class="spot-media-btn" style="grid-column:auto; padding:6px 12px;" onclick="generateSpotDeepIntro(${day}, ${idx})" id="spotAiBtn">產生介紹</button>
+        </div>
+        <div class="spot-ai-body" id="spotAiBody">點「產生介紹」由 AI 為這個景點生成深度介紹（歷史背景、必看亮點、推薦遊玩時間、附近交通、文化禮節、小提醒）。會緩存到本機。</div>
       </div>
     `;
     // 嘗試載入 Wikipedia 圖（如有快取直接用）
@@ -4891,11 +5192,108 @@ ${baseSchema}
       miniMap.style.display = 'none';
     }
     document.getElementById('spotModal').classList.add('active');
+    // 顯示已快取的 AI 介紹（如有）
+    setTimeout(() => {
+      const cache = getSpotAiCache();
+      const ck = `${ITINERARY.id}|${s.name}`;
+      if (cache[ck]) {
+        const body = document.getElementById('spotAiBody');
+        const btn = document.getElementById('spotAiBtn');
+        if (body && btn) {
+          body.textContent = cache[ck];
+          btn.textContent = '↻ 重新生成';
+          btn.onclick = () => { delete cache[ck]; saveSpotAiCache(cache); generateSpotDeepIntro(day, idx); };
+        }
+      }
+    }, 30);
   }
   function closeSpotModal() {
     document.getElementById('spotModal').classList.remove('active');
     if (trvSpotMiniMap) { trvSpotMiniMap.remove(); trvSpotMiniMap = null; }
     ttsCancel();
+  }
+
+  // === AI 深度介紹（快取於 localStorage）===
+  const SPOT_AI_CACHE_KEY = 'travel_spot_ai_cache_v1';
+  function getSpotAiCache() {
+    try { return JSON.parse(localStorage.getItem(SPOT_AI_CACHE_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function saveSpotAiCache(cache) {
+    try { localStorage.setItem(SPOT_AI_CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
+  }
+
+  async function generateSpotDeepIntro(day, idx) {
+    const d = ITINERARY.days.find(x => x.day === day);
+    const s = d?.spots?.[idx];
+    if (!s) return;
+    const cacheKey = `${ITINERARY.id}|${s.name}`;
+    const cache = getSpotAiCache();
+    const body = document.getElementById('spotAiBody');
+    const btn = document.getElementById('spotAiBtn');
+
+    // 已有快取
+    if (cache[cacheKey]) {
+      body.textContent = cache[cacheKey];
+      btn.textContent = '↻ 重新生成';
+      btn.onclick = () => { delete cache[cacheKey]; saveSpotAiCache(cache); generateSpotDeepIntro(day, idx); };
+      return;
+    }
+
+    const apiKey = await readKey(TRAVEL_STORAGE.butlerKey);
+    if (!apiKey) {
+      body.innerHTML = '<div style="color:var(--danger);">⚠ 需要先在「設定 → 多人功能」或「AI 管家」頁設定 Anthropic API Key。</div>';
+      return;
+    }
+
+    body.innerHTML = '<div class="spot-ai-loading">AI 思考中…約 5~10 秒</div>';
+    btn.disabled = true;
+
+    const system = `你是專業的旅遊深度導覽員，使用繁體中文回答。
+針對使用者提供的景點，產生「深度旅遊介紹」，包含以下 6 個段落（用「【】」標題分段）：
+
+【1. 歷史與背景】簡述景點的歷史、為何重要（2~3 句）
+【2. 必看亮點】3~5 個一定不能錯過的細節、雕像、建築特色
+【3. 推薦遊玩時間】建議停留多久、最佳參觀時段、季節
+【4. 附近交通與動線】怎麼到、附近還有什麼可逛、走多遠
+【5. 文化禮節 / 注意事項】拍照規定、服裝、宗教尊重、消費水準
+【6. 給你的小提醒】1~2 句溫暖建議（避開人潮、最佳拍照點等）
+
+語氣溫暖專業，像高端旅遊顧問，不要前言、直接開始。每段 2~5 行。`;
+
+    const userPrompt = `景點：${s.name}
+所在行程：${ITINERARY.title}（${ITINERARY.destination || ''}）
+官方介紹：${s.desc || '（無）'}
+${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 2500,
+          system,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const text = data.content?.[0]?.text || '';
+      cache[cacheKey] = text;
+      saveSpotAiCache(cache);
+      body.textContent = text;
+      btn.textContent = '↻ 重新生成';
+      btn.onclick = () => { delete cache[cacheKey]; saveSpotAiCache(cache); generateSpotDeepIntro(day, idx); };
+    } catch (e) {
+      body.innerHTML = `<div style="color:var(--danger);">⚠ AI 失敗：${escape(e.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
   }
   function ttsSpot() { if (trvCurrentSpot) ttsRead(`${trvCurrentSpot.name}。${trvCurrentSpot.desc || ''}`); }
   function navigateSpot() { if (trvCurrentSpot && trvCurrentSpot.gps) navigateTo(trvCurrentSpot.gps[0], trvCurrentSpot.gps[1]); else showToast('此景點無 GPS 資料'); }
