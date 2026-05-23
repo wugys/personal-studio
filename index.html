@@ -1101,6 +1101,124 @@
   body.senior .home-card-name { font-size: 20px; }
   body.senior .tab-btn .tab-label { font-size: 12px; }
   body.senior .tab-btn .tab-icon { font-size: 26px; }
+
+  /* ============================================================
+     旅遊列表 · Trips List
+     ============================================================ */
+  .trips-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap; gap: 16px;
+  }
+  .trips-header h1 {
+    font-family: var(--serif); font-size: clamp(28px, 4.5vw, 40px);
+    font-weight: 400; letter-spacing: -0.02em;
+  }
+  .trips-header h1 em { font-style: italic; color: var(--accent); }
+  .trips-header p { color: var(--ink-secondary); font-size: 13.5px; margin-top: 4px; }
+
+  .trips-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .trip-card {
+    background: var(--bg-card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 0; overflow: hidden;
+    cursor: pointer; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .trip-card:hover, .trip-card:active {
+    transform: translateY(-3px); box-shadow: var(--shadow-lg);
+    border-color: var(--accent);
+  }
+  .trip-card.upcoming { border-left: 3px solid var(--accent); }
+  .trip-card.ongoing { border-left: 3px solid #6a8c69; }
+  .trip-card.past { opacity: 0.7; }
+
+  .trip-cover {
+    width: 100%; height: 160px; background: var(--bg-elevated);
+    position: relative; overflow: hidden;
+  }
+  .trip-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .trip-cover-placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, rgba(212, 165, 116, 0.15) 0%, rgba(212, 165, 116, 0.02) 100%);
+  }
+  .trip-cover-placeholder::after {
+    content: '✈'; font-family: var(--serif); font-size: 56px;
+    color: var(--accent-deep); font-style: italic;
+  }
+  .trip-cover-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 40%, rgba(14, 13, 11, 0.85) 100%);
+    pointer-events: none;
+  }
+  .trip-dday {
+    position: absolute; top: 14px; right: 14px; z-index: 2;
+    background: rgba(14, 13, 11, 0.85); backdrop-filter: blur(8px);
+    border: 1px solid var(--line-strong); border-radius: 6px;
+    padding: 8px 14px; text-align: center;
+    font-family: var(--serif); font-style: italic;
+  }
+  .trip-dday-num {
+    color: var(--accent); font-size: 22px; font-weight: 500; line-height: 1;
+  }
+  .trip-dday-label {
+    font-family: var(--mono); font-size: 9px; font-style: normal;
+    letter-spacing: 0.15em; color: var(--ink-tertiary);
+    margin-top: 4px; text-transform: uppercase;
+  }
+  .trip-dday.ongoing .trip-dday-num { color: #9bc59a; }
+  .trip-dday.past .trip-dday-num { color: var(--ink-tertiary); }
+
+  .trip-body {
+    padding: 18px 20px 20px; flex: 1; display: flex; flex-direction: column;
+  }
+  .trip-title {
+    font-family: var(--serif); font-size: 22px; font-weight: 500;
+    letter-spacing: -0.01em; margin-bottom: 6px; line-height: 1.25;
+  }
+  .trip-title em { font-style: italic; color: var(--accent); }
+  .trip-dates {
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+    letter-spacing: 0.08em; margin-bottom: 4px;
+  }
+  .trip-destination {
+    font-size: 12.5px; color: var(--ink-secondary); margin-bottom: 14px;
+  }
+  .trip-meta {
+    display: flex; gap: 14px; flex-wrap: wrap; margin-top: auto;
+    padding-top: 12px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: var(--ink-tertiary);
+  }
+  .trip-meta span { display: inline-flex; align-items: center; gap: 4px; }
+  .trip-meta strong { color: var(--accent); font-family: var(--serif); font-size: 13px; font-weight: 500; }
+
+  .trip-card.add-new {
+    border-style: dashed; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 320px; background: transparent;
+  }
+  .trip-card.add-new:hover { background: var(--bg-card-hover); }
+  .trip-card.add-new .glyph {
+    font-family: var(--serif); font-style: italic; font-size: 56px;
+    color: var(--accent-deep); margin-bottom: 8px;
+  }
+  .trip-card.add-new .name {
+    font-family: var(--serif); font-size: 18px; color: var(--ink-secondary);
+  }
+  .trip-card.add-new .hint {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
+    color: var(--ink-tertiary); margin-top: 4px;
+  }
+
+  @media (max-width: 768px) {
+    .trips-header h1 { font-size: 26px; }
+    .trip-cover { height: 130px; }
+    .trip-card.add-new { min-height: 200px; }
+  }
 </style>
 </head>
 <body>
@@ -1248,18 +1366,33 @@
     <div id="leverageGrid" class="opp-grid"></div>
   </div>
 
+  <!-- ============ 旅遊列表 VIEW（先看到所有 trip）============ -->
+  <div id="tripsView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <div class="trips-header">
+      <div>
+        <h1>我的<em>旅遊</em>規劃</h1>
+        <p>選擇一趟旅遊查看詳情，或新增一筆規劃。</p>
+      </div>
+      <div style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.15em;">
+        TRAVEL · ITINERARIES
+      </div>
+    </div>
+    <div class="trips-grid" id="tripsGrid"></div>
+  </div>
+
   <!-- ============ 旅遊模組 VIEW ============ -->
   <div id="travelView" class="view">
-    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <button class="back-btn" onclick="showView('tripsView')">← 切換旅遊</button>
 
     <div class="travel-hero">
-      <div class="travel-hero-eyebrow">TRAVEL · CONCIERGE · SINCE 2026</div>
-      <h1>與九寨<em>共舞</em>。<br>八天的<em>盛宴</em>。</h1>
+      <div class="travel-hero-eyebrow" id="travelHeroEyebrow">TRAVEL · CONCIERGE</div>
+      <h1 id="travelHeroTitle">—</h1>
       <div class="travel-hero-meta" id="travelHeroMeta">
         <div><strong id="trvDDay">—</strong> 天倒數</div>
-        <div>出發 · <strong>2026/09/05</strong></div>
-        <div>航班 · <strong>NX657</strong> 09:00</div>
-        <div>團費 · <strong>NT$43,000</strong></div>
+        <div>出發 · <strong id="trvHeroDate">—</strong></div>
+        <div>航班 · <strong id="trvHeroFlight">—</strong></div>
+        <div>團費 · <strong id="trvHeroCost">—</strong></div>
       </div>
     </div>
 
@@ -1462,14 +1595,7 @@
           <label class="form-label">Anthropic API Key（與其他模組共用 · 儲存於本機）</label>
           <input type="password" class="form-input" id="butlerApiKey" placeholder="sk-ant-...">
         </div>
-        <div class="butler-suggestions">
-          <div class="butler-suggestion" onclick="askButler('成都當地的物價大概什麼水準？小吃、計程車、礦泉水各約多少人民幣？')">成都物價</div>
-          <div class="butler-suggestion" onclick="askButler('九寨溝海拔高，行前我可以做什麼準備來預防高山反應？')">高山症準備</div>
-          <div class="butler-suggestion" onclick="askButler('峨眉山智選假日酒店通常提供什麼設施？需要自己準備什麼？')">飯店設施</div>
-          <div class="butler-suggestion" onclick="askButler('我帶長輩同行，行程中哪幾天最辛苦？我該怎麼幫她們安排休息？')">長輩照顧</div>
-          <div class="butler-suggestion" onclick="askButler('成都和峨眉山有什麼好買的伴手禮？大概價格？')">伴手禮推薦</div>
-          <div class="butler-suggestion" onclick="askButler('行李怎麼打包最聰明？9 月成都到九寨溝氣候從 22 到 9 度，怎麼穿？')">行李打包</div>
-        </div>
+        <div class="butler-suggestions" id="butlerSuggestions"></div>
         <div class="butler-chat" id="butlerChat">
           <div class="butler-msg bot">您好，Kevin 先生 ✦ 我是您這趟九寨之旅的管家。<br><br>請隨意問我關於行程、物價、飯店設施、文化禮節、長輩照顧的任何問題。也可以點上方建議快速開始。</div>
         </div>
@@ -2308,7 +2434,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     { id: 'm_apis', name: 'AI API 收藏館', nameEn: 'AI · API · ARCHIVE', icon: 'α', desc: '整理、分類、管理 AI 工具與 API 收藏。', status: 'active', groupId: 'g_ai', order: 0, builtin: true, target: 'apiView' },
 
     // === 生活規劃 ===
-    { id: 'm_travel', name: '旅遊規劃', nameEn: 'TRAVEL · PLANNING', icon: '✈', desc: '隨身導遊 · 個人管家 · 行前清單 · 預算花費 · 購物記錄 · AI 助理。', status: 'active', groupId: 'g_life', order: 0, builtin: true, target: 'travelView' },
+    { id: 'm_travel', name: '旅遊規劃', nameEn: 'TRAVEL · PLANNING', icon: '✈', desc: '隨身導遊 · 個人管家 · 行前清單 · 預算花費 · 購物記錄 · AI 助理。', status: 'active', groupId: 'g_life', order: 0, builtin: true, target: 'tripsView' },
     { id: 'm_assoc', name: '協會 · 組織', nameEn: 'ORGANIZATION', icon: '⚐', desc: '會員資料、活動行事曆、會費管理。', status: 'soon', groupId: 'g_life', order: 1 },
 
     // === 投資中心 · 總覽工具（最重要，放最前面）===
@@ -3354,22 +3480,42 @@ ${userQuery}`;
   // 旅遊模組 · Travel Module
   // ============================================================
 
+  // Trip-scoped key（每個 trip 自己一份）+ 全域 key
+  function tripKey(suffix) {
+    return `travel_${activeTripId || 'default'}_${suffix}`;
+  }
   const TRAVEL_STORAGE = {
-    checklist: 'travel_checklist_v1',
-    expenses: 'travel_expenses_v1',
-    shopping: 'travel_shopping_v1',
-    butler: 'travel_butler_v1',
-    gather: 'travel_gather_v1',
+    // 以下為 getter，會依當前 activeTripId 動態生成 key
+    get checklist()   { return tripKey('checklist'); },
+    get expenses()    { return tripKey('expenses'); },
+    get shopping()    { return tripKey('shopping'); },
+    get butler()      { return tripKey('butler'); },
+    get gather()      { return tripKey('gather'); },
+    get budgetTotal() { return tripKey('budget'); },
+    // 全域共用（不分 trip）
     settings: 'travel_settings_v1',
-    budgetTotal: 'travel_budget_total_v1',
     lineGroup: 'travel_line_group_v1',
     butlerKey: 'studio_ai_key_v1', // 共用既有的 key
     multiConfig: 'travel_multi_config_v1' // V4 多人功能設定
   };
 
+  // ===== 旅遊列表（trips index）=====
+  // 未來會擴展為多趟，每趟一個物件。目前只有九寨溝。
+  let TRIPS = [];          // 動態於 loadTrips() 初始化
+  let activeTripId = null; // 當前進入的 trip
+
+  // ===== 多趟行程資料庫 =====
+  const ITINERARIES = {};
+  let ITINERARY = null; // 當前作用中的 itinerary
+
   // ===== 行程資料（九寨溝 8 天）=====
-  const ITINERARY = {
+  ITINERARIES.jiuzhai_2026 = {
+    id: 'jiuzhai_2026',
     title: '與九寨共舞 · 8 天',
+    destination: '四川 · 九寨溝 · 峨眉山',
+    agency: '泰華旅遊 · 福林旅行社',
+    cost: 43000,
+    coverImageWiki: '九寨溝',
     startDate: '2026-09-05',
     endDate: '2026-09-12',
     flights: [
@@ -3499,6 +3645,167 @@ ${userQuery}`;
     ]
   };
 
+  // ===== 行程資料（奧捷斯匈 10 天）=====
+  ITINERARIES.aux_2026 = {
+    id: 'aux_2026',
+    title: '奧捷斯匈 · 國王湖 · 10 天',
+    destination: '維也納 · 布拉格 · 布達佩斯 · 哈修塔特',
+    agency: '旅天下聯合國際旅行社',
+    cost: null, // 未提供
+    coverImageWiki: '哈爾施塔特',
+    startDate: '2026-04-01',
+    endDate: '2026-04-10',
+    flights: [
+      { code: 'MU5006', from: '桃園', to: '上海浦東', dep: '18:40', arr: '20:40' },
+      { code: 'FM869', from: '上海浦東', to: '布達佩斯', dep: '01:50', arr: '08:05' },
+      { code: 'FM870', from: '布達佩斯', to: '上海浦東', dep: '12:30', arr: '05:35+1' },
+      { code: 'MU5007', from: '上海浦東', to: '桃園', dep: '12:20', arr: '14:25' }
+    ],
+    days: [
+      {
+        day: 1, date: '2026-04-01', weekday: '三',
+        title: '台北桃園 → 上海',
+        subtitle: '集合於桃園機場第二航廈',
+        spots: [
+          { time: '15:30', type: '景點', name: '桃園機場集合', desc: '第二航廈 東方航空（中華航空代理）櫃台。領隊：林孜璟 小姐 +886 0913573121', gps: [25.0797, 121.2342] },
+          { time: '18:40', type: '航班', name: 'MU5006 桃園 → 上海浦東', desc: '中國東方航空，飛行時間約 2 小時。' },
+          { time: '20:40', type: '景點', name: '抵達上海浦東機場（轉機）', desc: '行李直掛目的地，無需入境上海。', gps: [31.1443, 121.8083] },
+          { time: '22:30', type: '餐', name: '晚餐 · 機上簡餐', desc: '' }
+        ]
+      },
+      {
+        day: 2, date: '2026-04-02', weekday: '四',
+        title: '上海 → 布達佩斯 → 布拉提斯拉瓦 → 維也納',
+        subtitle: '布拉提斯拉瓦老城 · 熊布朗宮 · 貝爾維第宮',
+        spots: [
+          { time: '01:50', type: '航班', name: 'FM869 上海 → 布達佩斯', desc: '上海航空，飛行時間約 12 小時。' },
+          { time: '08:05', type: '景點', name: '抵達布達佩斯機場', desc: '匈牙利首都布達佩斯。', gps: [47.4307, 19.2611], wikiTitle: '李斯特·費倫茨國際機場' },
+          { time: '10:30', type: '景點', name: '布拉提斯拉瓦老城', desc: '斯洛伐克 1993 年從捷克分離獨立，純樸的農業社會生活步調呈現獨特風貌。富麗堂皇的國家劇院、聖馬丁教堂，穿越米榭爾門前往總統府廣場，舊市政廳融合哥德與巴洛克風格。', gps: [48.1431, 17.1098], wikiTitle: '布拉提斯拉瓦' },
+          { time: '11:30', type: '景點', name: '布拉提斯拉瓦城堡', desc: '位於老城旁高 82 公尺的小山上，遠看好像一張翻面倒立的桌子。早期為凱爾特人防衛鎮，羅馬帝國時的軍事要寨，是斯拉夫民族最重要的政治、軍事、行政和教會中心。', gps: [48.1422, 17.1006], wikiTitle: '布拉提斯拉瓦城堡' },
+          { time: '13:00', type: '餐', name: '午餐 · 中式六菜一湯', desc: '' },
+          { time: '15:00', type: '景點', name: '熊布朗宮（美泉宮）', desc: '典雅優美的巴洛克建築風格，曾是哈布斯堡皇室的夏宮，現為歐洲最完美的巴洛克式建築之一。Schonbrunn 意為「美麗的泉水」。已被聯合國登列為世界遺產保護。', gps: [48.1849, 16.3122], wikiTitle: '美泉宮' },
+          { time: '17:00', type: '景點', name: '貝爾維第宮', desc: '充滿巴洛克優美建築風格，分為上宮與下宮，華麗的建築和裝飾著巴洛克雕像的庭園，是最受當地人喜愛的散步地點。', gps: [48.1916, 16.3805], wikiTitle: '美景宮' },
+          { time: '19:00', type: '餐', name: '晚餐 · 維也納特選炸豬排', desc: '經典維也納名菜。' },
+          { time: '21:00', type: '住宿', name: 'VOCO VIENNA PRATER (IHG)', desc: 'Engerthstrasse 173-175, Vienna 1020。TEL: 43-1-2144000' }
+        ]
+      },
+      {
+        day: 3, date: '2026-04-03', weekday: '五',
+        title: '維也納 → 布爾諾',
+        subtitle: '霍夫堡宮 · 聖史蒂芬大教堂 · 國立歌劇院 · 百水公寓',
+        spots: [
+          { time: '08:00', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '09:30', type: '景點', name: '霍夫堡宮', desc: '2001 年列為世界文化遺產，帝國時期遺留下的巴洛克式華麗建築，充分感受奧地利王室風華。', gps: [48.2082, 16.3656], wikiTitle: '霍夫堡皇宮' },
+          { time: '10:30', type: '景點', name: '國立歌劇院', desc: '文藝復興式古典建築，為維也納音樂之都的象徵。', gps: [48.2030, 16.3697], wikiTitle: '維也納國家歌劇院' },
+          { time: '11:00', type: '景點', name: '聖史蒂芬大教堂', desc: '維也納市中心地標，彩色琉璃瓦鑲嵌的屋頂可看到哈布斯堡王朝的徽記圖騰。從國立歌劇院到此之間為徒步區，是維也納最熱鬧的地區。', gps: [48.2086, 16.3725], wikiTitle: '聖史蒂芬主教座堂_(維也納)' },
+          { time: '12:30', type: '餐', name: '午餐 · 中式六菜一湯', desc: '' },
+          { time: '14:00', type: '景點', name: '百水公寓 Hundertwasserhaus', desc: '被維也納人暱稱為「保齡球木瓶房子」，以不規則的線條區分，每一層樓漆上不同顏色，還有不規則大小的窗戶，頂樓有阿拉伯式圓頂。1983-1986 年間由景觀藝術家百水先生設計監造。', gps: [48.2078, 16.3935], wikiTitle: '百水公寓' },
+          { time: '15:30', type: '景點', name: '施華洛世奇維也納旗艦店', desc: '知名奧地利水晶品牌，1895 年丹尼爾·施華洛世奇創立。從精確切割水晶飾品的製造商，發展成為全球首屈一指的水晶設計領導品牌。', gps: [48.2086, 16.3712] },
+          { time: '17:00', type: '景點', name: '前往布爾諾', desc: '車程約 138km。布爾諾是捷克第二大城。', gps: [49.1951, 16.6068], wikiTitle: '布爾諾' },
+          { time: '19:30', type: '餐', name: '晚餐 · 當地特色西式（豬）料理', desc: '' },
+          { time: '21:00', type: '住宿', name: 'OREA CONGRESS HOTEL BRNO', desc: 'Křižkovskeho 458/47, 603 73 Brno。TEL: 420-530510121' }
+        ]
+      },
+      {
+        day: 4, date: '2026-04-04', weekday: '六',
+        title: '布爾諾 → 布拉格',
+        subtitle: '布拉格城堡區 · 查理大橋 · 舊城廣場 · 天文鐘',
+        spots: [
+          { time: '08:00', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '11:00', type: '景點', name: '布拉格古堡區 · 聖維特大教堂', desc: '抵達布拉格，前往古堡區，歷代國王加冕的聖維特大教堂是布拉格城堡最重要的地標。', gps: [50.0905, 14.4006], wikiTitle: '聖維特主教座堂' },
+          { time: '12:00', type: '景點', name: '舊皇宮', desc: '波希米亞國王的住所，現今捷克總統選舉皆在此舉行。', gps: [50.0913, 14.4011] },
+          { time: '13:00', type: '餐', name: '午餐 · 捷克烤鴨特選料理', desc: '' },
+          { time: '14:30', type: '景點', name: '查理大橋', desc: '東歐最古老的石橋，橋兩旁矗立了頗富哲思的聖者雕像。橋上盡是街頭藝術家，從繪畫到雕塑、手工飾品到現場演奏，包羅萬象。', gps: [50.0866, 14.4117], wikiTitle: '查理大橋' },
+          { time: '16:00', type: '景點', name: '舊城廣場 · 提恩教堂', desc: '生氣蓬勃又饒富古意，廣場上充斥著街頭藝人。提恩教堂是廣場上最醒目的哥德式雙塔建築。', gps: [50.0875, 14.4214], wikiTitle: '布拉格舊城廣場' },
+          { time: '16:30', type: '景點', name: '舊市政廳天文鐘', desc: '舊市政廳最受遊客歡迎的天文鐘。每到整點，鐘上方窗戶開啟，一旁的死神鳴鐘，耶穌的十二門徒在聖保羅帶領下移動現身，最後以雞啼和鐘響結束。', gps: [50.0870, 14.4209], wikiTitle: '布拉格天文鐘' },
+          { time: '19:00', type: '餐', name: '晚餐 · 中式六菜一湯', desc: '' },
+          { time: '21:00', type: '住宿', name: 'OCCIDENTAL PRAHA', desc: 'Na Strzi 32 Prague 140 00。TEL: 420-2-96772111' }
+        ]
+      },
+      {
+        day: 5, date: '2026-04-05', weekday: '日',
+        title: '布拉格 → 庫倫洛夫',
+        subtitle: '布拉格自由活動 · 庫倫洛夫小鎮',
+        spots: [
+          { time: '08:00', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '09:00', type: '景點', name: '布拉格市區自由活動', desc: '盡情遊覽建築博物館之稱的布拉格！教堂、火藥塔、天文鐘、舊城廣場…查理橋上的街頭藝人熱情的表演。', gps: [50.0755, 14.4378], wikiTitle: '布拉格' },
+          { time: '12:30', type: '餐', name: '午餐 · 捷克西式料理', desc: '' },
+          { time: '15:00', type: '景點', name: '庫倫洛夫小鎮', desc: '被伏爾塔瓦河環繞，1992 年聯合國指定為世界文化遺產，在此彷彿走入中古世紀時光，散發濃郁的古典氣息。', gps: [48.8112, 14.3147], wikiTitle: '克魯姆洛夫' },
+          { time: '16:00', type: '景點', name: '庫倫洛夫城堡', desc: '色彩繽紛的高塔是城堡區最古老的部分，塔上是眺望小鎮全景的最佳位置，值得爬上 147 階樓梯登高眺望。', gps: [48.8123, 14.3155], wikiTitle: '克魯姆洛夫城堡' },
+          { time: '17:30', type: '景點', name: '舊城區漫步', desc: '巷弄中有數不清各式各樣的商店，琳瑯滿目的木造玩具、晶瑩剔透的波希米亞水晶製品。', gps: [48.8112, 14.3158] },
+          { time: '19:00', type: '餐', name: '晚餐 · 特選地窖豬肋排料理', desc: '' },
+          { time: '21:00', type: '住宿', name: 'HOTEL GRAND', desc: 'Namesti Svornosti 3 Cesky Krumlov 381 01。TEL: 420-380711671' }
+        ]
+      },
+      {
+        day: 6, date: '2026-04-06', weekday: '一',
+        title: '庫倫洛夫 → 國王湖 → 薩爾斯堡',
+        subtitle: '加碼德國最美 · 國王湖遊船',
+        spots: [
+          { time: '07:30', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '11:00', type: '景點', name: '國王湖遊船', desc: '德奧邊境的國王湖，最後一個冰河時期由冰川形成，是德國最深的湖泊。湖面狹長，兩岸群峰環繞。搭乘電動船前往山巒與湖泊環繞的聖巴爾特羅梅修道院（紅色屋頂與盎然綠意形成絕美畫作）。價值約 NT$900。註：若因天候停駛則退費。', gps: [47.5526, 12.9802], wikiTitle: '國王湖' },
+          { time: '13:30', type: '餐', name: '午餐 · 當地西式料理', desc: '' },
+          { time: '15:30', type: '景點', name: '米拉貝爾花園', desc: '薩爾斯堡米拉貝爾花園，以希臘神話為主題的雕像、噴泉及花團錦簇的花壇。電影《真善美》中高歌 Do Re Mi 的場景就在此拍攝。', gps: [47.8047, 13.0428], wikiTitle: '米拉貝爾宮' },
+          { time: '16:30', type: '景點', name: '莫札特之家 · 蓋特萊德街', desc: '1773-1780 年間莫札特一家住在這棟房子。蓋特萊德巷 9 號是莫札特故居，他在此創作所有青少年時代的作品。蓋特萊德街已闢為行人徒步區，兩旁商家高掛獨特的鍛鐵招牌。', gps: [47.8013, 13.0432], wikiTitle: '莫扎特故居' },
+          { time: '19:00', type: '餐', name: '晚餐 · 中式六菜一湯', desc: '' },
+          { time: '21:00', type: '住宿', name: 'FOURSIDE HOTEL SALZBURG', desc: 'Am Messezentrum 2 Salzburg 5020。TEL: 43-662-4355460' }
+        ]
+      },
+      {
+        day: 7, date: '2026-04-07', weekday: '二',
+        title: '薩爾斯堡 → 哈修塔特 → 維也納',
+        subtitle: '哈爾斯塔特湖區 · 鱒魚料理',
+        spots: [
+          { time: '07:30', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '10:00', type: '景點', name: '哈爾斯塔特', desc: '奧地利著名湖泊渡假區鹽湖區之旅。地區共有 76 個湖泊，像珍珠項鍊般串聯於阿爾卑斯群山之中。哈爾斯塔特湖畔山坡上色彩柔和的歐式木造建築，以群山為背景，映著碧綠的湖水，正是奧地利最具代表性的風景。', gps: [47.5582, 13.6493], wikiTitle: '哈爾施塔特' },
+          { time: '13:00', type: '餐', name: '午餐 · 特選湖區鱒魚料理', desc: '湖區特色，新鮮鱒魚。' },
+          { time: '15:00', type: '景點', name: '前往維也納', desc: '車程約 300km。' },
+          { time: '19:30', type: '餐', name: '晚餐 · 中式六菜一湯', desc: '' },
+          { time: '21:00', type: '住宿', name: 'AUSTRIA TREND EVENTHOTEL PYRAMIDE', desc: 'Parkallee 2, Vösendorf, 2334。TEL: 43-1-69-900' }
+        ]
+      },
+      {
+        day: 8, date: '2026-04-08', weekday: '三',
+        title: '維也納 → 布達佩斯',
+        subtitle: '英雄廣場 · 漁夫堡 · 國會大廈 · 馬提亞斯教堂',
+        spots: [
+          { time: '08:00', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '12:00', type: '餐', name: '午餐 · 中式六菜一湯', desc: '' },
+          { time: '14:00', type: '景點', name: '英雄廣場 · 英雄紀念碑', desc: '麥可傑克森拍攝 MTV 的現場。規模宏偉的英雄廣場是匈牙利為慶祝建國一千年而建。寬敞的廣場上矗立 36 公尺高的英雄紀念碑，碑頂站立著天使聖像，碑下是七位部落首領的騎銅像。', gps: [47.5141, 19.0779], wikiTitle: '英雄廣場_(布達佩斯)' },
+          { time: '15:30', type: '景點', name: '馬提亞斯教堂', desc: '歷代匈牙利王加冕所在，雄踞丘陵中央。', gps: [47.5018, 19.0337], wikiTitle: '馬加什教堂' },
+          { time: '16:00', type: '景點', name: '漁夫堡', desc: '十九世紀為紀念勇敢護衛布達城的一群漁夫所建。由迴廊上可眺望對岸新哥德式造型的國會大廈。', gps: [47.5025, 19.0345], wikiTitle: '漁夫堡' },
+          { time: '17:00', type: '景點', name: '國會大廈（遠眺）', desc: '新哥德式造型，多瑙河畔的標誌性建築。', gps: [47.5072, 19.0457], wikiTitle: '匈牙利國會大廈' },
+          { time: '19:00', type: '餐', name: '晚餐 · 匈牙利當地特色（牛）料理', desc: '匈牙利燉牛肉風味。' },
+          { time: '21:00', type: '住宿', name: 'TRIBE BUDAPEST STADIUM', desc: 'Könyves Kálmán Krt. 34, Budapest 1097。TEL: 36-1-2389360' }
+        ]
+      },
+      {
+        day: 9, date: '2026-04-09', weekday: '四',
+        title: '布達佩斯 → 上海',
+        subtitle: '返程',
+        spots: [
+          { time: '08:00', type: '餐', name: '早餐 · 飯店西式', desc: '' },
+          { time: '12:30', type: '航班', name: 'FM870 布達佩斯 → 上海浦東', desc: '上海航空，飛行時間約 10 小時。' },
+          { time: '14:00', type: '餐', name: '午餐 · 機上餐食', desc: '' },
+          { time: '19:00', type: '餐', name: '晚餐 · 機上餐食', desc: '' }
+        ]
+      },
+      {
+        day: 10, date: '2026-04-10', weekday: '五',
+        title: '上海 → 台北',
+        subtitle: '回到溫暖的家',
+        spots: [
+          { time: '05:35', type: '景點', name: '抵達上海浦東機場', desc: '轉機。', gps: [31.1443, 121.8083] },
+          { time: '12:20', type: '航班', name: 'MU5007 上海 → 桃園', desc: '中國東方航空（部分日期可能改飛松山機場），飛行時間約 2 小時。' },
+          { time: '14:25', type: '景點', name: '抵達台北 · 溫暖的家', desc: '★★★★★ 期待下回再相會！', gps: [25.0797, 121.2342] }
+        ]
+      }
+    ]
+  };
+
+  // 預設作用中的 trip
+  ITINERARY = ITINERARIES.jiuzhai_2026;
+
   const DEFAULT_CHECKLIST = [
     // 證件
     { id: 'chk_pp', text: '護照（效期需 6 個月以上）', section: '證件', note: '已含/需辦 NT$1700', done: false, builtin: true },
@@ -3576,8 +3883,133 @@ ${userQuery}`;
     membersChannel: null // realtime subscription
   };
 
+  // ===== Trips List =====
+  function loadTrips() {
+    // 從所有 ITINERARIES 生成 TRIPS 索引
+    TRIPS = Object.values(ITINERARIES).map(it => ({
+      id: it.id,
+      title: it.title,
+      destination: it.destination,
+      startDate: it.startDate,
+      endDate: it.endDate,
+      cost: it.cost,
+      agency: it.agency,
+      coverImageWiki: it.coverImageWiki,
+      days: it.days.length,
+      spotCount: it.days.reduce((n, d) => n + d.spots.filter(s => s.type === '景點').length, 0),
+      itinerary: it
+    }));
+    // 按出發日期排序（近的在前）
+    TRIPS.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }
+
+  function tripStatus(trip) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const start = new Date(trip.startDate + 'T00:00:00');
+    const end = new Date(trip.endDate + 'T00:00:00');
+    const dToStart = Math.round((start - today) / 86400000);
+    const dToEnd = Math.round((end - today) / 86400000);
+    if (dToStart > 0) return { state: 'upcoming', label: 'D-' + dToStart, sub: '出發倒數' };
+    if (dToEnd >= 0) return { state: 'ongoing', label: 'D' + (Math.abs(dToStart) + 1), sub: '進行中' };
+    return { state: 'past', label: '已完成', sub: '回憶' };
+  }
+
+  async function renderTripsList() {
+    if (TRIPS.length === 0) loadTrips();
+    const grid = document.getElementById('tripsGrid');
+    const html = TRIPS.map(t => {
+      const st = tripStatus(t);
+      const startD = new Date(t.startDate + 'T00:00:00');
+      const endD = new Date(t.endDate + 'T00:00:00');
+      const cached = wikiCache[t.coverImageWiki];
+      const cover = cached
+        ? `<img src="${cached}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
+        : `<div class="trip-cover-placeholder" data-trip-cover="${escape(t.id)}"></div>`;
+      const dateRange = `${startD.getMonth()+1}/${startD.getDate()} – ${endD.getMonth()+1}/${endD.getDate()}`;
+      const fullDate = `${startD.getFullYear()}.${String(startD.getMonth()+1).padStart(2,'0')}.${String(startD.getDate()).padStart(2,'0')} → ${String(endD.getMonth()+1).padStart(2,'0')}.${String(endD.getDate()).padStart(2,'0')}`;
+      return `
+        <div class="trip-card ${st.state}" onclick="openTrip('${escape(t.id)}')">
+          <div class="trip-cover">
+            ${cover}
+            <div class="trip-cover-overlay"></div>
+            <div class="trip-dday ${st.state}">
+              <div class="trip-dday-num">${escape(st.label)}</div>
+              <div class="trip-dday-label">${escape(st.sub)}</div>
+            </div>
+          </div>
+          <div class="trip-body">
+            <div class="trip-title">${escape(t.title)}</div>
+            <div class="trip-dates">${escape(fullDate)}</div>
+            <div class="trip-destination">${escape(t.destination || '')}</div>
+            <div class="trip-meta">
+              <span><strong>${t.days}</strong>天</span>
+              <span><strong>${t.spotCount}</strong>景點</span>
+              ${t.cost ? `<span>NT$<strong>${t.cost.toLocaleString()}</strong></span>` : ''}
+              ${t.agency ? `<span style="margin-left:auto;">${escape(t.agency)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('') + `
+      <div class="trip-card add-new" onclick="addNewTrip()">
+        <div style="text-align:center;">
+          <div class="glyph">+</div>
+          <div class="name">新增旅遊規劃</div>
+          <div class="hint">COMING SOON · 之後可手動建立或從 PDF 匯入</div>
+        </div>
+      </div>
+    `;
+    grid.innerHTML = html;
+    // 抓 cover 圖
+    TRIPS.forEach(async t => {
+      if (!t.coverImageWiki) return;
+      const url = await fetchWikiThumbnail({ name: t.coverImageWiki, wikiTitle: t.coverImageWiki, gps: [1,1], type: '景點' });
+      if (url) {
+        const ph = document.querySelector(`[data-trip-cover="${t.id}"]`);
+        if (ph) ph.outerHTML = `<img src="${url}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`;
+      }
+    });
+  }
+
+  function openTrip(tripId) {
+    if (!ITINERARIES[tripId]) { showToast('找不到該行程'); return; }
+    activeTripId = tripId;
+    ITINERARY = ITINERARIES[tripId]; // 切換作用中的 itinerary
+    showView('travelView');
+  }
+
+  function addNewTrip() {
+    showToast('「+ 新增旅遊」之後上線：手動建立 / 從 PDF 匯入 / AI 規劃');
+  }
+
   // ===== Loaders =====
+  async function migrateLegacyTravelKeys() {
+    // 一次性把舊版（V3，沒分 trip）的資料搬到 jiuzhai_2026 命名空間下
+    const migrations = [
+      ['travel_checklist_v1', 'travel_jiuzhai_2026_checklist'],
+      ['travel_expenses_v1', 'travel_jiuzhai_2026_expenses'],
+      ['travel_shopping_v1', 'travel_jiuzhai_2026_shopping'],
+      ['travel_butler_v1', 'travel_jiuzhai_2026_butler'],
+      ['travel_gather_v1', 'travel_jiuzhai_2026_gather'],
+      ['travel_budget_total_v1', 'travel_jiuzhai_2026_budget']
+    ];
+    for (const [oldK, newK] of migrations) {
+      const newExists = await readKey(newK);
+      if (newExists) continue; // 已遷移過
+      const oldVal = await readKey(oldK);
+      if (oldVal) {
+        await writeKey(newK, oldVal);
+        console.log(`Migrated ${oldK} → ${newK}`);
+      }
+    }
+  }
+
   async function loadTravel() {
+    // 確保 activeTripId 有值（默認九寨溝為舊版相容）
+    if (!activeTripId) activeTripId = ITINERARY?.id || 'jiuzhai_2026';
+    if (ITINERARIES[activeTripId]) ITINERARY = ITINERARIES[activeTripId];
+    await migrateLegacyTravelKeys();
+
     try {
       const c = await readKey(TRAVEL_STORAGE.checklist);
       trvChecklist = c ? JSON.parse(c) : DEFAULT_CHECKLIST.slice();
@@ -3604,8 +4036,8 @@ ${userQuery}`;
     } catch (e) {}
     try {
       const bt = await readKey(TRAVEL_STORAGE.budgetTotal);
-      if (bt) trvBudgetTotal = Number(bt);
-    } catch (e) {}
+      trvBudgetTotal = bt ? Number(bt) : (ITINERARY.cost || 50000);
+    } catch (e) { trvBudgetTotal = ITINERARY.cost || 50000; }
     try {
       const lg = await readKey(TRAVEL_STORAGE.lineGroup);
       if (lg) trvLineGroup = lg;
@@ -3629,6 +4061,7 @@ ${userQuery}`;
     renderChecklist();
     renderBudget();
     renderShopping();
+    renderButlerSuggestions();
     renderButlerChat();
     renderGather();
     document.getElementById('lineGroupUrl').value = trvLineGroup;
@@ -3752,6 +4185,16 @@ ${userQuery}`;
 
   // ===== Hero & DDay =====
   function renderTravelHero() {
+    // Title
+    const titleParts = ITINERARY.title.split('·').map(s => s.trim());
+    const titleHtml = titleParts.length >= 2
+      ? `<em>${escape(titleParts[0])}</em><br>${titleParts.slice(1).map(escape).join(' · ')}`
+      : `<em>${escape(ITINERARY.title)}</em>`;
+    document.getElementById('travelHeroTitle').innerHTML = titleHtml;
+    document.getElementById('travelHeroEyebrow').textContent =
+      `TRAVEL · ${(ITINERARY.destination || '').toUpperCase()}`;
+
+    // DDay
     const target = new Date(ITINERARY.startDate + 'T00:00:00');
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -3759,8 +4202,18 @@ ${userQuery}`;
     const el = document.getElementById('trvDDay');
     if (days > 0) el.textContent = 'D-' + days;
     else if (days === 0) el.textContent = '今天';
-    else if (days >= -7) el.textContent = '進行中 D' + (Math.abs(days) + 1);
+    else if (days >= -ITINERARY.days.length) el.textContent = '進行中 D' + (Math.abs(days) + 1);
     else el.textContent = '已完成';
+
+    // Meta
+    const sd = new Date(ITINERARY.startDate + 'T00:00:00');
+    document.getElementById('trvHeroDate').textContent =
+      `${sd.getFullYear()}/${String(sd.getMonth()+1).padStart(2,'0')}/${String(sd.getDate()).padStart(2,'0')}`;
+    const firstFlight = ITINERARY.flights?.[0];
+    document.getElementById('trvHeroFlight').textContent =
+      firstFlight ? `${firstFlight.code} ${firstFlight.dep}` : '—';
+    document.getElementById('trvHeroCost').textContent =
+      ITINERARY.cost ? `NT$${ITINERARY.cost.toLocaleString()}` : '未含';
   }
 
   // ===== 行程 timeline =====
@@ -4493,6 +4946,36 @@ ${userQuery}`;
   }
 
   // ===== AI 管家 =====
+  const BUTLER_SUGGESTIONS = {
+    'jiuzhai_2026': [
+      { label: '成都物價', q: '成都當地的物價大概什麼水準？小吃、計程車、礦泉水各約多少人民幣？' },
+      { label: '高山症準備', q: '九寨溝海拔高，行前我可以做什麼準備來預防高山反應？' },
+      { label: '飯店設施', q: '峨眉山智選假日酒店通常提供什麼設施？需要自己準備什麼？' },
+      { label: '長輩照顧', q: '我帶長輩同行，行程中哪幾天最辛苦？我該怎麼幫她們安排休息？' },
+      { label: '伴手禮推薦', q: '成都和峨眉山有什麼好買的伴手禮？大概價格？' },
+      { label: '行李打包', q: '行李怎麼打包最聰明？9 月成都到九寨溝氣候從 22 到 9 度，怎麼穿？' }
+    ],
+    'aux_2026': [
+      { label: '四國物價', q: '奧地利、捷克、斯洛伐克、匈牙利這四國的物價差異？大概要準備多少歐元現金？' },
+      { label: '簽證/台胞證', q: '去奧捷斯匈需要申根簽證嗎？台胞證為什麼要帶？' },
+      { label: '電壓插頭', q: '奧捷斯匈用什麼電壓和插頭？需要買轉接頭嗎？' },
+      { label: '飯店設施', q: 'VOCO Vienna Prater 通常提供什麼設施？需要自己準備什麼？' },
+      { label: '小費文化', q: '歐洲餐廳、領隊、司機的小費要怎麼給？大概多少歐元？' },
+      { label: '4 月氣候', q: '4 月初的奧捷斯匈氣溫大概多少？要怎麼穿衣？需要準備什麼' },
+      { label: '伴手禮推薦', q: '奧捷斯匈各國有什麼必買的伴手禮？大概價格？施華洛世奇水晶值得買嗎？' },
+      { label: '長輩照顧', q: '我帶長輩同行，10 天歐洲行程哪幾天最辛苦？該怎麼幫他們安排休息？' }
+    ]
+  };
+
+  function renderButlerSuggestions() {
+    const el = document.getElementById('butlerSuggestions');
+    if (!el) return;
+    const list = BUTLER_SUGGESTIONS[activeTripId] || BUTLER_SUGGESTIONS['jiuzhai_2026'];
+    el.innerHTML = list.map(s =>
+      `<div class="butler-suggestion" onclick="askButler('${s.q.replace(/'/g, '&#39;')}')">${escape(s.label)}</div>`
+    ).join('');
+  }
+
   function renderButlerChat() {
     const chat = document.getElementById('butlerChat');
     if (trvButlerHistory.length === 0) return; // 保留預設歡迎訊息
@@ -4554,19 +5037,19 @@ ${userQuery}`;
     }
   }
   function buildButlerSystem() {
-    return `你是 Kevin 先生的私人旅遊管家「九寨管家」，個性溫暖、細心、專業，使用繁體中文回答。
+    const daysBrief = ITINERARY.days.map(d => {
+      const spots = d.spots.filter(s => s.type === '景點').map(s => s.name.replace(/（.*?）/g, '')).slice(0, 4).join('、');
+      return `- D${d.day} (${d.date}) ${d.title}：${spots}`;
+    }).join('\n');
+    return `你是 Kevin 先生的私人旅遊管家，個性溫暖、細心、專業，使用繁體中文回答。
 
-【你的服務行程】2026/09/05 ~ 09/12 · 與九寨共舞 8 天
-- D1 高雄→澳門→成都，黃龍溪古鎮，住溫江皇冠酒店
-- D2 樂山大佛(含遊船)、蘇稽古鎮、峨眉山報國寺/伏虎寺/大佛禪院，住峨眉山智選假日
-- D3 洛帶古鎮、錦里、大慈寺、太古里、IFS、春熙路，住溫江皇冠
-- D4 丹景台、鐘書閣、仰天窩熊貓、茂縣，住茂縣國際
-- D5 疊溪海子、黃龍風景區(海拔3500m)、五彩池、九寨溝，住九寨魯能希爾頓
-- D6 九寨溝整日(樹正/則查窪/日則三溝)，住九寨魯能希爾頓
-- D7 綿九高速、白馬藏寨、大熊貓基地、寬窄巷子，住溫江皇冠
-- D8 成都→澳門→高雄返家
+【當前服務行程】${ITINERARY.startDate} ~ ${ITINERARY.endDate} · ${ITINERARY.title}
+目的地：${ITINERARY.destination || '—'}
+旅行社：${ITINERARY.agency || '—'}
 
-【服務範圍】物價比對、飯店設施、文化禮節、長輩照顧、行李建議、應對突發、餐廳推薦、購物建議
+${daysBrief}
+
+【服務範圍】物價比對、飯店設施、文化禮節、長輩照顧、行李建議、應對突發、餐廳推薦、購物建議、當地交通
 
 【回答風格】
 - 語氣親切但專業，像高端飯店管家
@@ -4941,7 +5424,7 @@ ${userQuery}`;
   // ============================================================
 
   // ===== 啟動 =====
-  // 監聽顯示 travelView 時載入
+  // 監聽顯示 view 時觸發載入
   const origShowView = showView;
   showView = function(id) {
     origShowView(id);
@@ -4949,6 +5432,10 @@ ${userQuery}`;
     if (id === 'travelView') {
       loadTravel();
       setTravelTab('home');
+    } else if (id === 'tripsView') {
+      loadTrips();
+      renderTripsList();
+      closeMoreSheet();
     } else {
       // 離開旅遊模組時關閉 sheet
       closeMoreSheet();
