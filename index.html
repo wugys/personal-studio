@@ -3368,20 +3368,40 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <!-- ============ 分享連結 / QR Modal ============ -->
   <div class="modal-backdrop" id="shareLinkModal">
-    <div class="modal" style="max-width: 460px;">
+    <div class="modal" style="max-width: 520px;">
       <h2>📤 分享給 <em>團員</em></h2>
-      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
-        團員用手機**相機 app**直接對著下方 QR Code → 自動跳轉到網站並套用設定。
+
+      <!-- 方法 1: QR Code -->
+      <div class="setting-row" style="border:none; padding:0 0 6px;">
+        <div class="setting-label" style="font-family:var(--serif); font-size:16px;">方法 1 · QR Code 掃描（首選）</div>
       </div>
-      <div style="text-align:center; padding:18px; background:#fff; border-radius:6px; margin-bottom:14px;">
-        <img id="shareQrCode" alt="QR Code" style="width:240px; height:240px; max-width:100%;">
+      <div style="font-size:12px; color:var(--ink-secondary); margin-bottom:10px; line-height:1.5;">
+        用<strong style="color:var(--accent);">手機相機 app</strong>（不是 LINE 內掃）對下方 QR Code → 自動跳轉。
       </div>
-      <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:6px; letter-spacing:0.1em;">
-        或複製連結（適合電腦間分享，**不適合貼 LINE**）
+      <div style="text-align:center; padding:14px; background:#fff; border-radius:6px; margin-bottom:14px;">
+        <img id="shareQrCode" alt="QR Code" style="width:220px; height:220px; max-width:100%;">
       </div>
-      <textarea id="shareLinkText" readonly style="width:100%; min-height:60px; font-family:var(--mono); font-size:10px; background:var(--bg-card); border:1px solid var(--line); color:var(--ink-secondary); padding:8px 10px; border-radius:4px; word-break:break-all; resize:none;"></textarea>
+
+      <!-- 方法 2: 連結 -->
+      <div class="setting-row" style="border:none; padding:6px 0;">
+        <div class="setting-label" style="font-family:var(--serif); font-size:16px;">方法 2 · 複製連結</div>
+      </div>
+      <div style="font-size:12px; color:var(--ink-secondary); margin-bottom:6px;">
+        傳到 LINE 給遠端團員。已自動縮短（如成功）。
+      </div>
+      <textarea id="shareLinkText" readonly style="width:100%; min-height:50px; font-family:var(--mono); font-size:11px; background:var(--bg-card); border:1px solid var(--line); color:var(--ink-secondary); padding:8px 10px; border-radius:4px; word-break:break-all; resize:none;"></textarea>
+      <button class="btn btn-sm" onclick="copyShareLinkText()" style="margin-top:6px;">📋 複製連結</button>
+
+      <!-- 方法 3: 手動填 -->
+      <details style="margin-top:18px;">
+        <summary style="font-family:var(--serif); font-size:16px; cursor:pointer; padding:6px 0;">方法 3 · 手動填（如以上都失敗）</summary>
+        <div style="font-size:12px; color:var(--ink-secondary); margin:8px 0; line-height:1.6;">
+          手機開設定 → 多人功能 → 啟用 → 逐個輸入這 4 個值：
+        </div>
+        <div id="shareManualValues" style="display:flex; flex-direction:column; gap:8px; font-family:var(--mono); font-size:11px;"></div>
+      </details>
+
       <div class="form-actions" style="justify-content:flex-end; gap:8px; margin-top:14px;">
-        <button class="btn" onclick="copyShareLinkText()">📋 複製連結</button>
         <button class="btn btn-primary" onclick="closeShareLinkModal()">完成</button>
       </div>
     </div>
@@ -9534,9 +9554,23 @@ ${daysBrief}
     return decodeURIComponent(escape(atob(s)));
   }
 
+  // === 縮短連結（is.gd 免費服務，支援 CORS）===
+  async function shortenUrl(longUrl) {
+    try {
+      const res = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`);
+      if (!res.ok) throw new Error('is.gd HTTP ' + res.status);
+      const text = (await res.text()).trim();
+      if (text.startsWith('https://') || text.startsWith('http://')) return text;
+      throw new Error('縮短失敗：' + text.slice(0, 60));
+    } catch (e) {
+      console.warn('shortenUrl fail:', e);
+      return null;
+    }
+  }
+
   // === 分享連結（含 trip + multi config）===
   let _lastShareLink = '';
-  function copyShareLinkForParty() {
+  async function copyShareLinkForParty() {
     if (!ITINERARY) { showToast('沒有作用中的 trip'); return; }
     const url = document.getElementById('multiSupabaseUrl').value.trim();
     const key = document.getElementById('multiSupabaseKey').value.trim();
@@ -9548,13 +9582,39 @@ ${daysBrief}
     };
     const payload = b64UrlEncode(JSON.stringify(cfg));
     const base = 'https://personal-studio-theta.vercel.app/';
-    const link = `${base}#trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
+    const longLink = `${base}#trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
+
+    // 填手動值（方法 3 備援）
+    const manualEl = document.getElementById('shareManualValues');
+    if (manualEl) {
+      manualEl.innerHTML = [
+        ['LIFF ID', cfg.liffId || '(空白)'],
+        ['Supabase URL', cfg.supabaseUrl],
+        ['Supabase Anon Key', cfg.supabaseKey],
+        ['群組代碼', cfg.groupId]
+      ].map(([k, v]) => `
+        <div>
+          <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); letter-spacing:0.15em; margin-bottom:2px;">${k}</div>
+          <textarea readonly onclick="this.select()" style="width:100%; min-height:36px; max-height:80px; background:var(--bg-card); border:1px solid var(--line); color:var(--ink-primary); padding:6px 8px; border-radius:3px; font-family:var(--mono); font-size:11px; resize:none; word-break:break-all;">${escape(v)}</textarea>
+        </div>
+      `).join('');
+    }
+
+    // 開啟 modal 顯示「縮短中…」
+    document.getElementById('shareLinkText').value = '縮短中…';
+    document.getElementById('shareQrCode').src = '';
+    document.getElementById('shareLinkModal').classList.add('active');
+
+    // 試試 is.gd 縮短
+    let link = longLink;
+    const shortened = await shortenUrl(longLink);
+    if (shortened) {
+      link = shortened;
+    }
     _lastShareLink = link;
-    // 用 QR Code 服務（公開 API，圖檔回傳）
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=480x480&ecc=M&data=${encodeURIComponent(link)}`;
     document.getElementById('shareQrCode').src = qrUrl;
     document.getElementById('shareLinkText').value = link;
-    document.getElementById('shareLinkModal').classList.add('active');
   }
   function closeShareLinkModal() {
     document.getElementById('shareLinkModal').classList.remove('active');
