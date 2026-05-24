@@ -9647,6 +9647,32 @@ ${daysBrief}
     }
   };
 
+  // === 顯示錯誤 + 自動複製內容到剪貼簿（讓使用者可以貼給開發者）===
+  async function showCopiableError(title, debugInfo) {
+    const fullText = `${title}\n\n${debugInfo}`;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(fullText);
+      copied = true;
+    } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = fullText;
+        ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        copied = true;
+      } catch (e2) {}
+    }
+    if (copied) {
+      alert(`⚠ ${title}\n\n✓ 錯誤訊息已自動複製到剪貼簿\n\n請：\n1. 開啟跟 Claude 的對話\n2. 在輸入框長按 → 貼上\n3. 送出 → Claude 就能診斷\n\n或改用「設定碼」備案（複製設定碼 → 手機貼上設定碼）。`);
+    } else {
+      alert(`⚠ ${title}\n\n${debugInfo}`);
+    }
+  }
+
   // === 啟動時處理 URL 參數（分享連結）===
   async function processShareLinkParams() {
     // 同時讀 hash 和 query（hash 優先，因為 hash 不會被 server / LINE 處理）
@@ -9683,16 +9709,16 @@ ${daysBrief}
           } catch (e) {}
         }
         if (!decoded) {
-          const dbg = `URL：${window.location.href.slice(0, 120)}...\n\nrawParam 長度：${raw.length}\n前 80 字：${raw.slice(0, 80)}\n\n所有 base64 嘗試都失敗或解出來不是 JSON 物件。\n\n可能原因：\n1. 連結被 LINE/瀏覽器破壞\n2. 連結沒完整複製到\n\n請改用「📋 複製設定碼 + 貼上設定碼」備案。`;
-          alert('分享連結解析失敗\n\n' + dbg);
+          const dbg = `[DECODE FAILED]\nURL: ${window.location.href}\nrawParam length: ${raw.length}\nfirst 100 chars: ${raw.slice(0, 100)}\nlast 30 chars: ${raw.slice(-30)}`;
+          await showCopiableError('分享連結解析失敗（無法解碼）', dbg);
           return;
         }
         let cfg;
         try {
           cfg = JSON.parse(decoded);
         } catch (e) {
-          const dbg = `解碼成功但 JSON 解析失敗。\n\n解碼後內容：\n${decoded.slice(0, 300)}\n\n錯誤：${e.message}`;
-          alert('JSON 格式錯誤\n\n' + dbg);
+          const dbg = `[JSON PARSE FAILED]\nDecoded: ${decoded.slice(0, 500)}\nError: ${e.message}\nURL: ${window.location.href.slice(0, 200)}`;
+          await showCopiableError('JSON 格式錯誤', dbg);
           return;
         }
         // 讀取本機已有的 multi config 並合併（保留 displayName 等）
