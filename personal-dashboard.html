@@ -2051,6 +2051,16 @@
   body.guest-mode .breadcrumb-bar [onclick*="dashboardView"] {
     display: none !important;
   }
+
+  /* ===== Trip Window Mode（owner 自己的隔離新視窗，含 ?trip=...&admin=1）=====
+     隱藏 dashboard 導覽 / 返回鍵 / footer，但保留設定 tab 與所有編輯功能 */
+  body.trip-window .footer,
+  body.trip-window .back-btn,
+  body.trip-window .dash-menu-backdrop,
+  body.trip-window .breadcrumb-bar [onclick*="dashboardView"],
+  body.trip-window .more-item[onclick*="dashboard"] {
+    display: none !important;
+  }
   /* Guest 模式底部加上小提示 */
   body.guest-mode .view.active::after {
     content: '✦ 共同行程檢視 · 由團主分享 ✦';
@@ -3449,6 +3459,21 @@ alter publication supabase_realtime add table party_locations;</pre>
         </div>
         <div id="shareManualValues" style="display:flex; flex-direction:column; gap:8px; font-family:var(--mono); font-size:11px;"></div>
       </details>
+
+      <!-- ===== 自己另一台裝置（admin 版，不進 Guest Mode） ===== -->
+      <div style="margin-top:24px; padding-top:18px; border-top:1px dashed var(--line);">
+        <div class="setting-row" style="border:none; padding:0 0 6px;">
+          <div class="setting-label" style="font-family:var(--serif); font-size:16px;">📱 同步到 <em>我另一台裝置</em></div>
+        </div>
+        <div style="font-size:12px; color:var(--ink-secondary); margin-bottom:10px; line-height:1.5;">
+          掃這個 QR 在<strong style="color:var(--accent);">你自己</strong>另一台裝置（手機 / iPad）上 → 自動填好所有設定 + <strong>不進入 Guest Mode</strong>（可進設定頁修改）。<span style="color:var(--danger);">⚠ 別給團友，會看到你的設定</span>
+        </div>
+        <div style="text-align:center; padding:14px; background:#fff; border-radius:6px; margin-bottom:10px;">
+          <img id="shareQrCodeAdmin" alt="QR Code (Admin)" style="width:180px; height:180px; max-width:100%;">
+        </div>
+        <textarea id="shareLinkTextAdmin" readonly style="width:100%; min-height:50px; font-family:var(--mono); font-size:11px; background:var(--bg-card); border:1px solid var(--line); color:var(--ink-secondary); padding:8px 10px; border-radius:4px; word-break:break-all; resize:none;"></textarea>
+        <button class="btn btn-sm" onclick="copyShareLinkTextAdmin()" style="margin-top:6px;">📋 複製管理員連結</button>
+      </div>
 
       <div class="form-actions" style="justify-content:flex-end; gap:8px; margin-top:14px;">
         <button class="btn btn-primary" onclick="closeShareLinkModal()">完成</button>
@@ -6956,8 +6981,23 @@ ${userQuery}`;
 
   function openTrip(tripId) {
     if (!ITINERARIES[tripId]) { showToast('找不到該行程'); return; }
+    // 從 dashboard 點進來時 → 開新分頁（讓 trip 跟 dashboard 隔離）
+    // 條件：當前 URL 沒有 ?trip= 且 不在 guest/trip-window 模式
+    const urlHasTrip = new URLSearchParams(window.location.search).get('trip');
+    const inIsolatedMode = document.body.classList.contains('guest-mode')
+                        || document.body.classList.contains('trip-window');
+    if (!urlHasTrip && !inIsolatedMode) {
+      const url = `${window.location.pathname}?trip=${encodeURIComponent(tripId)}&admin=1`;
+      const w = window.open(url, '_blank');
+      if (!w) {
+        // popup 被擋 → fallback 同視窗導航
+        window.location.href = url;
+      }
+      return;
+    }
+    // 已在隔離視窗 / URL trip 來源：同視窗切換 itinerary
     activeTripId = tripId;
-    ITINERARY = ITINERARIES[tripId]; // 切換作用中的 itinerary
+    ITINERARY = ITINERARIES[tripId];
     showView('travelView');
   }
 
@@ -9673,21 +9713,45 @@ ${daysBrief}
       `).join('');
     }
 
+    // admin 版：同樣的 join payload 但加 &admin=1 → 解鎖 Guest Mode（給自己另一台裝置用）
+    const longLinkAdmin = `${longLink}&admin=1`;
+
     // 開啟 modal 顯示「縮短中…」
     document.getElementById('shareLinkText').value = '縮短中…';
     document.getElementById('shareQrCode').src = '';
+    document.getElementById('shareLinkTextAdmin').value = '縮短中…';
+    document.getElementById('shareQrCodeAdmin').src = '';
     document.getElementById('shareLinkModal').classList.add('active');
 
-    // 試試 is.gd 縮短
-    let link = longLink;
-    const shortened = await shortenUrl(longLink);
-    if (shortened) {
-      link = shortened;
+    // 兩個版本同時縮短（並行）— is.gd 失敗就用 long link
+    const [shortenedGuest, shortenedAdmin] = await Promise.all([
+      shortenUrl(longLink),
+      shortenUrl(longLinkAdmin)
+    ]);
+    const linkGuest = shortenedGuest || longLink;
+    const linkAdmin = shortenedAdmin || longLinkAdmin;
+    _lastShareLink = linkGuest;
+    _lastShareLinkAdmin = linkAdmin;
+    const qrGuestUrl = `https://api.qrserver.com/v1/create-qr-code/?size=480x480&ecc=M&data=${encodeURIComponent(linkGuest)}`;
+    const qrAdminUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&ecc=M&data=${encodeURIComponent(linkAdmin)}`;
+    document.getElementById('shareQrCode').src = qrGuestUrl;
+    document.getElementById('shareLinkText').value = linkGuest;
+    document.getElementById('shareQrCodeAdmin').src = qrAdminUrl;
+    document.getElementById('shareLinkTextAdmin').value = linkAdmin;
+  }
+  let _lastShareLinkAdmin = '';
+  async function copyShareLinkTextAdmin() {
+    const link = _lastShareLinkAdmin || document.getElementById('shareLinkTextAdmin').value;
+    if (!link) { showToast('連結尚未產生'); return; }
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast('管理員連結已複製');
+    } catch (e) {
+      const ta = document.getElementById('shareLinkTextAdmin');
+      ta.select();
+      try { document.execCommand('copy'); showToast('管理員連結已複製'); }
+      catch (err) { showToast('複製失敗，請長按選取'); }
     }
-    _lastShareLink = link;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=480x480&ecc=M&data=${encodeURIComponent(link)}`;
-    document.getElementById('shareQrCode').src = qrUrl;
-    document.getElementById('shareLinkText').value = link;
   }
   function closeShareLinkModal() {
     document.getElementById('shareLinkModal').classList.remove('active');
@@ -10100,21 +10164,36 @@ ${daysBrief}
   async function applyGuestMode() {
     const queryParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.slice(1));
-    // 解鎖：?admin=1 → 清掉 guest mode
-    if (queryParams.get('admin') === '1' || hashParams.get('admin') === '1') {
+    const isAdmin = queryParams.get('admin') === '1' || hashParams.get('admin') === '1';
+    const tripFromUrl = queryParams.get('trip') || hashParams.get('trip');
+
+    // 情境 A：純 ?admin=1（沒 trip）→ 解鎖一切
+    if (isAdmin && !tripFromUrl) {
       try { await writeKey(GUEST_MODE_KEY, ''); } catch (e) {}
-      document.body.classList.remove('guest-mode');
+      document.body.classList.remove('guest-mode', 'trip-window');
       return;
     }
-    // 啟用：URL 含 trip 參數 → 進入 guest mode 並持久化
-    const tripFromUrl = queryParams.get('trip') || hashParams.get('trip');
-    let stored = '';
-    try { stored = (await readKey(GUEST_MODE_KEY)) || ''; } catch (e) {}
-    if (tripFromUrl || stored === '1') {
+
+    // 情境 B：?trip=... + admin=1 → Trip Window Mode（owner 隔離新視窗）
+    if (tripFromUrl && isAdmin) {
+      document.body.classList.add('trip-window');
+      try { showView('travelView'); } catch (e) {}
+      return;
+    }
+
+    // 情境 C：?trip=... 沒 admin → Guest Mode（團友看，全部鎖死、持久化）
+    if (tripFromUrl) {
       try { await writeKey(GUEST_MODE_KEY, '1'); } catch (e) {}
       document.body.classList.add('guest-mode');
-      // guest mode 下強制進旅遊頁（避免閃過 dashboard）
       try { showView('travelView'); } catch (e) {}
+      return;
+    }
+
+    // 情境 D：URL 沒參數，但 storage 記憶過 guest mode → 維持 guest（防止之前團友 refresh）
+    let stored = '';
+    try { stored = (await readKey(GUEST_MODE_KEY)) || ''; } catch (e) {}
+    if (stored === '1') {
+      document.body.classList.add('guest-mode');
     }
   }
 
