@@ -3130,11 +3130,15 @@
             <button class="btn" onclick="openMultiHelp()">？ 教學</button>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">
-            <button class="btn btn-sm" onclick="copyMultiConfigToClipboard()" title="把當前所有設定複製，到其他裝置貼上一鍵填好">📋 複製設定（給其他裝置）</button>
-            <button class="btn btn-sm" onclick="pasteMultiConfigFromClipboard()" title="從剪貼簿貼上設定">📋 貼上設定（從其他裝置）</button>
+            <button class="btn btn-sm btn-primary" onclick="copyShareLinkForParty()" title="產生含目前行程 + 多人設定的分享連結">📤 分享給團員（一鍵連結）</button>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+            <button class="btn btn-sm" onclick="copyMultiConfigToClipboard()" title="複製設定碼到其他裝置貼上">📋 複製設定碼</button>
+            <button class="btn btn-sm" onclick="pasteMultiConfigFromClipboard()" title="從剪貼簿貼上設定">📋 貼上設定碼</button>
           </div>
           <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:6px; letter-spacing:0.05em;">
-            電腦複製設定 → 手機點「貼上設定」即可一鍵填好同樣的 LIFF / Supabase / 群組代碼
+            📤 分享連結：點開即可進入指定行程 + 自動填好設定<br>
+            📋 設定碼：複製/貼上適合在不同裝置之間搬同樣設定
           </div>
           <div id="multiStatusBox" style="margin-top:14px; padding:12px 14px; background:var(--bg-elevated); border-radius:4px; font-family:var(--mono); font-size:11.5px; color:var(--ink-secondary); line-height:1.6; min-height:40px;">尚未啟用</div>
         </div>
@@ -9497,6 +9501,31 @@ ${daysBrief}
     showToast('多人功能設定已儲存');
   }
 
+  // === 分享連結（含 trip + multi config）===
+  async function copyShareLinkForParty() {
+    if (!ITINERARY) { showToast('沒有作用中的 trip'); return; }
+    const url = document.getElementById('multiSupabaseUrl').value.trim();
+    const key = document.getElementById('multiSupabaseKey').value.trim();
+    if (!url || !key) { showToast('請先填好 Supabase URL / Key'); return; }
+    const cfg = {
+      liffId: document.getElementById('multiLiffId').value.trim(),
+      supabaseUrl: url, supabaseKey: key,
+      groupId: document.getElementById('multiGroupId').value.trim(),
+      // 不帶 displayName，讓團員自己填
+    };
+    const payload = btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
+    // 用 Vercel 永久網址（不要用 localhost / LAN IP）
+    const base = 'https://personal-studio-theta.vercel.app/';
+    const link = `${base}?trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
+
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast('✓ 分享連結已複製 · 貼到 LINE 給團員');
+    } catch (e) {
+      prompt('複製失敗，請手動複製這條連結：', link);
+    }
+  }
+
   async function copyMultiConfigToClipboard() {
     const cfg = {
       liffId: document.getElementById('multiLiffId').value.trim(),
@@ -9607,7 +9636,60 @@ ${daysBrief}
     }
   };
 
-  loadAll();
+  // === 啟動時處理 URL 參數（分享連結）===
+  async function processShareLinkParams() {
+    const params = new URLSearchParams(window.location.search);
+    const tripParam = params.get('trip');
+    const joinParam = params.get('join');
+    if (!tripParam && !joinParam) return;
+
+    // 處理 join：自動填多人設定
+    if (joinParam) {
+      try {
+        const cfg = JSON.parse(decodeURIComponent(escape(atob(joinParam))));
+        // 讀取本機已有的 multi config 並合併（保留 displayName 等）
+        let existing = {};
+        try {
+          const raw = await readKey(TRAVEL_STORAGE.multiConfig);
+          if (raw) existing = JSON.parse(raw);
+        } catch (e) {}
+        const merged = {
+          ...existing,
+          ...cfg,
+          enabled: true,
+          // displayName 優先用本機原本的；如沒有，留空讓 LIFF 帶或使用者填
+          displayName: existing.displayName || cfg.displayName || ''
+        };
+        delete merged.firebaseConfig;
+        await writeKey(TRAVEL_STORAGE.multiConfig, JSON.stringify(merged));
+        trvMultiConfig = { ...trvMultiConfig, ...merged };
+        showToast('✓ 已套用同團設定');
+      } catch (e) {
+        showToast('分享連結解析失敗：' + e.message);
+      }
+    }
+
+    // 處理 trip：自動進入該行程
+    if (tripParam) {
+      // 需要等 trips 載入完成
+      loadTrips();
+      await loadCustomTrips();
+      loadTrips();
+      if (ITINERARIES[tripParam]) {
+        // 給點時間讓 dashboard 渲染完
+        setTimeout(() => openTrip(tripParam), 300);
+      } else {
+        showToast('找不到該行程：' + tripParam);
+      }
+    }
+
+    // 清掉 URL params（保持乾淨，避免重整時再跑一次）
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }
+
+  loadAll().then(() => processShareLinkParams());
 </script>
 
 </body>
