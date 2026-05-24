@@ -753,6 +753,30 @@
     }
   }
 
+  /* === 台股動態新聞區塊 === */
+  .tw-news-section {
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 6px;
+    padding: 16px 20px; margin-bottom: 20px;
+  }
+  .tw-news-header {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  }
+  .tw-news-header h3 {
+    font-family: var(--serif); font-size: 15px; color: var(--ink-primary);
+    margin: 0; font-weight: 400;
+  }
+  .tw-news-header h3 em {
+    font-style: italic; color: var(--accent); font-family: var(--serif);
+  }
+  .tw-news-feed { display: flex; flex-direction: column; gap: 0; max-height: 320px; overflow-y: auto; }
+  @media (max-width: 768px) {
+    .tw-news-section { padding: 12px 14px; margin-bottom: 14px; }
+    .tw-news-header h3 { font-size: 13px; }
+    .tw-news-feed { max-height: 260px; }
+  }
+
   /* === 台股個股 · 持股卡片 === */
   .holding-card {
     background: var(--bg-card); border: 1px solid var(--line);
@@ -2625,6 +2649,32 @@
 
     <!-- 持股列表 -->
     <div id="holdingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ 台股新聞 Modal ============ -->
+  <div class="modal-backdrop" id="twNewsModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2 id="twNewsModalTitle">📰 新聞</h2>
+      <div id="twNewsModalSource" style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); letter-spacing:0.15em; margin-bottom:12px;">SOURCES · 證交所 / 公開資訊觀測站 / 鉅亨網 / 經濟日報 / 工商時報 / 中央社 / Yahoo 股市 / MoneyDJ</div>
+      <div id="twNewsModalBody" style="max-height: 60vh; overflow-y: auto;"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="refreshOneStockNews()" id="twNewsRefreshOneBtn">🔄 重新抓取</button>
+        <button class="btn btn-primary" onclick="closeTwNewsModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 台股技術分析 Modal ============ -->
+  <div class="modal-backdrop" id="twAnalysisModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2 id="twAnalysisModalTitle">📊 技術分析</h2>
+      <div id="twAnalysisModalSource" style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); letter-spacing:0.15em; margin-bottom:12px;">SOURCES · 證交所 / 公開資訊觀測站 / 鉅亨網 / Yahoo 股市 / MoneyDJ</div>
+      <div id="twAnalysisModalBody" style="max-height: 60vh; overflow-y: auto;"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="refreshOneStockAnalysis()" id="twAnalysisRefreshBtn">🔄 重新分析</button>
+        <button class="btn btn-primary" onclick="closeTwAnalysisModal()">關閉</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============ 持股 Modal ============ -->
@@ -5544,8 +5594,14 @@ ${userQuery}`;
   const TW_STORAGE = {
     holdings: 'tw_holdings_v1',
     txns: 'tw_transactions_v1',
-    realized: 'tw_realized_v1'   // 已實現損益（賣出時累積）
+    realized: 'tw_realized_v1',  // 已實現損益（賣出時累積）
+    news: 'tw_news_v1',          // { lastFetch: 'YYYY-MM-DD', perStock: { symbol: { fetchedAt, items: [...] } } }
+    analysis: 'tw_analysis_v1'   // { perStock: { symbol: { fetchedAt, scoreBuy, scoreSell, summary, reasoning } } }
   };
+
+  // News / Analysis state
+  let twNewsState = { lastFetch: '', perStock: {} };
+  let twAnalysisState = { perStock: {} };
 
   // ===== 台股常見股票/ETF 內建清單（約 250 檔） =====
   const TW_STOCKS = [
@@ -5761,8 +5817,12 @@ ${userQuery}`;
     catch (e) { twTxns = []; }
     try { const r = await readKey(TW_STORAGE.realized); twRealizedPnL = r ? Number(r) : 0; }
     catch (e) { twRealizedPnL = 0; }
+    await loadTwNewsAnalysis();
     renderTwStockStats();
     renderHoldings();
+    renderTwNewsFeed();
+    // 自動觸發：若今天 8AM 後尚未抓且有 API key + 有持股 → 開始抓
+    checkAutoFetchTwNews();
   }
   async function saveTwHoldings() { await writeKey(TW_STORAGE.holdings, JSON.stringify(twHoldings)); }
   async function saveTwTxns() { await writeKey(TW_STORAGE.txns, JSON.stringify(twTxns)); }
@@ -5895,6 +5955,8 @@ ${userQuery}`;
           <button class="hc-mini-btn" onclick="openHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
           <button class="hc-mini-btn" onclick="openTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
           <button class="hc-mini-btn" onclick="toggleHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
+          <button class="hc-mini-btn" onclick="openTwStockNews('${escape(h.symbol)}','${escape(h.name)}'); event.stopPropagation();">📰 新聞</button>
+          <button class="hc-mini-btn" onclick="openTwStockAnalysis('${escape(h.symbol)}','${escape(h.name)}'); event.stopPropagation();">📊 技術分析</button>
         </div>
         <div class="hc-txn-list">${txnHtml}</div>
       </div>
@@ -8595,9 +8657,326 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     startStream();
   }
 
-  // ===== 動態新聞功能（stub，避免按鈕報錯，完整實作下個 commit）=====
-  function refreshAllTwNews() {
-    showToast('新聞功能開發中，下個版本上線');
+  // =================================================================
+  // ===== 台股新聞 + 技術分析（Anthropic web_search tool 整合）=====
+  // =================================================================
+
+  const TW_NEWS_SOURCES = '證交所（twse.com.tw）、公開資訊觀測站（mops.twse.com.tw）、鉅亨網（cnyes.com）、經濟日報（money.udn.com）、工商時報（ctee.com.tw）、中央社（cna.com.tw）、Yahoo 股市（tw.stock.yahoo.com）、MoneyDJ（moneydj.com）、自由時報財經';
+
+  // 共用：呼叫 Anthropic API + web_search tool
+  async function callClaudeWithWebSearch(prompt) {
+    const apiKey = await readKey(AI_KEY_STORAGE);
+    if (!apiKey) throw new Error('尚未設定 Anthropic API Key。請至「投資翻倍」或「以小搏大」設定');
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 2500,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`API ${response.status}: ${errText.slice(0, 240)}`);
+    }
+    const data = await response.json();
+    // 取出所有 text block（過濾掉 tool_use、tool_result）拼成回應
+    const textBlocks = (data.content || []).filter(c => c.type === 'text').map(c => c.text);
+    return textBlocks.join('\n').trim();
+  }
+
+  // 從 text 抽出 JSON 物件
+  function parseJsonFromText(text) {
+    if (!text) throw new Error('回應為空');
+    // 先試 ```json ... ```
+    const fence = text.match(/```(?:json)?\s*([\s\S]+?)```/);
+    if (fence) return JSON.parse(fence[1].trim());
+    // 再試找第一個 { ... } 區塊
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));
+    throw new Error('回應無法解析為 JSON：' + text.slice(0, 200));
+  }
+
+  // 抓單一股票新聞
+  async function fetchStockNews(symbol, name) {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `搜尋台股 ${symbol} ${name} 在 ${today} 前後 2 天的最新新聞。
+**只接受權威媒體**：${TW_NEWS_SOURCES}。
+
+請以 JSON 格式回傳（**只回 JSON、不要任何前後說明**）：
+\`\`\`json
+{
+  "items": [
+    { "title": "標題", "source": "鉅亨網", "url": "https://...", "date": "2026-05-25", "summary": "1-2 句摘要" }
+  ]
+}
+\`\`\`
+最多 5 則，沒有則回 {"items":[]}。`;
+    const text = await callClaudeWithWebSearch(prompt);
+    return parseJsonFromText(text);
+  }
+
+  // 抓單一股票技術分析
+  async function fetchStockAnalysis(symbol, name) {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `對台股 ${symbol} ${name} 做技術分析（${today}）。
+
+搜尋：最新收盤價、5/10/20/60 日均線、成交量、KD/RSI/MACD、三大法人買賣超。
+來源優先：${TW_NEWS_SOURCES}。
+
+整合後回傳買進 / 賣出評分與理由（**只回 JSON、不要任何前後說明**）：
+\`\`\`json
+{
+  "scoreBuy": 7,
+  "scoreSell": 3,
+  "summary": "一句話總結目前態勢",
+  "reasoning": ["技術面 ...", "籌碼面 ...", "基本面 ..."],
+  "currentPrice": 600,
+  "ma5": null,
+  "ma20": null,
+  "ma60": null
+}
+\`\`\`
+scoreBuy / scoreSell 各 1-10 整數，10 = 強烈買 / 強烈賣。理由 3-5 點。`;
+    const text = await callClaudeWithWebSearch(prompt);
+    return parseJsonFromText(text);
+  }
+
+  // 載入儲存的新聞 / 分析
+  async function loadTwNewsAnalysis() {
+    try {
+      const n = await readKey(TW_STORAGE.news);
+      twNewsState = n ? JSON.parse(n) : { lastFetch: '', perStock: {} };
+    } catch (e) { twNewsState = { lastFetch: '', perStock: {} }; }
+    try {
+      const a = await readKey(TW_STORAGE.analysis);
+      twAnalysisState = a ? JSON.parse(a) : { perStock: {} };
+    } catch (e) { twAnalysisState = { perStock: {} }; }
+  }
+  async function saveTwNewsState() { await writeKey(TW_STORAGE.news, JSON.stringify(twNewsState)); }
+  async function saveTwAnalysisState() { await writeKey(TW_STORAGE.analysis, JSON.stringify(twAnalysisState)); }
+
+  // 抓所有持股的新聞（依序，避免並發太多）
+  async function refreshAllTwNews() {
+    if (twHoldings.length === 0) { showToast('尚無持股'); return; }
+    const apiKey = await readKey(AI_KEY_STORAGE);
+    if (!apiKey) {
+      showToast('請先設定 Anthropic API Key（到投資翻倍模組的 AI 設定）');
+      return;
+    }
+    const btn = document.getElementById('twNewsRefreshBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '◌ 抓取中…'; }
+    const today = new Date().toISOString().slice(0, 10);
+    let ok = 0, fail = 0;
+    for (const h of twHoldings) {
+      try {
+        if (btn) btn.textContent = `◌ ${ok + fail + 1}/${twHoldings.length} ${h.symbol}…`;
+        const news = await fetchStockNews(h.symbol, h.name);
+        twNewsState.perStock[h.symbol] = {
+          fetchedAt: new Date().toISOString(),
+          date: today,
+          items: news.items || []
+        };
+        ok++;
+      } catch (e) {
+        console.error('news fetch fail', h.symbol, e);
+        fail++;
+      }
+    }
+    twNewsState.lastFetch = today;
+    await saveTwNewsState();
+    renderTwNewsFeed();
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 立即更新'; }
+    showToast(`完成 · 成功 ${ok} · 失敗 ${fail}`);
+  }
+
+  // 自動觸發：今天 8 點後若尚未抓 → 自動抓
+  async function checkAutoFetchTwNews() {
+    const apiKey = await readKey(AI_KEY_STORAGE);
+    if (!apiKey) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (twNewsState.lastFetch === today) return;
+    if (new Date().getHours() < 8) return;
+    if (twHoldings.length === 0) return;
+    refreshAllTwNews();
+  }
+
+  // ===== 新聞 Modal =====
+  let twCurrentNewsSymbol = null, twCurrentNewsName = null;
+  async function openTwStockNews(symbol, name) {
+    twCurrentNewsSymbol = symbol; twCurrentNewsName = name;
+    document.getElementById('twNewsModalTitle').innerHTML = `📰 <em>${escape(symbol)} ${escape(name)}</em> · 新聞`;
+    const body = document.getElementById('twNewsModalBody');
+    const data = twNewsState.perStock[symbol];
+    if (!data || !data.items || data.items.length === 0) {
+      body.innerHTML = '<div style="text-align:center; padding:30px; color:var(--ink-tertiary);">尚無新聞 · 點下方「🔄 重新抓取」</div>';
+    } else {
+      body.innerHTML = renderNewsList(data);
+    }
+    document.getElementById('twNewsModal').classList.add('active');
+  }
+  function closeTwNewsModal() { document.getElementById('twNewsModal').classList.remove('active'); }
+  async function refreshOneStockNews() {
+    if (!twCurrentNewsSymbol) return;
+    const btn = document.getElementById('twNewsRefreshOneBtn');
+    btn.disabled = true; btn.textContent = '◌ 抓取中…';
+    try {
+      const news = await fetchStockNews(twCurrentNewsSymbol, twCurrentNewsName);
+      twNewsState.perStock[twCurrentNewsSymbol] = {
+        fetchedAt: new Date().toISOString(),
+        date: new Date().toISOString().slice(0, 10),
+        items: news.items || []
+      };
+      await saveTwNewsState();
+      const body = document.getElementById('twNewsModalBody');
+      body.innerHTML = renderNewsList(twNewsState.perStock[twCurrentNewsSymbol]);
+      renderTwNewsFeed();
+      showToast('新聞已更新');
+    } catch (e) {
+      showToast('抓取失敗：' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '🔄 重新抓取';
+    }
+  }
+
+  function renderNewsList(data) {
+    if (!data || !data.items || data.items.length === 0) {
+      return '<div style="text-align:center; padding:30px; color:var(--ink-tertiary);">尚無新聞</div>';
+    }
+    const fetchedLabel = data.fetchedAt ? `更新於 ${new Date(data.fetchedAt).toLocaleString('zh-TW')}` : '';
+    return `
+      <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:10px; letter-spacing:0.1em;">${escape(fetchedLabel)}</div>
+      ${data.items.map(it => `
+        <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:8px;">
+          <div style="font-family:var(--serif); font-size:14px; color:var(--ink-primary); line-height:1.4; margin-bottom:4px;">
+            ${it.url ? `<a href="${escape(it.url)}" target="_blank" style="color:inherit; text-decoration:none;">${escape(it.title || '無標題')} <span style="color:var(--accent); font-size:11px;">↗</span></a>` : escape(it.title || '無標題')}
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.1em; margin-bottom:6px;">${escape(it.source || '')} · ${escape(it.date || '')}</div>
+          ${it.summary ? `<div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.55;">${escape(it.summary)}</div>` : ''}
+        </div>
+      `).join('')}
+    `;
+  }
+
+  // ===== 技術分析 Modal =====
+  let twCurrentAnalysisSymbol = null, twCurrentAnalysisName = null;
+  async function openTwStockAnalysis(symbol, name) {
+    twCurrentAnalysisSymbol = symbol; twCurrentAnalysisName = name;
+    document.getElementById('twAnalysisModalTitle').innerHTML = `📊 <em>${escape(symbol)} ${escape(name)}</em> · 技術分析`;
+    const body = document.getElementById('twAnalysisModalBody');
+    const data = twAnalysisState.perStock[symbol];
+    if (!data) {
+      body.innerHTML = '<div style="text-align:center; padding:30px; color:var(--ink-tertiary);">尚無分析 · 點下方「🔄 重新分析」<br><br><span style="font-size:11px;">會搜尋技術指標 / 籌碼面後給出買進、賣出建議</span></div>';
+    } else {
+      body.innerHTML = renderAnalysisCard(data);
+    }
+    document.getElementById('twAnalysisModal').classList.add('active');
+  }
+  function closeTwAnalysisModal() { document.getElementById('twAnalysisModal').classList.remove('active'); }
+  async function refreshOneStockAnalysis() {
+    if (!twCurrentAnalysisSymbol) return;
+    const btn = document.getElementById('twAnalysisRefreshBtn');
+    btn.disabled = true; btn.textContent = '◌ 分析中…';
+    try {
+      const analysis = await fetchStockAnalysis(twCurrentAnalysisSymbol, twCurrentAnalysisName);
+      twAnalysisState.perStock[twCurrentAnalysisSymbol] = {
+        ...analysis,
+        fetchedAt: new Date().toISOString()
+      };
+      await saveTwAnalysisState();
+      const body = document.getElementById('twAnalysisModalBody');
+      body.innerHTML = renderAnalysisCard(twAnalysisState.perStock[twCurrentAnalysisSymbol]);
+      showToast('技術分析已更新');
+    } catch (e) {
+      showToast('分析失敗：' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '🔄 重新分析';
+    }
+  }
+
+  function renderAnalysisCard(d) {
+    if (!d) return '<div>無資料</div>';
+    const buy = Number(d.scoreBuy) || 0;
+    const sell = Number(d.scoreSell) || 0;
+    const fetchedLabel = d.fetchedAt ? `更新於 ${new Date(d.fetchedAt).toLocaleString('zh-TW')}` : '';
+    const scoreBar = (label, val, color) => {
+      const pct = Math.min(100, Math.max(0, val * 10));
+      return `
+        <div style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; margin-bottom:4px;">
+            <span style="color:${color};">${label}</span>
+            <span style="color:${color}; font-weight:600;">${val}/10</span>
+          </div>
+          <div style="background:var(--bg-elevated); height:10px; border-radius:5px; overflow:hidden;">
+            <div style="background:${color}; height:100%; width:${pct}%; transition:width 0.5s;"></div>
+          </div>
+        </div>
+      `;
+    };
+    return `
+      <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:14px; letter-spacing:0.1em;">${escape(fetchedLabel)}</div>
+      ${scoreBar('買進建議', buy, 'var(--accent)')}
+      ${scoreBar('賣出建議', sell, 'var(--danger)')}
+      <div style="background:var(--bg-elevated); border-left:2px solid var(--accent); padding:10px 14px; margin:14px 0; font-family:var(--serif); font-size:14px; color:var(--ink-primary); line-height:1.5;">
+        ${escape(d.summary || '')}
+      </div>
+      ${(d.currentPrice || d.ma5 || d.ma20 || d.ma60) ? `
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:14px; font-family:var(--mono); font-size:10.5px;">
+          <div style="background:var(--bg-elevated); padding:6px; text-align:center; border-radius:3px;"><div style="color:var(--ink-tertiary); font-size:9px;">現價</div><div style="color:var(--accent); font-family:var(--serif); font-size:13px;">${d.currentPrice ?? '—'}</div></div>
+          <div style="background:var(--bg-elevated); padding:6px; text-align:center; border-radius:3px;"><div style="color:var(--ink-tertiary); font-size:9px;">MA5</div><div style="font-family:var(--serif); font-size:13px;">${d.ma5 ?? '—'}</div></div>
+          <div style="background:var(--bg-elevated); padding:6px; text-align:center; border-radius:3px;"><div style="color:var(--ink-tertiary); font-size:9px;">MA20</div><div style="font-family:var(--serif); font-size:13px;">${d.ma20 ?? '—'}</div></div>
+          <div style="background:var(--bg-elevated); padding:6px; text-align:center; border-radius:3px;"><div style="color:var(--ink-tertiary); font-size:9px;">MA60</div><div style="font-family:var(--serif); font-size:13px;">${d.ma60 ?? '—'}</div></div>
+        </div>
+      ` : ''}
+      <h4 style="font-family:var(--mono); font-size:11px; letter-spacing:0.2em; color:var(--ink-tertiary); margin:14px 0 8px;">為什麼</h4>
+      <ol style="padding-left:20px; line-height:1.7; font-size:13px; color:var(--ink-secondary); margin:0;">
+        ${(d.reasoning || []).map(r => `<li style="margin-bottom:6px;">${escape(r)}</li>`).join('')}
+      </ol>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-top:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">
+        ⚠ 以上分析僅為資訊整理，不構成投資建議。最終決策請自行承擔風險。
+      </div>
+    `;
+  }
+
+  // 渲染新聞主頁面 feed（聚合所有持股的新聞）
+  function renderTwNewsFeed() {
+    const feed = document.getElementById('twNewsFeed');
+    const lastEl = document.getElementById('twNewsLastUpdate');
+    if (lastEl) {
+      lastEl.textContent = twNewsState.lastFetch ? `上次更新 ${twNewsState.lastFetch}` : '尚未更新';
+    }
+    if (!feed) return;
+    // 把所有股票的新聞匯總，按 date 排
+    const allItems = [];
+    Object.entries(twNewsState.perStock || {}).forEach(([symbol, data]) => {
+      const h = twHoldings.find(x => x.symbol === symbol);
+      const stockName = h ? h.name : symbol;
+      (data.items || []).forEach(it => allItems.push({ ...it, symbol, stockName }));
+    });
+    allItems.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (allItems.length === 0) {
+      feed.innerHTML = '<div style="text-align:center; padding:20px; color:var(--ink-tertiary); font-size:13px;">尚無新聞 · 點「立即更新」抓取（需 Anthropic API Key）</div>';
+      return;
+    }
+    feed.innerHTML = allItems.slice(0, 15).map(it => `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:6px;">
+        <div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap;">
+          <span style="font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:0.1em;">${escape(it.symbol)} ${escape(it.stockName)}</span>
+          <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); letter-spacing:0.1em;">${escape(it.source || '')} · ${escape(it.date || '')}</span>
+        </div>
+        <div style="font-family:var(--serif); font-size:13.5px; color:var(--ink-primary); line-height:1.4; margin-top:3px;">
+          ${it.url ? `<a href="${escape(it.url)}" target="_blank" style="color:inherit; text-decoration:none;">${escape(it.title || '')} <span style="color:var(--accent); font-size:11px;">↗</span></a>` : escape(it.title || '')}
+        </div>
+      </div>
+    `).join('');
   }
 
   // canvas 壓縮：最寬 maxW、JPEG quality
