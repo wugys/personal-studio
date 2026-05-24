@@ -349,12 +349,15 @@
   @keyframes slideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
 
   /* === 全域 Breadcrumb 導覽列 === */
-  .breadcrumb-bar {
+  /* 全域永遠隱藏（使用者要求拿掉「首頁/生活規劃/旅遊規劃/...」這條） */
+  .breadcrumb-bar { display: none !important; }
+  /* 以下樣式保留以防未來重新啟用，但 display:none 永遠優先 */
+  .breadcrumb-bar.__legacy {
     position: sticky; top: 0; z-index: 40;
     background: rgba(14, 13, 11, 0.94); backdrop-filter: blur(10px);
     margin: -24px -32px 16px; padding: 10px 32px;
     border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+    align-items: center; gap: 8px; flex-wrap: nowrap;
     overflow-x: auto; scrollbar-width: none;
     min-height: 42px;
   }
