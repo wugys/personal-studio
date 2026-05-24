@@ -3366,6 +3366,27 @@ alter publication supabase_realtime add table party_locations;</pre>
     </div>
   </div>
 
+  <!-- ============ 分享連結 / QR Modal ============ -->
+  <div class="modal-backdrop" id="shareLinkModal">
+    <div class="modal" style="max-width: 460px;">
+      <h2>📤 分享給 <em>團員</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
+        團員用手機**相機 app**直接對著下方 QR Code → 自動跳轉到網站並套用設定。
+      </div>
+      <div style="text-align:center; padding:18px; background:#fff; border-radius:6px; margin-bottom:14px;">
+        <img id="shareQrCode" alt="QR Code" style="width:240px; height:240px; max-width:100%;">
+      </div>
+      <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:6px; letter-spacing:0.1em;">
+        或複製連結（適合電腦間分享，**不適合貼 LINE**）
+      </div>
+      <textarea id="shareLinkText" readonly style="width:100%; min-height:60px; font-family:var(--mono); font-size:10px; background:var(--bg-card); border:1px solid var(--line); color:var(--ink-secondary); padding:8px 10px; border-radius:4px; word-break:break-all; resize:none;"></textarea>
+      <div class="form-actions" style="justify-content:flex-end; gap:8px; margin-top:14px;">
+        <button class="btn" onclick="copyShareLinkText()">📋 複製連結</button>
+        <button class="btn btn-primary" onclick="closeShareLinkModal()">完成</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 新增旅遊 Wizard Modal ============ -->
   <div class="modal-backdrop" id="newTripModal">
     <div class="modal" style="max-width: 680px;">
@@ -5267,7 +5288,7 @@ ${userQuery}`;
 
   loadOpps();
 
-  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal','exportPdfModal','holdingModal','txnModal','batchPriceModal'].forEach(id => {
+  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal','exportPdfModal','holdingModal','txnModal','batchPriceModal','shareLinkModal'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', (e) => {
       if (e.target.id === id) e.currentTarget.classList.remove('active');
@@ -9514,7 +9535,8 @@ ${daysBrief}
   }
 
   // === 分享連結（含 trip + multi config）===
-  async function copyShareLinkForParty() {
+  let _lastShareLink = '';
+  function copyShareLinkForParty() {
     if (!ITINERARY) { showToast('沒有作用中的 trip'); return; }
     const url = document.getElementById('multiSupabaseUrl').value.trim();
     const key = document.getElementById('multiSupabaseKey').value.trim();
@@ -9526,14 +9548,25 @@ ${daysBrief}
     };
     const payload = b64UrlEncode(JSON.stringify(cfg));
     const base = 'https://personal-studio-theta.vercel.app/';
-    // 用 # hash 不用 ? query：避開 LINE / 伺服器中間人對 query 的處理
     const link = `${base}#trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
-
+    _lastShareLink = link;
+    // 用 QR Code 服務（公開 API，圖檔回傳）
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=480x480&ecc=M&data=${encodeURIComponent(link)}`;
+    document.getElementById('shareQrCode').src = qrUrl;
+    document.getElementById('shareLinkText').value = link;
+    document.getElementById('shareLinkModal').classList.add('active');
+  }
+  function closeShareLinkModal() {
+    document.getElementById('shareLinkModal').classList.remove('active');
+  }
+  async function copyShareLinkText() {
     try {
-      await navigator.clipboard.writeText(link);
-      showToast('✓ 分享連結已複製 · 貼到 LINE 給團員');
+      await navigator.clipboard.writeText(_lastShareLink);
+      showToast('連結已複製');
     } catch (e) {
-      prompt('複製失敗，請手動複製這條連結：', link);
+      document.getElementById('shareLinkText').select();
+      try { document.execCommand('copy'); showToast('連結已複製'); }
+      catch (e2) { showToast('複製失敗，請手動全選複製'); }
     }
   }
 
