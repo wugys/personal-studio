@@ -9985,9 +9985,22 @@ ${daysBrief}
         try {
           cfg = JSON.parse(decoded);
         } catch (e) {
-          const dbg = `[JSON PARSE FAILED]\nDecoded: ${decoded.slice(0, 500)}\nError: ${e.message}\nURL: ${window.location.href.slice(0, 200)}`;
-          await showCopiableError('JSON 格式錯誤', dbg);
-          return;
+          // iOS LINE in-app browser 偶爾會把 " 變成 &quot; — 試一次 HTML entity 還原
+          if (decoded.indexOf('&') !== -1) {
+            try {
+              const unescaped = unescapeHtmlEntities(decoded);
+              cfg = JSON.parse(unescaped);
+              decoded = unescaped;  // 讓下方使用乾淨版本
+            } catch (e2) {
+              const dbg = `[JSON PARSE FAILED]\nDecoded: ${decoded.slice(0, 500)}\nFirst err: ${e.message}\nHTML-unescape retry err: ${e2.message}\nURL: ${window.location.href.slice(0, 200)}\nUA: ${navigator.userAgent}`;
+              await showCopiableError('JSON 格式錯誤', dbg);
+              return;
+            }
+          } else {
+            const dbg = `[JSON PARSE FAILED]\nDecoded: ${decoded.slice(0, 500)}\nError: ${e.message}\nURL: ${window.location.href.slice(0, 200)}\nUA: ${navigator.userAgent}`;
+            await showCopiableError('JSON 格式錯誤', dbg);
+            return;
+          }
         }
         // 讀取本機已有的 multi config 並合併（保留 displayName 等）
         let existing = {};
