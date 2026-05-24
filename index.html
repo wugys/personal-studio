@@ -9853,28 +9853,51 @@ ${daysBrief}
 
   // === 顯示錯誤 + 自動複製內容到剪貼簿（讓使用者可以貼給開發者）===
   async function showCopiableError(title, debugInfo) {
-    const fullText = `${title}\n\n${debugInfo}`;
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(fullText);
-      copied = true;
-    } catch (e) {
+    const fullText = `⚠ ${title}\n\n${debugInfo}`;
+    // best-effort 寫剪貼簿（部分手機瀏覽器會默默失敗 — 不影響顯示）
+    try { await navigator.clipboard.writeText(fullText); } catch (e) {
       try {
         const ta = document.createElement('textarea');
-        ta.value = fullText;
-        ta.style.position = 'fixed'; ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        copied = true;
+        ta.value = fullText; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
       } catch (e2) {}
     }
-    if (copied) {
-      alert(`⚠ ${title}\n\n✓ 錯誤訊息已自動複製到剪貼簿\n\n請：\n1. 開啟跟 Claude 的對話\n2. 在輸入框長按 → 貼上\n3. 送出 → Claude 就能診斷\n\n或改用「設定碼」備案（複製設定碼 → 手機貼上設定碼）。`);
-    } else {
-      alert(`⚠ ${title}\n\n${debugInfo}`);
+    // 永遠把完整訊息攤在頁面上 — 不依賴剪貼簿，使用者可截圖或手動長按複製
+    let modal = document.getElementById('errorDisplayModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'errorDisplayModal';
+      modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:99999; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
+      modal.innerHTML = `
+        <div style="background:#1c1a14; border:1px solid #d4a574; border-radius:6px; max-width:520px; width:100%; max-height:90vh; display:flex; flex-direction:column; color:#f4ead5; font-family:system-ui, sans-serif;">
+          <div style="padding:14px 18px; border-bottom:1px solid rgba(244,234,213,0.15); font-family:'Fraunces',serif; font-size:18px; color:#d4a574;" id="errDispTitle">錯誤</div>
+          <textarea id="errDispBody" readonly style="flex:1; min-height:300px; padding:14px 18px; background:#0e0d0b; color:#f4ead5; border:none; resize:none; font-family:monospace; font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-all; outline:none;"></textarea>
+          <div style="padding:12px 18px; border-top:1px solid rgba(244,234,213,0.15); display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="errDispCopy" style="flex:1; min-width:100px; padding:10px 14px; background:#d4a574; color:#0e0d0b; border:none; border-radius:4px; font-family:monospace; font-size:12px; letter-spacing:0.1em; cursor:pointer;">📋 複製訊息</button>
+            <button id="errDispClose" style="flex:1; min-width:100px; padding:10px 14px; background:transparent; color:#f4ead5; border:1px solid rgba(244,234,213,0.3); border-radius:4px; font-family:monospace; font-size:12px; letter-spacing:0.1em; cursor:pointer;">關閉</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal.querySelector('#errDispClose').onclick = () => modal.remove();
+      modal.querySelector('#errDispCopy').onclick = async () => {
+        const txt = modal.querySelector('#errDispBody').value;
+        const btn = modal.querySelector('#errDispCopy');
+        try {
+          await navigator.clipboard.writeText(txt);
+          btn.textContent = '✓ 已複製';
+        } catch (e) {
+          const ta = modal.querySelector('#errDispBody');
+          ta.select(); ta.setSelectionRange(0, 99999);
+          try { document.execCommand('copy'); btn.textContent = '✓ 已複製'; }
+          catch { btn.textContent = '⚠ 請手動長按選取複製'; }
+        }
+        setTimeout(() => { btn.textContent = '📋 複製訊息'; }, 2200);
+      };
     }
+    modal.querySelector('#errDispTitle').textContent = title;
+    modal.querySelector('#errDispBody').value = fullText;
   }
 
   // === 啟動時處理 URL 參數（分享連結）===
