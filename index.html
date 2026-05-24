@@ -2911,8 +2911,14 @@
         <div class="gather-label">下次集合倒數</div>
         <div class="gather-countdown" id="gatherCountdown">—</div>
         <div class="gather-target" id="gatherTarget">尚未設定集合時間</div>
+        <!-- 集合地點照片 -->
+        <div id="gatherPhotoDisplay" style="display:none; margin-top:14px;">
+          <img id="gatherPhotoImg" style="width:100%; max-width:480px; border-radius:6px; display:block; margin:0 auto; border:1px solid var(--line);">
+          <div style="text-align:center; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.15em; margin-top:6px;">集合地點 · GATHER POINT</div>
+        </div>
         <div class="gather-actions">
           <button class="btn btn-primary" onclick="openGatherModal()">⏰ 設定集合時間</button>
+          <button class="btn" id="gatherNavBtn" onclick="navigateToGather()" style="display:none;">🧭 導航回集合點</button>
           <button class="btn" onclick="clearGather()">清除</button>
         </div>
       </div>
@@ -3684,6 +3690,27 @@ alter publication supabase_realtime add table party_locations;</pre>
         <div class="form-group">
           <label class="form-label">地點 / 描述</label>
           <input type="text" class="form-input" id="gatherDesc" placeholder="例如：飯店大廳 / 巴士前">
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">緯度 (lat)</label>
+            <input type="number" step="any" class="form-input" id="gatherLat" placeholder="33.2616">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">經度 (lng)</label>
+            <input type="number" step="any" class="form-input" id="gatherLng" placeholder="103.9165">
+          </div>
+        </div>
+        <div class="form-group">
+          <button type="button" class="btn btn-sm" onclick="useCurrentLocationForGather()" style="width:100%;">📍 使用我現在的位置自動填入</button>
+          <div style="font-size:11px; color:var(--ink-tertiary); margin-top:4px;">用於「導航回集合點」功能。空白也行，只是無法導航</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">集合地點照片</label>
+          <input type="file" id="gatherPhotoFile" accept="image/*" capture="environment" onchange="onGatherPhotoSelected(event)" style="display:none;">
+          <button type="button" class="btn btn-sm" onclick="document.getElementById('gatherPhotoFile').click()" style="width:100%;">📷 拍照 / 選照片</button>
+          <div id="gatherPhotoPreview" style="margin-top:8px; min-height:0;"></div>
+          <input type="hidden" id="gatherPhotoData" value="">
         </div>
         <div class="form-row">
           <div class="form-group" style="margin:0;">
@@ -8387,17 +8414,99 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     document.getElementById('gatherDesc').value = trvGather?.desc || '飯店大廳';
     document.getElementById('gatherWarn').value = trvGather?.warn || '30';
     document.getElementById('gatherWarn2').value = trvGather?.warn2 || '5';
+    document.getElementById('gatherLat').value = trvGather?.lat ?? '';
+    document.getElementById('gatherLng').value = trvGather?.lng ?? '';
+    document.getElementById('gatherPhotoData').value = trvGather?.photo || '';
+    const preview = document.getElementById('gatherPhotoPreview');
+    if (trvGather?.photo) {
+      preview.innerHTML = `<img src="${trvGather.photo}" style="max-width:100%; max-height:160px; border-radius:4px; border:1px solid var(--line);"><div style="font-size:10px; color:var(--ink-tertiary); margin-top:4px;">點上方按鈕可重新拍照取代</div>`;
+    } else {
+      preview.innerHTML = '';
+    }
     document.getElementById('gatherModal').classList.add('active');
   }
   function closeGatherModal() { document.getElementById('gatherModal').classList.remove('active'); }
+
+  // 用 GPS 自動填入經緯度
+  function useCurrentLocationForGather() {
+    if (!navigator.geolocation) { showToast('此瀏覽器不支援定位'); return; }
+    showToast('定位中…');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        document.getElementById('gatherLat').value = pos.coords.latitude.toFixed(6);
+        document.getElementById('gatherLng').value = pos.coords.longitude.toFixed(6);
+        showToast('已填入目前位置');
+      },
+      (err) => showToast('定位失敗：' + err.message),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  // 照片選擇後：壓縮成 base64 後放進 hidden input 與 preview
+  async function onGatherPhotoSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast('請選擇圖片檔'); return; }
+    showToast('壓縮照片中…');
+    try {
+      const dataUrl = await compressImage(file, 800, 0.7);
+      document.getElementById('gatherPhotoData').value = dataUrl;
+      const sizeKb = Math.round(dataUrl.length * 0.73 / 1024);
+      document.getElementById('gatherPhotoPreview').innerHTML =
+        `<img src="${dataUrl}" style="max-width:100%; max-height:160px; border-radius:4px; border:1px solid var(--line);"><div style="font-size:10px; color:var(--ink-tertiary); margin-top:4px;">已選 · 約 ${sizeKb} KB · 儲存後生效</div>`;
+    } catch (err) {
+      showToast('照片處理失敗：' + err.message);
+    }
+  }
+
+  // canvas 壓縮：最寬 maxW、JPEG quality
+  function compressImage(file, maxW, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('讀檔失敗'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('解析失敗'));
+        img.onload = () => {
+          const w = img.width > maxW ? maxW : img.width;
+          const h = img.width > maxW ? Math.round(img.height * maxW / img.width) : img.height;
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 開啟 Google Maps 導航：從目前位置到集合點
+  function navigateToGather() {
+    if (!trvGather?.lat || !trvGather?.lng) {
+      showToast('集合點無 GPS 座標，請編輯設定填入');
+      return;
+    }
+    const dest = `${trvGather.lat},${trvGather.lng}`;
+    // 用 directions API：destination 指定，origin 預設 current location
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=walking`;
+    window.open(url, '_blank');
+  }
+
   async function saveGather(e) {
     e.preventDefault();
+    const latStr = document.getElementById('gatherLat').value.trim();
+    const lngStr = document.getElementById('gatherLng').value.trim();
+    const photo = document.getElementById('gatherPhotoData').value || '';
     trvGather = {
       date: document.getElementById('gatherDate').value,
       time: document.getElementById('gatherTime').value,
       desc: document.getElementById('gatherDesc').value.trim() || '集合點',
       warn: Number(document.getElementById('gatherWarn').value),
       warn2: Number(document.getElementById('gatherWarn2').value),
+      lat: latStr ? Number(latStr) : null,
+      lng: lngStr ? Number(lngStr) : null,
+      photo: photo,
       warned1: false, warned2: false
     };
     trvShownGatherPopup = false;
@@ -8415,13 +8524,28 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   }
   function renderGather() {
     const card = document.getElementById('gatherCard');
+    const photoDisplay = document.getElementById('gatherPhotoDisplay');
+    const navBtn = document.getElementById('gatherNavBtn');
     if (!trvGather) {
       document.getElementById('gatherCountdown').textContent = '—';
       document.getElementById('gatherTarget').textContent = '尚未設定集合時間';
       card.classList.remove('urgent');
+      if (photoDisplay) photoDisplay.style.display = 'none';
+      if (navBtn) navBtn.style.display = 'none';
       return;
     }
     document.getElementById('gatherTarget').innerHTML = `${escape(trvGather.date)} ${escape(trvGather.time)} · <em style="color:var(--accent); font-family:var(--serif); font-style:italic;">${escape(trvGather.desc)}</em>`;
+    // 顯示集合地點照片
+    if (photoDisplay && trvGather.photo) {
+      document.getElementById('gatherPhotoImg').src = trvGather.photo;
+      photoDisplay.style.display = 'block';
+    } else if (photoDisplay) {
+      photoDisplay.style.display = 'none';
+    }
+    // 顯示導航按鈕（需有 GPS 座標）
+    if (navBtn) {
+      navBtn.style.display = (trvGather.lat && trvGather.lng) ? '' : 'none';
+    }
   }
   function tickGather() {
     if (!trvGather) return;
