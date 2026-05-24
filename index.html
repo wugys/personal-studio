@@ -9708,9 +9708,17 @@ ${daysBrief}
         } catch (e) { lastErr = e; }
       }
       if (!cfg) {
-        const dbg = `解析失敗：${lastErr ? lastErr.message : '所有解碼方式皆失敗'}\n剪貼簿長度：${text.length}\n前 60 字：${text.slice(0, 60)}\n後 30 字：${text.slice(-30)}`;
-        showToast('設定碼解析失敗（已將細節印到 console）');
-        console.error(dbg);
+        const dbg = [
+          `錯誤：${lastErr ? lastErr.message : '所有解碼方式皆失敗'}`,
+          `剪貼簿長度：${text.length}`,
+          `前 80 字：${text.slice(0, 80)}`,
+          `後 40 字：${text.slice(-40)}`,
+          `去白空後的 b64 長度：${b64.length}`,
+          `b64 前 60 字：${b64.slice(0, 60)}`,
+          `b64 後 20 字：${b64.slice(-20)}`,
+          `User-Agent：${navigator.userAgent}`
+        ].join('\n');
+        await showCopiableError('設定碼解析失敗', dbg);
         return;
       }
       if (cfg.liffId) document.getElementById('multiLiffId').value = cfg.liffId;
