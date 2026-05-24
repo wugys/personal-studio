@@ -508,7 +508,10 @@
   }
   .form-textarea { min-height: 80px; resize: vertical; }
   .form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--accent); background: var(--bg-card-hover); }
-  .form-row { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: end; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+  /* 含 emoji-input 的 row（小圖示 + 名稱）保留原本 auto + 1fr 設計 */
+  .form-row:has(.emoji-input) { grid-template-columns: auto 1fr; }
+  .form-input, .form-textarea, .form-select { box-sizing: border-box; max-width: 100%; }
   .emoji-input { width: 60px; text-align: center; font-size: 22px; padding: 8px; }
   .form-actions {
     display: flex; gap: 12px; justify-content: space-between;
@@ -886,7 +889,16 @@
     .qa-chip { padding: 8px 12px; font-size: 12.5px; }
     .control-right { justify-content: space-between; }
     .api-header { flex-direction: column; align-items: flex-start; }
-    .modal { padding: 26px 20px; }
+    .modal { padding: 26px 20px; max-width: calc(100vw - 24px); }
+    .form-row { grid-template-columns: 1fr; gap: 14px; }
+    /* emoji-input row 仍要橫向，否則圖示獨佔一行很怪 */
+    .form-row:has(.emoji-input) { grid-template-columns: auto 1fr; }
+    .form-input, .form-textarea, .form-select {
+      font-size: 16px !important;   /* 防 iOS 自動 zoom-in */
+      padding: 12px 14px;
+      width: 100%;
+    }
+    .form-label { font-size: 11px; }
     .group { padding: 16px 14px; }
     .group-header { margin-bottom: 14px; padding-bottom: 10px; }
     .group-title { font-size: 19px; }
