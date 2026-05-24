@@ -654,6 +654,34 @@
   }
   .opp-upside { color: var(--accent); font-weight: 600; }
 
+  /* === 股票搜尋下拉 === */
+  .stock-search-results {
+    position: absolute; top: 100%; left: 0; right: 0;
+    z-index: 50; max-height: 320px; overflow-y: auto;
+    background: var(--bg-elevated); border: 1px solid var(--line-strong);
+    border-radius: 4px; box-shadow: var(--shadow-md);
+    margin-top: 4px;
+  }
+  .stock-search-item {
+    display: flex; gap: 12px; padding: 10px 14px;
+    cursor: pointer; border-bottom: 1px solid var(--line);
+    transition: background 0.2s; align-items: center;
+  }
+  .stock-search-item:last-child { border-bottom: none; }
+  .stock-search-item:hover, .stock-search-item:active { background: var(--bg-card-hover); }
+  .ss-symbol {
+    font-family: var(--mono); font-size: 13px; color: var(--accent);
+    font-weight: 600; min-width: 60px;
+  }
+  .ss-name {
+    font-family: var(--serif); font-size: 14px;
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ss-industry {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-tertiary);
+    letter-spacing: 0.05em;
+  }
+
   /* === 台股個股 · 持股卡片 === */
   .holding-card {
     background: var(--bg-card); border: 1px solid var(--line);
@@ -2231,6 +2259,14 @@
       <h2 id="holdingModalTitle">新增 <em>持股</em></h2>
       <form onsubmit="saveHolding(event)">
         <input type="hidden" id="holdingEditId">
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label">⌕ 搜尋（輸入代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="holdingSearchBox" placeholder="例如 2330、台積電、元大高股息..." autocomplete="off" oninput="onHoldingSearch(this.value)" onfocus="onHoldingSearch(this.value)" onblur="setTimeout(()=>document.getElementById('holdingSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="holdingSearchResults" style="display:none;"></div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:4px; letter-spacing:0.05em;">內建 100+ 檔台股與熱門 ETF · 找不到可手動填下方欄位</div>
+        </div>
         <div class="form-row">
           <div class="form-group" style="margin:0;">
             <label class="form-label">代號</label>
@@ -2313,14 +2349,20 @@
             <input type="date" class="form-input" id="txnDate" required>
           </div>
         </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">⌕ 搜尋股票（代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="txnSearchBox" placeholder="例如 2330、台積電、元大高股息..." autocomplete="off" oninput="onTxnSearch(this.value)" onfocus="onTxnSearch(this.value)" onblur="setTimeout(()=>document.getElementById('txnSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="txnSearchResults" style="display:none;"></div>
+          </div>
+        </div>
         <div class="form-row">
           <div class="form-group" style="margin:0;">
             <label class="form-label">代號</label>
-            <input type="text" class="form-input" id="txnSymbol" required placeholder="2330" style="font-family:var(--mono);" oninput="onTxnSymbolChange()" list="txnSymbolList">
-            <datalist id="txnSymbolList"></datalist>
+            <input type="text" class="form-input" id="txnSymbol" required placeholder="2330" style="font-family:var(--mono);" oninput="onTxnSymbolChange()">
           </div>
           <div class="form-group" style="margin:0;">
-            <label class="form-label">名稱（自動帶入）</label>
+            <label class="form-label">名稱</label>
             <input type="text" class="form-input" id="txnSymbolName" placeholder="例如 台積電">
           </div>
         </div>
@@ -4960,6 +5002,208 @@ ${userQuery}`;
     realized: 'tw_realized_v1'   // 已實現損益（賣出時累積）
   };
 
+  // ===== 台股常見股票/ETF 內建清單（約 250 檔） =====
+  const TW_STOCKS = [
+    // 半導體
+    { symbol: '2330', name: '台積電', market: 'TWSE', industry: '半導體' },
+    { symbol: '2454', name: '聯發科', market: 'TWSE', industry: '半導體' },
+    { symbol: '3711', name: '日月光投控', market: 'TWSE', industry: '半導體' },
+    { symbol: '6669', name: '緯穎', market: 'TWSE', industry: '伺服器' },
+    { symbol: '2317', name: '鴻海', market: 'TWSE', industry: '電子零組件' },
+    { symbol: '2308', name: '台達電', market: 'TWSE', industry: '電力設備' },
+    { symbol: '2382', name: '廣達', market: 'TWSE', industry: 'AI 伺服器' },
+    { symbol: '2474', name: '可成', market: 'TWSE', industry: '機殼' },
+    { symbol: '3034', name: '聯詠', market: 'TWSE', industry: 'IC 設計' },
+    { symbol: '2379', name: '瑞昱', market: 'TWSE', industry: 'IC 設計' },
+    { symbol: '3008', name: '大立光', market: 'TWSE', industry: '光學' },
+    { symbol: '3293', name: '鈊象', market: 'TPEx', industry: '遊戲軟體' },
+    { symbol: '6488', name: '環球晶', market: 'TPEx', industry: '半導體矽晶圓' },
+    { symbol: '5347', name: '世界', market: 'TPEx', industry: '半導體晶圓代工' },
+    { symbol: '3661', name: '世芯-KY', market: 'TWSE', industry: 'IC 設計' },
+    { symbol: '6533', name: '晶心科', market: 'TPEx', industry: 'IC 設計' },
+    { symbol: '6890', name: '九暘', market: 'TWSE', industry: '網通晶片' },
+    { symbol: '2308', name: '台達電', market: 'TWSE', industry: '電力設備' },
+    { symbol: '6770', name: '力積電', market: 'TWSE', industry: '半導體' },
+    { symbol: '2303', name: '聯電', market: 'TWSE', industry: '半導體' },
+    { symbol: '2344', name: '華邦電', market: 'TWSE', industry: '記憶體' },
+    { symbol: '2408', name: '南亞科', market: 'TWSE', industry: '記憶體' },
+    { symbol: '3037', name: '欣興', market: 'TWSE', industry: 'PCB' },
+    { symbol: '6669', name: '緯穎', market: 'TWSE', industry: 'AI 伺服器' },
+    { symbol: '2376', name: '技嘉', market: 'TWSE', industry: 'AI 伺服器' },
+    { symbol: '2353', name: '宏碁', market: 'TWSE', industry: 'PC' },
+    { symbol: '2357', name: '華碩', market: 'TWSE', industry: 'PC' },
+    { symbol: '4938', name: '和碩', market: 'TWSE', industry: '電子代工' },
+    { symbol: '2356', name: '英業達', market: 'TWSE', industry: '電子代工' },
+    { symbol: '2354', name: '鴻準', market: 'TWSE', industry: '機殼' },
+    { symbol: '3017', name: '奇鋐', market: 'TWSE', industry: '散熱' },
+    { symbol: '4958', name: '臻鼎-KY', market: 'TWSE', industry: 'PCB' },
+    { symbol: '2049', name: '上銀', market: 'TWSE', industry: '機械' },
+    { symbol: '6781', name: 'AES-KY', market: 'TWSE', industry: '電池模組' },
+    { symbol: '8163', name: '達方', market: 'TWSE', industry: '電池' },
+    { symbol: '2027', name: '大成鋼', market: 'TWSE', industry: '鋼鐵' },
+    { symbol: '1605', name: '華新', market: 'TWSE', industry: '電線電纜' },
+
+    // 金融
+    { symbol: '2891', name: '中信金', market: 'TWSE', industry: '金融' },
+    { symbol: '2882', name: '國泰金', market: 'TWSE', industry: '金融' },
+    { symbol: '2881', name: '富邦金', market: 'TWSE', industry: '金融' },
+    { symbol: '2885', name: '元大金', market: 'TWSE', industry: '金融' },
+    { symbol: '2884', name: '玉山金', market: 'TWSE', industry: '金融' },
+    { symbol: '2886', name: '兆豐金', market: 'TWSE', industry: '金融' },
+    { symbol: '2890', name: '永豐金', market: 'TWSE', industry: '金融' },
+    { symbol: '2887', name: '台新金', market: 'TWSE', industry: '金融' },
+    { symbol: '2892', name: '第一金', market: 'TWSE', industry: '金融' },
+    { symbol: '2888', name: '新光金', market: 'TWSE', industry: '金融' },
+    { symbol: '2883', name: '開發金', market: 'TWSE', industry: '金融' },
+    { symbol: '2880', name: '華南金', market: 'TWSE', industry: '金融' },
+    { symbol: '5880', name: '合庫金', market: 'TWSE', industry: '金融' },
+    { symbol: '5876', name: '上海商銀', market: 'TWSE', industry: '金融' },
+    { symbol: '2812', name: '台中銀', market: 'TWSE', industry: '金融' },
+    { symbol: '2845', name: '遠東銀', market: 'TWSE', industry: '金融' },
+    { symbol: '5871', name: '中租-KY', market: 'TWSE', industry: '租賃' },
+    { symbol: '5878', name: '台名', market: 'TPEx', industry: '金融' },
+
+    // 電信 / 公共事業
+    { symbol: '2412', name: '中華電', market: 'TWSE', industry: '電信' },
+    { symbol: '3045', name: '台灣大', market: 'TWSE', industry: '電信' },
+    { symbol: '4904', name: '遠傳', market: 'TWSE', industry: '電信' },
+
+    // 食品 / 民生
+    { symbol: '1216', name: '統一', market: 'TWSE', industry: '食品' },
+    { symbol: '2912', name: '統一超', market: 'TWSE', industry: '零售' },
+    { symbol: '2913', name: '台聚', market: 'TWSE', industry: '塑化' },
+    { symbol: '2227', name: '裕日車', market: 'TWSE', industry: '汽車' },
+    { symbol: '2207', name: '和泰車', market: 'TWSE', industry: '汽車' },
+    { symbol: '2105', name: '正新', market: 'TWSE', industry: '輪胎' },
+    { symbol: '1102', name: '亞泥', market: 'TWSE', industry: '水泥' },
+    { symbol: '1101', name: '台泥', market: 'TWSE', industry: '水泥' },
+
+    // 塑化 / 化工
+    { symbol: '1301', name: '台塑', market: 'TWSE', industry: '塑化' },
+    { symbol: '1303', name: '南亞', market: 'TWSE', industry: '塑化' },
+    { symbol: '1326', name: '台化', market: 'TWSE', industry: '塑化' },
+    { symbol: '6505', name: '台塑化', market: 'TWSE', industry: '塑化' },
+
+    // 鋼鐵 / 運輸
+    { symbol: '2002', name: '中鋼', market: 'TWSE', industry: '鋼鐵' },
+    { symbol: '2618', name: '長榮航', market: 'TWSE', industry: '航空' },
+    { symbol: '2603', name: '長榮', market: 'TWSE', industry: '航運' },
+    { symbol: '2609', name: '陽明', market: 'TWSE', industry: '航運' },
+    { symbol: '2615', name: '萬海', market: 'TWSE', industry: '航運' },
+    { symbol: '2610', name: '華航', market: 'TWSE', industry: '航空' },
+
+    // 紡織 / 傳產
+    { symbol: '1402', name: '遠東新', market: 'TWSE', industry: '紡織' },
+    { symbol: '9904', name: '寶成', market: 'TWSE', industry: '製鞋' },
+
+    // 生技 / 製藥
+    { symbol: '6446', name: '藥華藥', market: 'TWSE', industry: '生技醫療' },
+    { symbol: '4133', name: '亞諾法', market: 'TPEx', industry: '生技' },
+    { symbol: '4123', name: '晟德', market: 'TWSE', industry: '生技' },
+
+    // ETF · 市值型
+    { symbol: '0050', name: '元大台灣50', market: 'TWSE', industry: 'ETF · 市值型' },
+    { symbol: '006208', name: '富邦台50', market: 'TWSE', industry: 'ETF · 市值型' },
+    { symbol: '0056', name: '元大高股息', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00878', name: '國泰永續高股息', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00919', name: '群益台灣精選高息', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00929', name: '復華台灣科技優息', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00713', name: '元大台灣高息低波', market: 'TWSE', industry: 'ETF · 高股息低波' },
+    { symbol: '00940', name: '元大臺灣價值高息', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00692', name: '富邦公司治理', market: 'TWSE', industry: 'ETF · ESG' },
+    { symbol: '00701', name: '國泰股利精選30', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00731', name: '復華富時高息低波', market: 'TWSE', industry: 'ETF · 高股息低波' },
+    { symbol: '00900', name: '富邦特選高股息30', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00915', name: '凱基優選高股息30', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00918', name: '大華優利高填息30', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00936', name: '台新永續高息中小', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00939', name: '統一台灣高息動能', market: 'TWSE', industry: 'ETF · 高股息' },
+    { symbol: '00943', name: '兆豐台灣電子高息', market: 'TWSE', industry: 'ETF · 高股息' },
+
+    // ETF · 主題（半導體/科技/AI）
+    { symbol: '00891', name: '中信關鍵半導體', market: 'TWSE', industry: 'ETF · 半導體' },
+    { symbol: '00892', name: '富邦台灣半導體', market: 'TWSE', industry: 'ETF · 半導體' },
+    { symbol: '00893', name: '國泰智能電動車', market: 'TWSE', industry: 'ETF · 電動車' },
+    { symbol: '00895', name: '富邦未來車', market: 'TWSE', industry: 'ETF · 電動車' },
+    { symbol: '00896', name: '中信綠能及電動車', market: 'TWSE', industry: 'ETF · 綠能' },
+    { symbol: '00897', name: '富邦基因免疫革命', market: 'TWSE', industry: 'ETF · 生技' },
+    { symbol: '00881', name: '國泰台灣5G+', market: 'TWSE', industry: 'ETF · 5G' },
+    { symbol: '00875', name: '國泰網路資安', market: 'TWSE', industry: 'ETF · 資安' },
+    { symbol: '00882', name: '中信中國高股息', market: 'TWSE', industry: 'ETF · 中國' },
+    { symbol: '00904', name: '新光臺灣半導體30', market: 'TWSE', industry: 'ETF · 半導體' },
+    { symbol: '00935', name: '野村臺灣新科技50', market: 'TWSE', industry: 'ETF · 科技' },
+    { symbol: '00947', name: '台新臺灣IC設計', market: 'TWSE', industry: 'ETF · IC 設計' },
+
+    // ETF · 海外股票
+    { symbol: '00646', name: '元大S&P500', market: 'TWSE', industry: 'ETF · 美股' },
+    { symbol: '00662', name: '富邦NASDAQ', market: 'TWSE', industry: 'ETF · 美股' },
+    { symbol: '00757', name: '統一FANG+', market: 'TWSE', industry: 'ETF · 美股' },
+    { symbol: '00830', name: '國泰費城半導體', market: 'TWSE', industry: 'ETF · 半導體' },
+    { symbol: '00858', name: '永豐美國500大', market: 'TWSE', industry: 'ETF · 美股' },
+    { symbol: '00876', name: '元大全球5G', market: 'TWSE', industry: 'ETF · 5G' },
+    { symbol: '00885', name: '富邦越南', market: 'TWSE', industry: 'ETF · 越南' },
+    { symbol: '00887', name: '永豐中國科技50大', market: 'TWSE', industry: 'ETF · 中國' },
+    { symbol: '00888', name: '永豐台灣ESG', market: 'TWSE', industry: 'ETF · ESG' },
+    { symbol: '00894', name: '中信小資高價30', market: 'TWSE', industry: 'ETF · 高價股' },
+    { symbol: '00928', name: '中信上櫃ESG30', market: 'TWSE', industry: 'ETF · ESG' },
+    { symbol: '00945B', name: '凱基美債20+', market: 'TWSE', industry: 'ETF · 債券' },
+
+    // ETF · 債券
+    { symbol: '00679B', name: '元大美債20年', market: 'TWSE', industry: 'ETF · 美債' },
+    { symbol: '00687B', name: '國泰20年美債', market: 'TWSE', industry: 'ETF · 美債' },
+    { symbol: '00696B', name: '富邦美債20年', market: 'TWSE', industry: 'ETF · 美債' },
+    { symbol: '00772B', name: '中信高評級公司債', market: 'TWSE', industry: 'ETF · 投等債' },
+    { symbol: '00773B', name: '中信優先金融債', market: 'TWSE', industry: 'ETF · 投等債' },
+    { symbol: '00937B', name: '群益ESG投等債', market: 'TWSE', industry: 'ETF · 投等債' },
+    { symbol: '00945B', name: '凱基美債25+', market: 'TWSE', industry: 'ETF · 美債' },
+    { symbol: '00948B', name: '中信優息投資級債', market: 'TWSE', industry: 'ETF · 投等債' },
+    { symbol: '00942B', name: '台新ESG投等債20+', market: 'TWSE', industry: 'ETF · 投等債' },
+
+    // ETF · 槓桿/反向
+    { symbol: '00631L', name: '元大台灣50正2', market: 'TWSE', industry: 'ETF · 槓桿' },
+    { symbol: '00632R', name: '元大台灣50反1', market: 'TWSE', industry: 'ETF · 反向' },
+    { symbol: '00715L', name: '期街口布蘭特正2', market: 'TWSE', industry: 'ETF · 商品槓桿' },
+    { symbol: '00670L', name: '富邦NASDAQ正2', market: 'TWSE', industry: 'ETF · 槓桿' },
+
+    // 其他熱門個股
+    { symbol: '6770', name: '力積電', market: 'TWSE', industry: '半導體' },
+    { symbol: '6789', name: '采鈺', market: 'TWSE', industry: '半導體' },
+    { symbol: '8358', name: '金居', market: 'TPEx', industry: '銅箔' },
+    { symbol: '6285', name: '啟碁', market: 'TWSE', industry: '網通' },
+    { symbol: '3231', name: '緯創', market: 'TWSE', industry: 'AI 伺服器' },
+    { symbol: '3017', name: '奇鋐', market: 'TWSE', industry: '散熱' },
+    { symbol: '3653', name: '健策', market: 'TWSE', industry: '散熱' },
+    { symbol: '3105', name: '穩懋', market: 'TPEx', industry: '砷化鎵' },
+    { symbol: '2345', name: '智邦', market: 'TWSE', industry: '網通' },
+    { symbol: '3045', name: '台灣大', market: 'TWSE', industry: '電信' },
+    { symbol: '2049', name: '上銀', market: 'TWSE', industry: '機械' },
+    { symbol: '1590', name: '亞德客-KY', market: 'TWSE', industry: '機械' },
+    { symbol: '2059', name: '川湖', market: 'TWSE', industry: '伺服器零組件' },
+    { symbol: '3661', name: '世芯-KY', market: 'TWSE', industry: 'IC 設計' },
+    { symbol: '8069', name: '元太', market: 'TPEx', industry: '電子紙' },
+    { symbol: '1707', name: '葡萄王', market: 'TWSE', industry: '生技保健' },
+    { symbol: '4128', name: '中天', market: 'TPEx', industry: '生技' }
+  ];
+
+  // 移除重複（保留第一筆）
+  (function dedupTwStocks() {
+    const seen = new Set();
+    for (let i = 0; i < TW_STOCKS.length; i++) {
+      if (seen.has(TW_STOCKS[i].symbol)) { TW_STOCKS.splice(i, 1); i--; }
+      else seen.add(TW_STOCKS[i].symbol);
+    }
+  })();
+
+  function searchTwStocks(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    return TW_STOCKS.filter(s =>
+      s.symbol.toLowerCase().includes(q) ||
+      s.name.toLowerCase().includes(q) ||
+      (s.industry && s.industry.toLowerCase().includes(q))
+    ).slice(0, 12);
+  }
+
   let twHoldings = [];
   let twTxns = [];
   let twRealizedPnL = 0;
@@ -5117,6 +5361,68 @@ ${userQuery}`;
     renderHoldings();
   }
 
+  // === 股票搜尋下拉 ===
+  function onHoldingSearch(q) {
+    const box = document.getElementById('holdingSearchResults');
+    const results = searchTwStocks(q);
+    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = results.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickHoldingStock('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape(s.industry || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickHoldingStock(symbol) {
+    const s = TW_STOCKS.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('holdingSymbol').value = s.symbol;
+    document.getElementById('holdingName').value = s.name;
+    document.getElementById('holdingMarket').value = s.market;
+    document.getElementById('holdingIndustry').value = s.industry || '';
+    document.getElementById('holdingSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('holdingSearchResults').style.display = 'none';
+    document.getElementById('holdingShares').focus();
+  }
+
+  function onTxnSearch(q) {
+    const box = document.getElementById('txnSearchResults');
+    // 結合內建 + 已持有股票
+    const local = twHoldings.filter(h =>
+      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
+    ).map(h => ({ symbol: h.symbol, name: h.name, market: h.market || 'TWSE', industry: '我的持股' }));
+    const builtIn = searchTwStocks(q);
+    // 已持有的排前面
+    const seen = new Set(local.map(x => x.symbol));
+    const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
+    if (combined.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = combined.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickTxnStock('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape(s.industry || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickTxnStock(symbol) {
+    // 先看是否在持股
+    const h = twHoldings.find(x => x.symbol === symbol);
+    const s = h || TW_STOCKS.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('txnSymbol').value = s.symbol;
+    document.getElementById('txnSymbolName').value = s.name;
+    document.getElementById('txnSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('txnSearchResults').style.display = 'none';
+    document.getElementById('txnShares').focus();
+    // 如果有持股，預填當前價作為單價
+    if (h && h.currentPrice) {
+      document.getElementById('txnPrice').value = h.currentPrice;
+    }
+  }
+
   // === Holding CRUD ===
   function openHoldingModal(id) {
     const isEdit = !!id;
@@ -5134,11 +5440,13 @@ ${userQuery}`;
       document.getElementById('holdingMarket').value = h.market || 'TWSE';
       document.getElementById('holdingIndustry').value = h.industry || '';
       document.getElementById('holdingNotes').value = h.notes || '';
+      document.getElementById('holdingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
-      ['holdingSymbol','holdingName','holdingShares','holdingAvgCost','holdingCurrentPrice','holdingIndustry','holdingNotes'].forEach(i => document.getElementById(i).value = '');
+      ['holdingSymbol','holdingName','holdingShares','holdingAvgCost','holdingCurrentPrice','holdingIndustry','holdingNotes','holdingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('holdingBuyDate').value = new Date().toISOString().slice(0,10);
       document.getElementById('holdingMarket').value = 'TWSE';
     }
+    document.getElementById('holdingSearchResults').style.display = 'none';
     document.getElementById('holdingModal').classList.add('active');
   }
   function closeHoldingModal() { document.getElementById('holdingModal').classList.remove('active'); }
@@ -5196,9 +5504,7 @@ ${userQuery}`;
     document.getElementById('txnEditId').value = id || '';
     document.getElementById('txnDeleteBtn').style.display = isEdit ? '' : 'none';
     document.getElementById('txnModalTitle').innerHTML = isEdit ? '編輯 <em>交易</em>' : '新增 <em>交易</em>';
-    // 填入 datalist（讓使用者選現有持股）
-    const dl = document.getElementById('txnSymbolList');
-    dl.innerHTML = twHoldings.map(h => `<option value="${escape(h.symbol)}">${escape(h.name)}</option>`).join('');
+    document.getElementById('txnSearchResults').style.display = 'none';
     if (isEdit) {
       const t = twTxns.find(x => x.id === id);
       document.getElementById('txnType').value = t.type;
@@ -5210,12 +5516,20 @@ ${userQuery}`;
       document.getElementById('txnFee').value = t.fee || '';
       document.getElementById('txnTax').value = t.tax || '';
       document.getElementById('txnNotes').value = t.notes || '';
+      document.getElementById('txnSearchBox').value = `${t.symbol} · ${t.symbolName || ''}`;
     } else {
-      ['txnSymbolName','txnShares','txnPrice','txnFee','txnTax','txnNotes'].forEach(i => document.getElementById(i).value = '');
+      ['txnSymbolName','txnShares','txnPrice','txnFee','txnTax','txnNotes','txnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('txnType').value = 'buy';
       document.getElementById('txnDate').value = new Date().toISOString().slice(0,10);
       document.getElementById('txnSymbol').value = presetSymbol || '';
-      if (presetSymbol) onTxnSymbolChange();
+      if (presetSymbol) {
+        const h = twHoldings.find(x => x.symbol === presetSymbol);
+        if (h) {
+          document.getElementById('txnSymbolName').value = h.name;
+          document.getElementById('txnSearchBox').value = `${h.symbol} · ${h.name}`;
+        }
+        onTxnSymbolChange();
+      }
     }
     onTxnTypeChange();
     document.getElementById('txnModal').classList.add('active');
