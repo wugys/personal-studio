@@ -348,19 +348,53 @@
   @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
 
-  /* === 全域 Breadcrumb 導覽列 === */
-  /* 全域永遠隱藏（使用者要求拿掉「首頁/生活規劃/旅遊規劃/...」這條） */
-  .breadcrumb-bar { display: none !important; }
-  /* 以下樣式保留以防未來重新啟用，但 display:none 永遠優先 */
-  .breadcrumb-bar.__legacy {
-    position: sticky; top: 0; z-index: 40;
-    background: rgba(14, 13, 11, 0.94); backdrop-filter: blur(10px);
-    margin: -24px -32px 16px; padding: 10px 32px;
+  /* === 全域 Layer Nav · Icon 快捷列 ===
+     三層結構：首頁 / 群組視圖 / 模組視圖。每層用 emoji/icon 顯示，可點擊跳轉 */
+  .breadcrumb-bar {
+    position: sticky; top: 0; z-index: 60;
+    background: rgba(14, 13, 11, 0.96); backdrop-filter: blur(12px);
+    margin: -24px -32px 14px; padding: 8px 32px;
     border-bottom: 1px solid var(--line);
-    align-items: center; gap: 8px; flex-wrap: nowrap;
+    display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
     overflow-x: auto; scrollbar-width: none;
-    min-height: 42px;
+    min-height: 38px;
   }
+  .breadcrumb-bar::-webkit-scrollbar { display: none; }
+  .bc-back, .bc-home {
+    flex-shrink: 0; padding: 5px 9px; background: transparent;
+    border: 1px solid var(--line); border-radius: 4px; color: var(--ink-secondary);
+    font-family: var(--mono); font-size: 11px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .bc-back:hover, .bc-home:hover { color: var(--accent); border-color: var(--accent); }
+  .bc-back:disabled { opacity: 0.3; cursor: not-allowed; }
+  .bc-trail { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+  .bc-item {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px; background: transparent;
+    border: 1px solid var(--line); border-radius: 4px;
+    color: var(--ink-secondary); font-family: var(--sans); font-size: 12px;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    line-height: 1;
+  }
+  .bc-item:hover { color: var(--accent); border-color: var(--accent); }
+  .bc-item.current {
+    color: var(--accent); border-color: var(--accent);
+    background: rgba(212, 165, 116, 0.08);
+    cursor: default; font-weight: 500;
+  }
+  .bc-item .bc-icon {
+    font-family: var(--serif); font-style: italic; font-size: 13px;
+    color: var(--accent); line-height: 1;
+  }
+  .bc-sep { color: var(--ink-tertiary); font-size: 10px; opacity: 0.5; }
+  @media (max-width: 768px) {
+    .breadcrumb-bar { margin: -14px -14px 10px; padding: 7px 14px; min-height: 34px; }
+    .bc-item { font-size: 11px; padding: 4px 8px; }
+    .bc-back, .bc-home { padding: 4px 7px; font-size: 10px; }
+  }
+  /* Guest Mode 下整列隱藏（團友看不到任何切換） */
+  body.guest-mode .breadcrumb-bar { display: none !important; }
   .breadcrumb-bar::-webkit-scrollbar { display: none; }
   .bc-back {
     flex-shrink: 0; padding: 6px 10px; background: transparent;
@@ -2022,16 +2056,23 @@
     /* 手機改成跟電腦版一樣：顯示橫向 tab，水平捲動。隱藏底部 bar + 麵包屑避免重複 */
     body.travel-active .travel-bottom-bar { display: none !important; }
     body.travel-active .breadcrumb-bar { display: none !important; }
-    /* travel-tabs sticky 黏在頂部，方便手機切換 */
+    /* travel-tabs 手機改成 2 列換行（6+6），不再水平捲動 */
     .travel-tabs {
       position: sticky; top: 0; z-index: 50;
-      margin-bottom: 16px;
-      /* 緊湊一點適合手機螢幕 */
-      padding: 3px; gap: 1px;
-      -webkit-overflow-scrolling: touch;
+      margin-bottom: 12px;
+      padding: 3px; gap: 2px;
+      flex-wrap: wrap;            /* 允許換行 */
+      overflow-x: visible;        /* 取消水平捲動 */
     }
     .travel-tab {
-      padding: 8px 12px; font-size: 10px; letter-spacing: 0.1em;
+      flex: 1 0 calc((100% - 12px) / 6);   /* 每列 6 顆 → 12 顆 = 2 列 */
+      min-width: 0;
+      padding: 7px 4px;
+      font-size: 9.5px;
+      letter-spacing: 0.05em;
+      justify-content: center;
+      text-align: center;
+      gap: 3px;
     }
     /* travel 啟用時不需要底部留白（沒底部 bar 了） */
     body.travel-active .page { padding-bottom: 24px; }
@@ -4300,27 +4341,28 @@ alter publication supabase_realtime add table party_locations;</pre>
     suppressHistory = false;
   }
 
-  // === Breadcrumb 自動生成 ===
+  // === Breadcrumb 自動生成（3 層快捷圖示：首頁 → 群組 → 模組） ===
   function buildBreadcrumb() {
     const trail = [];
     const activeView = document.querySelector('.view.active')?.id || 'dashboardView';
 
-    // 始終加首頁
-    trail.push({ label: '首頁', action: () => goHome() });
+    // 第 1 層：首頁
+    trail.push({ icon: '🏠', label: '首頁', action: () => goHome() });
 
-    // Dashboard 內的 group 層
+    // 在 dashboard view
     if (activeView === 'dashboardView') {
       if (dashLevel === 'group' && currentGroupId !== null) {
+        // 第 2 層：群組（current）
         const g = groups.find(x => x.id === currentGroupId);
-        trail.push({ label: g ? g.name : '未分組', action: null, current: true });
+        trail.push({ icon: g?.emoji || '◇', label: g ? g.name : '未分組', action: null, current: true });
       } else {
-        // 在 dashboard overview，trail 只有首頁，標記首頁為 current
+        // overview：首頁為 current
         trail[0].current = true; trail[0].action = null;
       }
       return trail;
     }
 
-    // 根據 view 取對應 module 與群組
+    // 在某個模組 view
     const viewToModuleId = {
       apiView: 'm_apis',
       doubleView: 'm_double',
@@ -4331,44 +4373,27 @@ alter publication supabase_realtime add table party_locations;</pre>
     const moduleId = viewToModuleId[activeView];
     if (moduleId) {
       const m = modules.find(x => x.id === moduleId);
+      // 第 2 層：群組
       if (m && m.groupId) {
         const g = groups.find(x => x.id === m.groupId);
         if (g) {
           trail.push({
+            icon: g.emoji || '◇',
             label: g.name,
             action: () => { suppressHistory = false; goHome(); setTimeout(() => enterGroup(g.id), 50); }
           });
         }
       }
+      // 第 3 層：模組（current）
       if (m) {
         trail.push({
+          icon: m.icon || '◇',
           label: m.name,
-          action: activeView === 'travelView'
-            ? () => { suppressHistory = false; showView('tripsView'); }
-            : null,
-          current: activeView !== 'travelView'
+          action: null,
+          current: true
         });
       }
     }
-
-    // travelView：再加 trip 名稱與 panel
-    if (activeView === 'travelView' && ITINERARY) {
-      trail.push({
-        label: ITINERARY.title,
-        action: trvActiveTab === 'home' ? null : () => setTravelTab('home'),
-        current: trvActiveTab === 'home'
-      });
-      if (trvActiveTab && trvActiveTab !== 'home') {
-        const tabLabels = {
-          timeline: '行程導覽', map: '地圖', gather: '集合倒數',
-          checklist: '行前清單', budget: '預算記錄', shopping: '購物記錄',
-          butler: 'AI 管家', party: '同團', chat: '聊天室',
-          info: '保險 eSIM', settings: '設定'
-        };
-        trail.push({ label: tabLabels[trvActiveTab] || trvActiveTab, action: null, current: true });
-      }
-    }
-
     return trail;
   }
 
@@ -4385,10 +4410,12 @@ alter publication supabase_realtime add table party_locations;</pre>
     const trailEl = document.getElementById('bcTrail');
     trailEl.innerHTML = trail.map((t, i) => {
       const sep = i > 0 ? `<span class="bc-sep">›</span>` : '';
+      const iconHtml = t.icon ? `<span class="bc-icon">${escape(t.icon)}</span>` : '';
+      const label = `${iconHtml}<span>${escape(t.label)}</span>`;
       if (t.current || !t.action) {
-        return `${sep}<span class="bc-item current">${escape(t.label)}</span>`;
+        return `${sep}<span class="bc-item current">${label}</span>`;
       }
-      return `${sep}<button class="bc-item" onclick="(window.__bcActions||{})['${i}']()">${escape(t.label)}</button>`;
+      return `${sep}<button class="bc-item" onclick="(window.__bcActions||{})['${i}']()">${label}</button>`;
     }).join('');
     // 綁定動作（避免 inline 字串 escape 問題）
     window.__bcActions = {};
