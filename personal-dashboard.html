@@ -654,6 +654,106 @@
   }
   .opp-upside { color: var(--accent); font-weight: 600; }
 
+  /* === 台股個股 · 持股卡片 === */
+  .holding-card {
+    background: var(--bg-card); border: 1px solid var(--line);
+    border-radius: 6px; padding: 18px 20px;
+    transition: all 0.3s; cursor: pointer;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .holding-card:hover { border-color: var(--line-strong); background: var(--bg-card-hover); transform: translateY(-2px); }
+  .holding-card.profit { border-left: 3px solid var(--accent); }
+  .holding-card.loss { border-left: 3px solid var(--danger); }
+  .holding-card.flat { border-left: 3px solid var(--ink-tertiary); }
+  .hc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .hc-symbol-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hc-symbol {
+    font-family: var(--mono); font-size: 16px; color: var(--accent);
+    font-weight: 600; letter-spacing: 0.05em;
+  }
+  .hc-name {
+    font-family: var(--serif); font-size: 18px; font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .hc-meta {
+    display: flex; gap: 6px; font-family: var(--mono); font-size: 9px;
+    color: var(--ink-tertiary); letter-spacing: 0.1em; margin-top: 2px;
+  }
+  .hc-meta span {
+    padding: 2px 6px; background: var(--bg-elevated); border-radius: 2px;
+  }
+  .hc-pnl-pct {
+    font-family: var(--serif); font-size: 22px; font-weight: 600;
+    letter-spacing: -0.02em; line-height: 1;
+  }
+  .hc-pnl-pct.profit { color: var(--accent); }
+  .hc-pnl-pct.loss { color: var(--danger); }
+  .hc-pnl-pct.flat { color: var(--ink-tertiary); }
+  .hc-prices {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px; padding: 10px; background: var(--bg-elevated);
+    border-radius: 3px;
+  }
+  .hc-price-cell { text-align: center; min-width: 0; }
+  .hc-price-label {
+    font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.12em;
+    color: var(--ink-tertiary); text-transform: uppercase; margin-bottom: 2px;
+  }
+  .hc-price-val {
+    font-family: var(--serif); font-size: 14px; font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .hc-price-val.profit { color: var(--accent); }
+  .hc-price-val.loss { color: var(--danger); }
+  .hc-shares-cost { display: flex; gap: 14px; font-size: 12px; color: var(--ink-secondary); }
+  .hc-shares-cost strong { color: var(--ink-primary); font-family: var(--serif); }
+  .hc-actions { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
+  .hc-mini-btn {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em;
+    padding: 5px 10px; background: transparent; border: 1px solid var(--line);
+    color: var(--ink-secondary); border-radius: 2px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .hc-mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .hc-txn-list {
+    display: none; padding-top: 8px; border-top: 1px dashed var(--line);
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-secondary);
+    max-height: 200px; overflow-y: auto;
+  }
+  .holding-card.expanded .hc-txn-list { display: block; }
+  .hc-txn-row {
+    display: flex; justify-content: space-between; padding: 4px 0;
+    border-bottom: 1px dotted var(--line);
+  }
+  .hc-txn-row:last-child { border-bottom: none; }
+  .hc-txn-type {
+    width: 30px; font-size: 9px;
+    padding: 1px 4px; border-radius: 2px; text-align: center;
+  }
+  .hc-txn-type.buy { background: rgba(212, 165, 116, 0.15); color: var(--accent); }
+  .hc-txn-type.sell { background: rgba(106, 140, 105, 0.15); color: #9bc59a; }
+  .hc-txn-type.dividend { background: rgba(180, 169, 138, 0.15); color: var(--ink-secondary); }
+  .hc-txn-type.stock_div { background: rgba(139, 111, 71, 0.15); color: var(--accent-deep); }
+
+  /* 統計卡 · 損益顏色 */
+  .stat-card.profit .stat-value { color: var(--accent); }
+  .stat-card.loss .stat-value { color: var(--danger); }
+  .stat-card.flat .stat-value { color: var(--ink-primary); }
+  .stat-card .stat-pct {
+    font-family: var(--mono); font-size: 11px;
+    margin-top: 4px; letter-spacing: 0.05em;
+  }
+  .stat-card.profit .stat-pct { color: var(--accent); }
+  .stat-card.loss .stat-pct { color: var(--danger); }
+
+  @media (max-width: 768px) {
+    .holding-card { padding: 14px 14px; }
+    .hc-name { font-size: 16px; }
+    .hc-pnl-pct { font-size: 18px; }
+    .hc-prices { padding: 8px; }
+    .hc-price-val { font-size: 12.5px; }
+  }
+
   .ai-disclaimer {
     background: rgba(212, 165, 116, 0.06);
     border-left: 3px solid var(--accent);
@@ -2085,6 +2185,197 @@
     <div id="leverageGrid" class="opp-grid"></div>
   </div>
 
+  <!-- ============ 台股個股 VIEW ============ -->
+  <div id="twStockView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">γ TW · EQUITIES</div>
+        <h1>台股 <em>個股</em></h1>
+        <p>持股管理、平均成本、未實現/已實現損益、交易記錄。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="openTxnModal()">+ 新交易</button>
+        <button class="btn btn-primary" onclick="openHoldingModal()">+ 新增持股</button>
+      </div>
+    </div>
+
+    <div class="risk-banner" style="background:rgba(212,165,116,0.06); border-color: rgba(212,165,116,0.25); border-left-color: var(--accent); color: var(--ink-secondary);">
+      ⚠ 此模組為個人投資紀錄工具，所有資料儲存於本機與雲端，不會回傳任何第三方。股價請手動更新或之後升級自動抓取功能。
+    </div>
+
+    <!-- 統計卡 -->
+    <div class="stats-row" id="twStockStats"></div>
+
+    <!-- 工具列 -->
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.15em;">SORT BY</span>
+      <select id="twSortBy" class="form-select" onchange="renderHoldings()" style="width:auto;">
+        <option value="value">現值（高→低）</option>
+        <option value="pnl_pct">報酬率（高→低）</option>
+        <option value="pnl_abs">損益金額（高→低）</option>
+        <option value="symbol">股票代號</option>
+        <option value="date">買入日期（新→舊）</option>
+      </select>
+      <button class="btn btn-sm" onclick="openBatchPriceModal()" style="margin-left:auto;">⟳ 批次更新股價</button>
+    </div>
+
+    <!-- 持股列表 -->
+    <div id="holdingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ 持股 Modal ============ -->
+  <div class="modal-backdrop" id="holdingModal">
+    <div class="modal">
+      <h2 id="holdingModalTitle">新增 <em>持股</em></h2>
+      <form onsubmit="saveHolding(event)">
+        <input type="hidden" id="holdingEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號</label>
+            <input type="text" class="form-input" id="holdingSymbol" required placeholder="2330" style="font-family:var(--mono);">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="holdingName" required placeholder="台積電">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">持有股數</label>
+            <input type="number" step="1" min="0" class="form-input" id="holdingShares" required placeholder="1000">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">平均成本</label>
+            <input type="number" step="0.01" class="form-input" id="holdingAvgCost" required placeholder="580.50">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">目前股價</label>
+            <input type="number" step="0.01" class="form-input" id="holdingCurrentPrice" placeholder="1050">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">買入日期</label>
+            <input type="date" class="form-input" id="holdingBuyDate">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">市場</label>
+            <select class="form-select" id="holdingMarket">
+              <option value="TWSE">上市 TWSE</option>
+              <option value="TPEx">上櫃 TPEx</option>
+              <option value="興櫃">興櫃</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">產業</label>
+            <input type="text" class="form-input" id="holdingIndustry" placeholder="半導體 / 金融 / 傳產">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">策略筆記</label>
+          <textarea class="form-textarea" id="holdingNotes" placeholder="買入理由、目標價、停損點..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="holdingDeleteBtn" onclick="deleteHolding()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除持股</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeHoldingModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 交易 Modal ============ -->
+  <div class="modal-backdrop" id="txnModal">
+    <div class="modal">
+      <h2 id="txnModalTitle">新增 <em>交易</em></h2>
+      <form onsubmit="saveTxn(event)">
+        <input type="hidden" id="txnEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="txnType" onchange="onTxnTypeChange()">
+              <option value="buy">買進</option>
+              <option value="sell">賣出</option>
+              <option value="dividend">配息（現金股利）</option>
+              <option value="stock_div">配股（股票股利）</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">日期</label>
+            <input type="date" class="form-input" id="txnDate" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號</label>
+            <input type="text" class="form-input" id="txnSymbol" required placeholder="2330" style="font-family:var(--mono);" oninput="onTxnSymbolChange()" list="txnSymbolList">
+            <datalist id="txnSymbolList"></datalist>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱（自動帶入）</label>
+            <input type="text" class="form-input" id="txnSymbolName" placeholder="例如 台積電">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="txnSharesLabel">股數</label>
+            <input type="number" step="1" min="0" class="form-input" id="txnShares" required placeholder="100">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="txnPriceLabel">單價</label>
+            <input type="number" step="0.01" class="form-input" id="txnPrice" required placeholder="580.50">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">手續費</label>
+            <input type="number" step="0.01" class="form-input" id="txnFee" placeholder="自動估算">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">證交稅（賣出 0.3%）</label>
+            <input type="number" step="0.01" class="form-input" id="txnTax" placeholder="自動估算">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="txnNotes" placeholder="">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="txnDeleteBtn" onclick="deleteTxn()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeTxnModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 批次股價 Modal ============ -->
+  <div class="modal-backdrop" id="batchPriceModal">
+    <div class="modal">
+      <h2>批次 <em>更新股價</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
+        手動填入各持股最新股價，按「全部儲存」一次更新。下個版本會加入自動抓取（證交所/Yahoo）。
+      </div>
+      <div id="batchPriceList" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="form-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn" onclick="closeBatchPriceModal()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="saveBatchPrices()">全部儲存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 旅遊列表 VIEW（先看到所有 trip）============ -->
   <div id="tripsView" class="view">
     <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
@@ -3076,7 +3367,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 5.0 · ε</div>
+    <div>v 6.0 · ζ</div>
   </footer>
 </div>
 
@@ -3387,7 +3678,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     { id: 'm_goals', name: '挑戰目標', nameEn: 'GOAL · TRACKER', icon: '◎', desc: '退休金、財務自由、買房頭期款進度追蹤。', status: 'soon', groupId: 'g_invest', order: 3 },
 
     // === 投資中心 · 公開市場（~60%）===
-    { id: 'm_tw_stock', name: '台股個股', nameEn: 'TW · EQUITIES', icon: 'γ', desc: '台積電、金融股、傳產等個股追蹤、損益記錄、策略筆記。', status: 'soon', groupId: 'g_invest', order: 4 },
+    { id: 'm_tw_stock', name: '台股個股', nameEn: 'TW · EQUITIES', icon: 'γ', desc: '持股管理、平均成本、損益計算、交易記錄。', status: 'active', groupId: 'g_invest', order: 4, builtin: true, target: 'twStockView' },
     { id: 'm_us_stock', name: '美股個股', nameEn: 'US · EQUITIES', icon: '★', desc: 'Apple、NVIDIA、Tesla 等美股持股、匯率損益、配息日曆。', status: 'soon', groupId: 'g_invest', order: 5 },
     { id: 'm_etf_market', name: '市值型 ETF', nameEn: 'INDEX · ETF', icon: '▣', desc: '0050、VOO、VTI 等市值型追蹤。長期被動配置主力。', status: 'soon', groupId: 'g_invest', order: 6 },
     { id: 'm_etf_dividend', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', icon: '◇', desc: '0056、0878 等現金流型。配息追蹤、殖利率分析。', status: 'soon', groupId: 'g_invest', order: 7 },
@@ -3433,7 +3724,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '5';
+      const CURRENT_VERSION = '6';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -4649,7 +4940,7 @@ ${userQuery}`;
 
   loadOpps();
 
-  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal','exportPdfModal'].forEach(id => {
+  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal','exportPdfModal','holdingModal','txnModal','batchPriceModal'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', (e) => {
       if (e.target.id === id) e.currentTarget.classList.remove('active');
@@ -4658,6 +4949,478 @@ ${userQuery}`;
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('active'));
   });
+
+  // ============================================================
+  // 台股個股 · Taiwan Stock Module
+  // ============================================================
+
+  const TW_STORAGE = {
+    holdings: 'tw_holdings_v1',
+    txns: 'tw_transactions_v1',
+    realized: 'tw_realized_v1'   // 已實現損益（賣出時累積）
+  };
+
+  let twHoldings = [];
+  let twTxns = [];
+  let twRealizedPnL = 0;
+  let twExpandedHoldingId = null; // 展開交易記錄的持股 ID
+
+  async function loadTwStock() {
+    try { const h = await readKey(TW_STORAGE.holdings); twHoldings = h ? JSON.parse(h) : []; }
+    catch (e) { twHoldings = []; }
+    try { const t = await readKey(TW_STORAGE.txns); twTxns = t ? JSON.parse(t) : []; }
+    catch (e) { twTxns = []; }
+    try { const r = await readKey(TW_STORAGE.realized); twRealizedPnL = r ? Number(r) : 0; }
+    catch (e) { twRealizedPnL = 0; }
+    renderTwStockStats();
+    renderHoldings();
+  }
+  async function saveTwHoldings() { await writeKey(TW_STORAGE.holdings, JSON.stringify(twHoldings)); }
+  async function saveTwTxns() { await writeKey(TW_STORAGE.txns, JSON.stringify(twTxns)); }
+  async function saveTwRealized() { await writeKey(TW_STORAGE.realized, String(twRealizedPnL)); }
+
+  // === 計算工具 ===
+  function holdingCost(h) { return (h.shares || 0) * (h.avgCost || 0); }
+  function holdingValue(h) {
+    if (!h.currentPrice) return holdingCost(h);
+    return (h.shares || 0) * h.currentPrice;
+  }
+  function holdingPnL(h) { return holdingValue(h) - holdingCost(h); }
+  function holdingPnLPct(h) {
+    const cost = holdingCost(h);
+    if (cost <= 0) return 0;
+    return (holdingPnL(h) / cost) * 100;
+  }
+
+  // === 統計卡片 ===
+  function renderTwStockStats() {
+    const totalCost = twHoldings.reduce((s, h) => s + holdingCost(h), 0);
+    const totalValue = twHoldings.reduce((s, h) => s + holdingValue(h), 0);
+    const unrealized = totalValue - totalCost;
+    const unrealizedPct = totalCost > 0 ? (unrealized / totalCost) * 100 : 0;
+    const fmt = n => 'NT$' + Math.round(n).toLocaleString();
+    const fmtSign = n => (n >= 0 ? '+' : '') + Math.round(n).toLocaleString();
+    const pnlClass = unrealized > 0 ? 'profit' : unrealized < 0 ? 'loss' : 'flat';
+    const realizedClass = twRealizedPnL > 0 ? 'profit' : twRealizedPnL < 0 ? 'loss' : 'flat';
+    document.getElementById('twStockStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">總投入</div>
+        <div class="stat-value">${fmt(totalCost)}</div>
+        <div class="stat-sub">${twHoldings.length} 檔持股</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">現值</div>
+        <div class="stat-value">${fmt(totalValue)}</div>
+        <div class="stat-sub">CURRENT · MARKET · VALUE</div>
+      </div>
+      <div class="stat-card ${pnlClass}">
+        <div class="stat-label">未實現損益</div>
+        <div class="stat-value">${fmtSign(unrealized)}</div>
+        <div class="stat-pct">${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%</div>
+      </div>
+      <div class="stat-card ${realizedClass}">
+        <div class="stat-label">已實現損益</div>
+        <div class="stat-value">${fmtSign(twRealizedPnL)}</div>
+        <div class="stat-sub">REALIZED · ALL · TIME</div>
+      </div>
+    `;
+  }
+
+  // === 持股列表 ===
+  function renderHoldings() {
+    const grid = document.getElementById('holdingsGrid');
+    if (twHoldings.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">γ</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p></div>';
+      return;
+    }
+    const sortBy = document.getElementById('twSortBy')?.value || 'value';
+    const sorted = twHoldings.slice().sort((a, b) => {
+      if (sortBy === 'value') return holdingValue(b) - holdingValue(a);
+      if (sortBy === 'pnl_pct') return holdingPnLPct(b) - holdingPnLPct(a);
+      if (sortBy === 'pnl_abs') return holdingPnL(b) - holdingPnL(a);
+      if (sortBy === 'symbol') return (a.symbol || '').localeCompare(b.symbol || '');
+      if (sortBy === 'date') return (b.buyDate || '').localeCompare(a.buyDate || '');
+      return 0;
+    });
+    grid.innerHTML = sorted.map(h => holdingCardHtml(h)).join('');
+  }
+
+  function holdingCardHtml(h) {
+    const pnl = holdingPnL(h);
+    const pnlPct = holdingPnLPct(h);
+    const cls = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat';
+    const fmt = n => Math.round(n).toLocaleString();
+    const fmtSign = n => (n >= 0 ? '+' : '') + Math.round(n).toLocaleString();
+    const expanded = twExpandedHoldingId === h.id ? 'expanded' : '';
+    const txnsForHolding = twTxns.filter(t => t.symbol === h.symbol).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const txnHtml = txnsForHolding.length === 0
+      ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
+      : txnsForHolding.map(t => {
+          const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '股' }[t.type] || '?';
+          return `
+            <div class="hc-txn-row" onclick="event.stopPropagation(); openTxnModal('${escape(t.id)}')">
+              <span class="hc-txn-type ${escape(t.type)}">${typeLabel}</span>
+              <span style="flex:1; padding:0 8px;">${escape(t.date || '')}</span>
+              <span>${(t.shares||0).toLocaleString()} 股 × ${(t.price||0).toLocaleString()}</span>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div class="holding-card ${cls} ${expanded}" data-hid="${escape(h.id)}" onclick="toggleHoldingExpand('${escape(h.id)}')">
+        <div class="hc-top">
+          <div class="hc-symbol-wrap">
+            <div class="hc-symbol">${escape(h.symbol)}</div>
+            <div class="hc-name">${escape(h.name)}</div>
+            <div class="hc-meta">
+              <span>${escape(h.market || 'TWSE')}</span>
+              ${h.industry ? `<span>${escape(h.industry)}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${fmtSign(pnl)}</div>
+          </div>
+        </div>
+        <div class="hc-prices">
+          <div class="hc-price-cell">
+            <div class="hc-price-label">成本</div>
+            <div class="hc-price-val">${(h.avgCost || 0).toFixed(2)}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現價</div>
+            <div class="hc-price-val ${cls}">${h.currentPrice ? h.currentPrice.toFixed(2) : '—'}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現值</div>
+            <div class="hc-price-val">NT$${fmt(holdingValue(h))}</div>
+          </div>
+        </div>
+        <div class="hc-shares-cost">
+          <span><strong>${(h.shares || 0).toLocaleString()}</strong> 股</span>
+          <span style="color:var(--ink-tertiary);">×</span>
+          <span>成本 <strong>NT$${fmt(holdingCost(h))}</strong></span>
+          ${h.buyDate ? `<span style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(h.buyDate)}</span>` : ''}
+        </div>
+        ${h.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(h.notes)}</div>` : ''}
+        <div class="hc-actions" onclick="event.stopPropagation();">
+          <button class="hc-mini-btn" onclick="openHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
+          <button class="hc-mini-btn" onclick="openTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
+          <button class="hc-mini-btn" onclick="toggleHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
+        </div>
+        <div class="hc-txn-list">${txnHtml}</div>
+      </div>
+    `;
+  }
+
+  function toggleHoldingExpand(id) {
+    twExpandedHoldingId = (twExpandedHoldingId === id) ? null : id;
+    renderHoldings();
+  }
+
+  // === Holding CRUD ===
+  function openHoldingModal(id) {
+    const isEdit = !!id;
+    document.getElementById('holdingEditId').value = id || '';
+    document.getElementById('holdingDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('holdingModalTitle').innerHTML = isEdit ? '編輯 <em>持股</em>' : '新增 <em>持股</em>';
+    if (isEdit) {
+      const h = twHoldings.find(x => x.id === id);
+      document.getElementById('holdingSymbol').value = h.symbol;
+      document.getElementById('holdingName').value = h.name;
+      document.getElementById('holdingShares').value = h.shares;
+      document.getElementById('holdingAvgCost').value = h.avgCost;
+      document.getElementById('holdingCurrentPrice').value = h.currentPrice || '';
+      document.getElementById('holdingBuyDate').value = h.buyDate || '';
+      document.getElementById('holdingMarket').value = h.market || 'TWSE';
+      document.getElementById('holdingIndustry').value = h.industry || '';
+      document.getElementById('holdingNotes').value = h.notes || '';
+    } else {
+      ['holdingSymbol','holdingName','holdingShares','holdingAvgCost','holdingCurrentPrice','holdingIndustry','holdingNotes'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('holdingBuyDate').value = new Date().toISOString().slice(0,10);
+      document.getElementById('holdingMarket').value = 'TWSE';
+    }
+    document.getElementById('holdingModal').classList.add('active');
+  }
+  function closeHoldingModal() { document.getElementById('holdingModal').classList.remove('active'); }
+
+  async function saveHolding(e) {
+    e.preventDefault();
+    const id = document.getElementById('holdingEditId').value;
+    const data = {
+      symbol: document.getElementById('holdingSymbol').value.trim(),
+      name: document.getElementById('holdingName').value.trim(),
+      shares: Number(document.getElementById('holdingShares').value),
+      avgCost: Number(document.getElementById('holdingAvgCost').value),
+      currentPrice: Number(document.getElementById('holdingCurrentPrice').value) || null,
+      buyDate: document.getElementById('holdingBuyDate').value,
+      market: document.getElementById('holdingMarket').value,
+      industry: document.getElementById('holdingIndustry').value.trim(),
+      notes: document.getElementById('holdingNotes').value.trim()
+    };
+    if (id) {
+      const i = twHoldings.findIndex(h => h.id === id);
+      if (i > -1) twHoldings[i] = { ...twHoldings[i], ...data, updatedAt: Date.now() };
+    } else {
+      // 檢查 symbol 是否已存在
+      const exist = twHoldings.find(h => h.symbol === data.symbol);
+      if (exist) { showToast(`已有持股 ${exist.name}，請改點編輯。`); return; }
+      twHoldings.push({ id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data });
+    }
+    await saveTwHoldings();
+    closeHoldingModal();
+    renderHoldings();
+    renderTwStockStats();
+    showToast(id ? '持股已更新' : '已新增持股');
+  }
+
+  async function deleteHolding() {
+    const id = document.getElementById('holdingEditId').value;
+    if (!id) return;
+    const h = twHoldings.find(x => x.id === id);
+    if (!h) return;
+    const relTxns = twTxns.filter(t => t.symbol === h.symbol).length;
+    const msg = relTxns > 0
+      ? `確定刪除 ${h.name}（${h.symbol}）？此持股有 ${relTxns} 筆交易紀錄不會被刪除（保留作為歷史）。`
+      : `確定刪除 ${h.name}（${h.symbol}）？`;
+    if (!confirm(msg)) return;
+    twHoldings = twHoldings.filter(x => x.id !== id);
+    await saveTwHoldings();
+    closeHoldingModal();
+    renderHoldings();
+    renderTwStockStats();
+  }
+
+  // === Transaction CRUD ===
+  function openTxnModal(id, presetSymbol) {
+    const isEdit = !!id;
+    document.getElementById('txnEditId').value = id || '';
+    document.getElementById('txnDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('txnModalTitle').innerHTML = isEdit ? '編輯 <em>交易</em>' : '新增 <em>交易</em>';
+    // 填入 datalist（讓使用者選現有持股）
+    const dl = document.getElementById('txnSymbolList');
+    dl.innerHTML = twHoldings.map(h => `<option value="${escape(h.symbol)}">${escape(h.name)}</option>`).join('');
+    if (isEdit) {
+      const t = twTxns.find(x => x.id === id);
+      document.getElementById('txnType').value = t.type;
+      document.getElementById('txnDate').value = t.date || '';
+      document.getElementById('txnSymbol').value = t.symbol;
+      document.getElementById('txnSymbolName').value = t.symbolName || '';
+      document.getElementById('txnShares').value = t.shares;
+      document.getElementById('txnPrice').value = t.price;
+      document.getElementById('txnFee').value = t.fee || '';
+      document.getElementById('txnTax').value = t.tax || '';
+      document.getElementById('txnNotes').value = t.notes || '';
+    } else {
+      ['txnSymbolName','txnShares','txnPrice','txnFee','txnTax','txnNotes'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('txnType').value = 'buy';
+      document.getElementById('txnDate').value = new Date().toISOString().slice(0,10);
+      document.getElementById('txnSymbol').value = presetSymbol || '';
+      if (presetSymbol) onTxnSymbolChange();
+    }
+    onTxnTypeChange();
+    document.getElementById('txnModal').classList.add('active');
+  }
+  function closeTxnModal() { document.getElementById('txnModal').classList.remove('active'); }
+
+  function onTxnSymbolChange() {
+    const sym = document.getElementById('txnSymbol').value.trim();
+    const h = twHoldings.find(x => x.symbol === sym);
+    if (h) document.getElementById('txnSymbolName').value = h.name;
+  }
+
+  function onTxnTypeChange() {
+    const type = document.getElementById('txnType').value;
+    const sharesLabel = document.getElementById('txnSharesLabel');
+    const priceLabel = document.getElementById('txnPriceLabel');
+    if (type === 'dividend') {
+      sharesLabel.textContent = '基準股數';
+      priceLabel.textContent = '每股股利 (元)';
+    } else if (type === 'stock_div') {
+      sharesLabel.textContent = '配發股數';
+      priceLabel.textContent = '當時市價（可估算）';
+    } else {
+      sharesLabel.textContent = '股數';
+      priceLabel.textContent = '單價';
+    }
+  }
+
+  async function saveTxn(e) {
+    e.preventDefault();
+    const id = document.getElementById('txnEditId').value;
+    const type = document.getElementById('txnType').value;
+    const symbol = document.getElementById('txnSymbol').value.trim();
+    const symbolName = document.getElementById('txnSymbolName').value.trim();
+    const shares = Number(document.getElementById('txnShares').value);
+    const price = Number(document.getElementById('txnPrice').value);
+    let fee = Number(document.getElementById('txnFee').value);
+    let tax = Number(document.getElementById('txnTax').value);
+    // 預設手續費 / 證交稅
+    if (!fee && (type === 'buy' || type === 'sell')) {
+      fee = Math.max(20, Math.round(shares * price * 0.001425)); // 0.1425% 最低 20
+    }
+    if (!tax && type === 'sell') {
+      tax = Math.round(shares * price * 0.003); // 0.3%
+    }
+    const data = {
+      type, date: document.getElementById('txnDate').value,
+      symbol, symbolName, shares, price,
+      fee: fee || 0, tax: tax || 0,
+      notes: document.getElementById('txnNotes').value.trim()
+    };
+    const isEdit = !!id;
+    if (isEdit) {
+      const i = twTxns.findIndex(t => t.id === id);
+      if (i > -1) twTxns[i] = { ...twTxns[i], ...data, updatedAt: Date.now() };
+    } else {
+      twTxns.push({ id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), ...data });
+    }
+    // 重算對應持股
+    recomputeHolding(symbol);
+    await saveTwTxns();
+    await saveTwHoldings();
+    await saveTwRealized();
+    closeTxnModal();
+    renderHoldings();
+    renderTwStockStats();
+    showToast(isEdit ? '交易已更新' : '已新增交易');
+  }
+
+  async function deleteTxn() {
+    const id = document.getElementById('txnEditId').value;
+    if (!id) return;
+    const t = twTxns.find(x => x.id === id);
+    if (!t || !confirm('刪除這筆交易？對應持股的成本/股數會重新計算。')) return;
+    twTxns = twTxns.filter(x => x.id !== id);
+    recomputeHolding(t.symbol);
+    await saveTwTxns();
+    await saveTwHoldings();
+    await saveTwRealized();
+    closeTxnModal();
+    renderHoldings();
+    renderTwStockStats();
+  }
+
+  // 從所有 txns 重新計算單一持股的 shares + avgCost；同時累積 realized PnL
+  function recomputeHolding(symbol) {
+    const txns = twTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    if (txns.length === 0) {
+      return;
+    }
+    let shares = 0, totalCost = 0, avgCost = 0;
+    let realizedDelta = 0;
+    txns.forEach(t => {
+      if (t.type === 'buy') {
+        const cost = t.shares * t.price + (t.fee || 0);
+        shares += t.shares;
+        totalCost += cost;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      } else if (t.type === 'sell') {
+        if (shares === 0) return;
+        const sellQty = Math.min(t.shares, shares);
+        const sellCost = sellQty * avgCost;
+        const sellRevenue = sellQty * t.price - (t.fee || 0) - (t.tax || 0);
+        realizedDelta += sellRevenue - sellCost;
+        shares -= sellQty;
+        totalCost -= sellCost;
+        if (shares <= 0) { shares = 0; totalCost = 0; }
+      } else if (t.type === 'stock_div') {
+        // 配股：增加股數，成本不變 → 攤平均成本
+        shares += t.shares;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      } else if (t.type === 'dividend') {
+        // 現金股利：直接計入已實現
+        realizedDelta += (t.shares || 0) * (t.price || 0);
+      }
+    });
+
+    // 套用回 twRealizedPnL（重新加總所有 symbols 較簡單）
+    twRealizedPnL = recomputeAllRealized();
+
+    // 找出對應 holding
+    let h = twHoldings.find(x => x.symbol === symbol);
+    if (h) {
+      h.shares = Math.round(shares);
+      h.avgCost = shares > 0 ? Number((totalCost / shares).toFixed(2)) : 0;
+      if (!h.name && txns[0].symbolName) h.name = txns[0].symbolName;
+      h.updatedAt = Date.now();
+    } else if (shares > 0) {
+      // 自動建立持股
+      twHoldings.push({
+        id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        symbol,
+        name: txns[0].symbolName || symbol,
+        shares: Math.round(shares),
+        avgCost: Number((totalCost / shares).toFixed(2)),
+        currentPrice: null,
+        buyDate: txns[0].date,
+        market: 'TWSE',
+        createdAt: Date.now(), updatedAt: Date.now()
+      });
+    }
+  }
+
+  function recomputeAllRealized() {
+    const symbols = [...new Set(twTxns.map(t => t.symbol))];
+    let total = 0;
+    symbols.forEach(s => {
+      const txns = twTxns.filter(t => t.symbol === s).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      let shares = 0, totalCost = 0, avgCost = 0;
+      txns.forEach(t => {
+        if (t.type === 'buy') {
+          const cost = t.shares * t.price + (t.fee || 0);
+          shares += t.shares;
+          totalCost += cost;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'sell') {
+          if (shares === 0) return;
+          const sellQty = Math.min(t.shares, shares);
+          const sellCost = sellQty * avgCost;
+          const sellRevenue = sellQty * t.price - (t.fee || 0) - (t.tax || 0);
+          total += sellRevenue - sellCost;
+          shares -= sellQty;
+          totalCost -= sellCost;
+          if (shares <= 0) { shares = 0; totalCost = 0; }
+        } else if (t.type === 'stock_div') {
+          shares += t.shares;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'dividend') {
+          total += (t.shares || 0) * (t.price || 0);
+        }
+      });
+    });
+    return Math.round(total);
+  }
+
+  // === 批次股價更新 ===
+  function openBatchPriceModal() {
+    if (twHoldings.length === 0) { showToast('還沒有持股可更新'); return; }
+    const list = document.getElementById('batchPriceList');
+    list.innerHTML = twHoldings.map(h => `
+      <div style="display:flex; gap:10px; align-items:center; padding:10px 12px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px;">
+        <span style="font-family:var(--mono); color:var(--accent); font-weight:600; min-width:50px;">${escape(h.symbol)}</span>
+        <span style="flex:1; font-family:var(--serif);">${escape(h.name)}</span>
+        <input type="number" step="0.01" data-batch-id="${escape(h.id)}" value="${h.currentPrice || ''}" placeholder="目前股價" class="form-input" style="width:120px; font-family:var(--mono);">
+      </div>
+    `).join('');
+    document.getElementById('batchPriceModal').classList.add('active');
+  }
+  function closeBatchPriceModal() { document.getElementById('batchPriceModal').classList.remove('active'); }
+  async function saveBatchPrices() {
+    document.querySelectorAll('[data-batch-id]').forEach(input => {
+      const id = input.getAttribute('data-batch-id');
+      const v = Number(input.value);
+      const h = twHoldings.find(x => x.id === id);
+      if (h && v > 0) {
+        h.currentPrice = v;
+        h.priceUpdatedAt = Date.now();
+      }
+    });
+    await saveTwHoldings();
+    closeBatchPriceModal();
+    renderHoldings();
+    renderTwStockStats();
+    showToast('股價已更新');
+  }
 
   // ============================================================
   // 旅遊模組 · Travel Module
@@ -7654,6 +8417,9 @@ ${daysBrief}
         loadTrips();
         renderTripsList();
       });
+      closeMoreSheet();
+    } else if (id === 'twStockView') {
+      loadTwStock();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
       // 回到儀表板時 reset 到群組總覽層
