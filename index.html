@@ -9653,7 +9653,8 @@ ${daysBrief}
       showToast('請先填好 Supabase URL / Key 再複製');
       return;
     }
-    const payload = 'PERSONAL-STUDIO-MULTI-V1:' + btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
+    // 用 base64url（A-Za-z0-9-_）避免 + / = 在 LINE / 跨裝置複製時被改成空白或截斷
+    const payload = 'PERSONAL-STUDIO-MULTI-V1:' + b64UrlEncode(JSON.stringify(cfg));
     try {
       await navigator.clipboard.writeText(payload);
       showToast('設定已複製 · 到其他裝置按「📋 貼上設定」');
@@ -9683,8 +9684,35 @@ ${daysBrief}
       return;
     }
     try {
-      const b64 = text.replace('PERSONAL-STUDIO-MULTI-V1:', '');
-      const cfg = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      let b64 = text.replace('PERSONAL-STUDIO-MULTI-V1:', '');
+      // 修復行動裝置 / LINE 跨平台貼上常見的字元損壞：
+      b64 = b64.replace(/\s+/g, '');                          // 去除空白、換行、tab
+      b64 = b64.replace(/–/g, '-').replace(/—/g, '-');         // 智慧標點 en/em-dash → -
+      b64 = b64.replace(/ /g, '+');                            // LINE 把 + 換成空白還原（保險）
+      // 同時接受新版 base64url (-_) 與舊版 base64 (+/) 兩種格式
+      let cfg = null;
+      const decodeAttempts = [
+        () => b64UrlDecode(b64),                              // 新版 base64url
+        () => decodeURIComponent(escape(atob(b64))),          // 舊版相容
+        () => {                                                // 補 padding 後再試
+          let s = b64.replace(/-/g, '+').replace(/_/g, '/');
+          while (s.length % 4) s += '=';
+          return decodeURIComponent(escape(atob(s)));
+        }
+      ];
+      let lastErr = null;
+      for (const fn of decodeAttempts) {
+        try {
+          const decoded = fn();
+          if (decoded && decoded.trim().startsWith('{')) { cfg = JSON.parse(decoded); break; }
+        } catch (e) { lastErr = e; }
+      }
+      if (!cfg) {
+        const dbg = `解析失敗：${lastErr ? lastErr.message : '所有解碼方式皆失敗'}\n剪貼簿長度：${text.length}\n前 60 字：${text.slice(0, 60)}\n後 30 字：${text.slice(-30)}`;
+        showToast('設定碼解析失敗（已將細節印到 console）');
+        console.error(dbg);
+        return;
+      }
       if (cfg.liffId) document.getElementById('multiLiffId').value = cfg.liffId;
       if (cfg.supabaseUrl) document.getElementById('multiSupabaseUrl').value = cfg.supabaseUrl;
       if (cfg.supabaseKey) document.getElementById('multiSupabaseKey').value = cfg.supabaseKey;
