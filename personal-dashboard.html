@@ -722,6 +722,37 @@
     letter-spacing: 0.05em;
   }
 
+  /* === 台股 stat-card 手機版：4 個欄位全擠進 1 列 === */
+  @media (max-width: 768px) {
+    #twStockStats {
+      grid-template-columns: repeat(4, 1fr) !important;
+      gap: 4px !important;
+      margin-bottom: 14px !important;
+    }
+    #twStockStats .stat-card {
+      padding: 8px 4px !important;
+      text-align: center;
+      min-width: 0;
+      overflow: hidden;
+    }
+    #twStockStats .stat-label {
+      font-size: 8.5px !important;
+      letter-spacing: 0.03em !important;
+      margin-bottom: 4px !important;
+      white-space: nowrap;
+    }
+    #twStockStats .stat-value {
+      font-size: 13px !important;
+      line-height: 1.15 !important;
+      letter-spacing: -0.02em !important;
+      word-break: break-all;
+    }
+    #twStockStats .stat-sub,
+    #twStockStats .stat-pct {
+      display: none !important;
+    }
+  }
+
   /* === 台股個股 · 持股卡片 === */
   .holding-card {
     background: var(--bg-card); border: 1px solid var(--line);
