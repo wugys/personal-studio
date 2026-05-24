@@ -8934,12 +8934,22 @@ ${daysBrief}
     const box = document.getElementById('multiStatusBox');
     const label = document.getElementById('multiStatusLabel');
     if (box) {
-      box.textContent = msg;
+      // 允許 <br> 但其他內容仍 escape（msg 已經由開發者控制，安全）
+      const hasHtml = /<br>/i.test(msg);
+      if (hasHtml) {
+        box.innerHTML = msg;
+      } else {
+        box.textContent = msg;
+      }
       box.style.color = type === 'error' ? 'var(--danger)' : type === 'ok' ? 'var(--accent)' : 'var(--ink-secondary)';
       box.style.borderLeft = type === 'error' ? '2px solid var(--danger)' : type === 'ok' ? '2px solid var(--accent)' : 'none';
       box.style.paddingLeft = type ? '10px' : '14px';
+      box.style.whiteSpace = 'pre-wrap';
+      box.style.userSelect = 'text';
+      box.style.fontFamily = 'monospace';
+      box.style.fontSize = '11px';
     }
-    if (label) label.textContent = msg;
+    if (label) label.textContent = (msg.length > 30 ? msg.slice(0, 30) + '…' : msg);
   }
 
   async function initMultiUser() {
@@ -9699,9 +9709,73 @@ ${daysBrief}
   }
 
   async function testMultiConnection() {
-    setMultiStatus('測試中…');
-    teardownMultiUser();
-    await initMultiUser();
+    // 純 fetch 測試，繞過 supabase-js
+    const url = document.getElementById('multiSupabaseUrl').value.trim().replace(/\/$/, '');
+    const key = document.getElementById('multiSupabaseKey').value.trim();
+    if (!url || !key) { setMultiStatus('⚠ 請先填好 URL 和 Anon Key', 'error'); return; }
+
+    const results = [];
+    results.push(`URL: ${url}`);
+    results.push(`Key 長度: ${key.length} (應為 ~200+)`);
+    results.push(`Key 前 30: ${key.slice(0, 30)}`);
+
+    // 測試 1：HTTP HEAD 看 Supabase 是否可達
+    setMultiStatus('測試 1/3：連線 Supabase…');
+    try {
+      const res1 = await fetch(`${url}/rest/v1/`, {
+        method: 'GET',
+        headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+      });
+      results.push(`測試 1 HTTP ${res1.status}: ${res1.statusText}`);
+      if (!res1.ok) {
+        const errText = await res1.text();
+        results.push(`回應: ${errText.slice(0, 100)}`);
+      }
+    } catch (e) {
+      results.push(`測試 1 失敗: ${e.message}`);
+    }
+
+    // 測試 2：查詢 party_members table
+    setMultiStatus('測試 2/3：查詢 party_members…');
+    try {
+      const res2 = await fetch(`${url}/rest/v1/party_members?select=count&limit=1`, {
+        headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+      });
+      const text = await res2.text();
+      results.push(`測試 2 HTTP ${res2.status}: ${text.slice(0, 120)}`);
+    } catch (e) {
+      results.push(`測試 2 失敗: ${e.message}`);
+    }
+
+    // 測試 3：寫入測試
+    setMultiStatus('測試 3/3：嘗試寫入…');
+    const groupId = document.getElementById('multiGroupId').value.trim() || 'test-' + Date.now();
+    try {
+      const res3 = await fetch(`${url}/rest/v1/party_members`, {
+        method: 'POST',
+        headers: {
+          'apikey': key, 'Authorization': 'Bearer ' + key,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          group_id: groupId,
+          user_id: 'test-' + Date.now(),
+          display_name: 'Test',
+          platform: 'test'
+        })
+      });
+      const text = await res3.text();
+      results.push(`測試 3 HTTP ${res3.status}: ${text.slice(0, 120)}`);
+    } catch (e) {
+      results.push(`測試 3 失敗: ${e.message}`);
+    }
+
+    const report = results.join('\n');
+    const isOk = !report.match(/HTTP [45]/);
+    setMultiStatus(report.replace(/\n/g, '<br>'), isOk ? 'ok' : 'error');
+    // 自動複製
+    try { await navigator.clipboard.writeText(report); showToast('診斷結果已複製到剪貼簿'); } catch (e) {}
   }
 
   function openMultiHelp() { document.getElementById('multiHelpModal').classList.add('active'); }
