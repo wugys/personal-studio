@@ -2016,8 +2016,22 @@
     .gather-countdown { font-size: 38px; }
     .spot { flex-direction: column; gap: 8px; }
     .spot-time { padding-top: 0; min-width: 0; }
-    /* 手機隱藏舊的橫向 tab，改用底部 bar */
-    body.travel-active .travel-tabs { display: none; }
+    /* 手機改成跟電腦版一樣：顯示橫向 tab，水平捲動。隱藏底部 bar + 麵包屑避免重複 */
+    body.travel-active .travel-bottom-bar { display: none !important; }
+    body.travel-active .breadcrumb-bar { display: none !important; }
+    /* travel-tabs sticky 黏在頂部，方便手機切換 */
+    .travel-tabs {
+      position: sticky; top: 0; z-index: 50;
+      margin-bottom: 16px;
+      /* 緊湊一點適合手機螢幕 */
+      padding: 3px; gap: 1px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .travel-tab {
+      padding: 8px 12px; font-size: 10px; letter-spacing: 0.1em;
+    }
+    /* travel 啟用時不需要底部留白（沒底部 bar 了） */
+    body.travel-active .page { padding-bottom: 24px; }
   }
 
   /* ===== Guest Mode（團友專用模式）=====
