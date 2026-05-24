@@ -1789,7 +1789,6 @@
   }
 
   /* === 群組聊天室 === */
-  #chatPanelInner { display: flex !important; }
   .chat-header {
     display: flex; justify-content: space-between; align-items: center;
     padding: 12px 14px; background: var(--bg-card);
@@ -2920,7 +2919,7 @@
         <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">尚未啟用多人功能</div>
         <div style="font-size:13px;">請先到設定啟用多人功能。</div>
       </div>
-      <div id="chatPanelInner" style="display:none; height:calc(100vh - 220px); min-height:400px; display:flex; flex-direction:column;">
+      <div id="chatPanelInner" style="display:none; height:calc(100vh - 220px); min-height:400px; flex-direction:column;">
         <div class="chat-header">
           <div style="font-family:var(--serif); font-size:18px; font-weight:500;">💬 群組聊天</div>
           <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); letter-spacing:0.1em;" id="chatGroupTag">—</div>
@@ -7295,14 +7294,30 @@ ${baseSchema}
     const disabled = document.getElementById('partyDisabledHint');
     const enabled = document.getElementById('partyEnabled');
     if (!disabled || !enabled) return;
-    if (!trvMultiConfig.enabled || !trvMultiState.ready) {
+
+    if (!trvMultiConfig.enabled) {
+      disabled.innerHTML = `
+        <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">尚未啟用多人功能</div>
+        <div style="font-size:13px; line-height:1.6;">請先到「設定 → 多人功能」啟用並填入 Supabase / LIFF 設定。</div>
+        <button class="btn btn-primary" style="margin-top:14px;" onclick="setTravelTab('settings'); setTimeout(()=>document.getElementById('multiUserSection')?.scrollIntoView({behavior:'smooth'}), 200);">前往設定</button>
+      `;
       disabled.style.display = 'block';
       enabled.style.display = 'none';
       return;
     }
+    if (!trvMultiState.ready) {
+      disabled.innerHTML = `
+        <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">連線中…</div>
+        <div style="font-size:13px; line-height:1.6;">正在連接 Supabase。</div>
+      `;
+      disabled.style.display = 'block';
+      enabled.style.display = 'none';
+      setTimeout(() => { if (trvActiveTab === 'party') renderPartyTab(); }, 2000);
+      return;
+    }
+
     disabled.style.display = 'none';
     enabled.style.display = 'block';
-    // 套用 switch 狀態
     document.getElementById('locShareSwitch')?.classList.toggle('on', !!trvMultiConfig.shareLocation);
     document.getElementById('partyNotifySwitch')?.classList.toggle('on', !!trvMultiConfig.notifyBroadcast);
     renderPartyMembers();
@@ -8991,6 +9006,9 @@ ${daysBrief}
 
       trvMultiState.ready = true;
       setMultiStatus(`✓ 已連線 · ${profile.displayName}（${platform}）`, 'ok');
+      // 連線成功後如果剛好在 chat / party tab，立刻刷新
+      if (trvActiveTab === 'chat') renderChatTab();
+      if (trvActiveTab === 'party') renderPartyTab();
     } catch (e) {
       setMultiStatus('⚠ Supabase 連接失敗：' + (e.message || e), 'error');
     }
@@ -9245,11 +9263,33 @@ ${daysBrief}
     const disabled = document.getElementById('chatDisabledHint');
     const inner = document.getElementById('chatPanelInner');
     if (!disabled || !inner) return;
-    if (!trvMultiConfig.enabled || !trvMultiState.ready) {
+
+    if (!trvMultiConfig.enabled) {
+      // 完全沒啟用
+      disabled.innerHTML = `
+        <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">尚未啟用多人功能</div>
+        <div style="font-size:13px; line-height:1.6;">請先到「設定 → 多人功能」啟用並填入 Supabase / LIFF 設定。</div>
+        <button class="btn btn-primary" style="margin-top:14px;" onclick="setTravelTab('settings'); setTimeout(()=>document.getElementById('multiUserSection')?.scrollIntoView({behavior:'smooth'}), 200);">前往設定</button>
+      `;
       disabled.style.display = 'block';
       inner.style.display = 'none';
       return;
     }
+
+    if (!trvMultiState.ready) {
+      // 已啟用但還在連線
+      disabled.innerHTML = `
+        <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">連線中…</div>
+        <div style="font-size:13px; line-height:1.6;">正在連接 Supabase，請稍候。</div>
+        <div style="margin-top:14px; font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">如超過 30 秒未連上，請到設定確認 URL/Key</div>
+      `;
+      disabled.style.display = 'block';
+      inner.style.display = 'none';
+      // 2 秒後重試（如果仍在 chat tab）
+      setTimeout(() => { if (trvActiveTab === 'chat') renderChatTab(); }, 2000);
+      return;
+    }
+
     disabled.style.display = 'none';
     inner.style.display = 'flex';
     document.getElementById('chatGroupTag').textContent = `GROUP · ${trvMultiConfig.groupId.toUpperCase()}`;
