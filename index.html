@@ -9592,7 +9592,8 @@ ${daysBrief}
     };
     const payload = b64UrlEncode(JSON.stringify(cfg));
     const base = 'https://personal-studio-theta.vercel.app/';
-    const longLink = `${base}#trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
+    // 注意：用 ? 而不是 # — hash fragment 在 is.gd 縮網址 / LINE 內建瀏覽器 redirect 過程會被吃掉
+    const longLink = `${base}?trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
 
     // 填手動值（方法 3 備援）
     const manualEl = document.getElementById('shareManualValues');
