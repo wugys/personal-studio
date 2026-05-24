@@ -2259,6 +2259,9 @@
         <option value="date">買入日期（新→舊）</option>
       </select>
       <button class="btn btn-sm" onclick="openBatchPriceModal()" style="margin-left:auto;">⟳ 批次更新股價</button>
+      <button class="btn btn-sm" onclick="exportTwStockData()" title="備份所有台股資料">↓ 匯出</button>
+      <button class="btn btn-sm" onclick="document.getElementById('twStockImport').click()" title="從備份還原">↑ 匯入</button>
+      <input type="file" id="twStockImport" accept=".json" style="display:none" onchange="importTwStockData(event)">
     </div>
 
     <!-- 持股列表 -->
@@ -3762,8 +3765,18 @@ alter publication supabase_realtime add table party_locations;</pre>
   setInterval(updateClock, 30000);
 
   async function readKey(key) {
-    try { if (window.storage) { const r = await window.storage.get(key); return r ? r.value : null; } } catch (e) {}
-    try { return localStorage.getItem(key); } catch (e) { return null; }
+    // 優先讀 window.storage（Claude 雲端環境），讀不到時 fallback 到 localStorage
+    let val = null;
+    try {
+      if (window.storage) {
+        const r = await window.storage.get(key);
+        if (r && r.value !== undefined && r.value !== null && r.value !== '') val = r.value;
+      }
+    } catch (e) {}
+    if (val === null) {
+      try { val = localStorage.getItem(key); } catch (e) {}
+    }
+    return val;
   }
   async function writeKey(key, value) {
     try { localStorage.setItem(key, value); } catch (e) {}
@@ -5715,6 +5728,47 @@ ${userQuery}`;
       });
     });
     return Math.round(total);
+  }
+
+  // === 匯出 / 匯入 台股資料 ===
+  function exportTwStockData() {
+    const data = {
+      holdings: twHoldings,
+      transactions: twTxns,
+      realized: twRealizedPnL,
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tw-stocks-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  function importTwStockData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有台股資料。`)) return;
+        if (d.holdings) twHoldings = d.holdings;
+        if (d.transactions) twTxns = d.transactions;
+        if (typeof d.realized === 'number') twRealizedPnL = d.realized;
+        await saveTwHoldings();
+        await saveTwTxns();
+        await saveTwRealized();
+        renderHoldings();
+        renderTwStockStats();
+        showToast(`已匯入 ${twHoldings.length} 檔持股`);
+      } catch (err) {
+        alert('匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // 重置避免下次選同檔案不觸發
   }
 
   // === 批次股價更新 ===
