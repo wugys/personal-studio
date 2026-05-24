@@ -742,31 +742,75 @@
     .subsection { gap: 8px; }
     .group-body-wrap { gap: 14px; }
 
-    /* === Level 1 群組大卡片手機緊湊版 === */
-    .groups-overview { grid-template-columns: 1fr; gap: 10px; }
+    /* === Level 1 群組 → 2 欄小圖示卡片 === */
+    .groups-overview { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .group-overview-card {
-      flex-direction: row; min-height: auto;
-      padding: 14px; gap: 10px; align-items: center;
+      flex-direction: column; min-height: 120px;
+      padding: 16px 10px; gap: 6px;
+      align-items: center; text-align: center; justify-content: center;
     }
     .group-overview-top {
-      flex-direction: column; gap: 4px; align-items: center;
-      flex-shrink: 0; width: 50px;
+      width: auto; flex-direction: column;
+      align-items: center; gap: 4px; flex-shrink: 0;
     }
-    .group-overview-icon { font-size: 24px; }
-    .group-overview-count { font-size: 9px; padding: 2px 6px; letter-spacing: 0.1em; }
-    .group-overview-card > div:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .group-overview-name { font-size: 18px; line-height: 1.2; }
-    .group-overview-en { font-size: 9px; margin-top: 0; }
-    .group-overview-preview {
-      display: none;  /* 手機隱藏預覽模組名稱列表（佔太多空間）*/
+    .group-overview-icon { font-size: 30px; }
+    .group-overview-count {
+      font-size: 9px; padding: 2px 7px;
+      letter-spacing: 0.1em; background: rgba(212, 165, 116, 0.15);
     }
-    .group-overview-arrow {
-      font-size: 22px; align-self: center; flex-shrink: 0;
+    .group-overview-card > div:nth-child(2) {
+      flex: none; min-width: 0; display: flex;
+      flex-direction: column; gap: 1px; align-items: center;
     }
-    /* 控制列也精簡 */
+    .group-overview-name { font-size: 14.5px; line-height: 1.2; font-weight: 600; }
+    .group-overview-en { font-size: 8px; margin-top: 0; letter-spacing: 0.15em; }
+    .group-overview-preview { display: none; }
+    .group-overview-arrow { display: none; }
+
+    /* === Level 2 模組 → 2 欄小圖示卡片（與 Level 1 同款式）=== */
+    .group-body { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .module {
+      min-height: 120px; padding: 16px 10px;
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; gap: 6px;
+    }
+    .module::before { display: none; }
+    .module > div:first-child {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 6px; width: 100%;
+    }
+    .module-header {
+      flex-direction: column; gap: 4px;
+      align-items: center; margin-bottom: 0;
+    }
+    .module-icon {
+      width: 44px; height: 44px; font-size: 20px;
+    }
+    .module-status, .module-actions { display: none; }
+    .module-name { font-size: 14.5px; margin-bottom: 0; line-height: 1.2; font-weight: 600; }
+    .module-name-en { font-size: 8px; margin-bottom: 0; letter-spacing: 0.15em; }
+    .module-desc { display: none; }
+    .module-footer { display: none; }
+
+    /* 子分區標題（投資中心 5 個小區）也縮小 */
+    .subsection-header {
+      padding: 2px 0 6px; gap: 8px;
+    }
+    .subsection-title { font-size: 13px; }
+    .subsection-name-en { font-size: 8px; }
+    .subsection-hint { display: none; }
+
+    /* 控制列精簡 */
     .control-bar { gap: 8px; margin-bottom: 12px; padding-bottom: 8px; }
     .section-title { font-size: 18px; }
     .section-title .num { font-size: 9px; }
+
+    /* Level 2 (進入群組後) 標題列 */
+    .group-detail-header { margin-bottom: 14px; }
+    .group-detail-title h2 { font-size: 22px; }
+    .group-detail-title-en { font-size: 9px; }
+    .group { padding: 12px 0 !important; }
+    .group-body-wrap { gap: 18px; }
   }
   .syncing { color: var(--accent) !important; }
 
