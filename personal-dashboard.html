@@ -9036,15 +9036,20 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   async function fetchStockNews(symbol, name) {
     const workerUrl = await readKey(TW_STORAGE.newsWorker);
     if (workerUrl) {
-      // 走 worker (RSS)
-      const q = `${symbol} ${name} 股票`;
+      // 走 worker (RSS) — 用單詞名稱 query（Google News 對多詞 + 數字組合會 reject）
+      const q = name || symbol;
       const sep = workerUrl.includes('?') ? '&' : '?';
       const url = `${workerUrl.replace(/\/+$/, '')}/${sep}q=${encodeURIComponent(q)}`;
       const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Worker ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-      const data = await resp.json();
-      if (data.error) throw new Error('Worker: ' + data.error);
-      return { items: data.items || [] };
+      // 即使 status 非 200，也試著解 JSON 拿 error 欄位
+      let body, errMsg = '';
+      try { body = await resp.json(); } catch (e) { body = null; }
+      if (!resp.ok) {
+        errMsg = body?.error || `HTTP ${resp.status}`;
+        throw new Error(`Worker 回 ${resp.status} · ${errMsg}（query: ${q}）`);
+      }
+      if (body?.error) throw new Error('Worker: ' + body.error);
+      return { items: body?.items || [] };
     }
     // Fallback: API 模式（沒設 worker 才走這條）
     const apiKey = await readKey(AI_KEY_STORAGE);
@@ -9189,12 +9194,17 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     btn.disabled = true; btn.textContent = '測試中…';
     try {
       const sep = v.includes('?') ? '&' : '?';
-      const url = `${v.replace(/\/+$/, '')}/${sep}q=${encodeURIComponent('2330 台積電 股票')}`;
+      // 用單詞 query（Google News 對多詞 + 數字組合會拒）
+      const url = `${v.replace(/\/+$/, '')}/${sep}q=${encodeURIComponent('台積電')}`;
       const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
-      const n = (data.items || []).length;
+      let data;
+      try { data = await resp.json(); } catch (e) { data = null; }
+      if (!resp.ok) {
+        const upstream = data?.error || `HTTP ${resp.status}`;
+        throw new Error(upstream);
+      }
+      if (data?.error) throw new Error(data.error);
+      const n = (data?.items || []).length;
       showToast(`✓ 測試成功 · 抓到 ${n} 則新聞`);
     } catch (e) {
       showToast('✗ 測試失敗：' + e.message);
