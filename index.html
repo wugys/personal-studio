@@ -843,6 +843,21 @@
   }
   .syncing { color: var(--accent) !important; }
 
+  /* === PDF 選項勾選列 === */
+  .pdf-opt {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 4px;
+    cursor: pointer; transition: background 0.2s;
+    font-size: 14px;
+  }
+  .pdf-opt:hover { background: var(--bg-card); }
+  .pdf-opt input[type="checkbox"] {
+    width: 18px; height: 18px; accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .pdf-opt input:disabled { opacity: 0.6; cursor: default; }
+  .pdf-opt input:disabled + span { color: var(--ink-tertiary); }
+
   /* ============================================================
      列印 / PDF 匯出樣式
      ============================================================ */
@@ -2716,6 +2731,29 @@ alter publication supabase_realtime add table party_locations;</pre>
         <div class="more-item" onclick="closeMoreSheet();setTravelTab('settings')">
           <div class="more-item-icon">⚙</div>
           <div class="more-item-label">設定</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PDF 列印選項 Modal ============ -->
+  <div class="modal-backdrop" id="exportPdfModal">
+    <div class="modal">
+      <h2>列印 / <em>匯出 PDF</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:18px; line-height:1.6;">
+        勾選想要包含的內容，點「開始列印」會跳出列印對話框，可選擇「另存為 PDF」或直接列印。
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:18px;">
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptItinerary" checked disabled> <span>逐日行程 + 航班 + 住宿（必含）</span></label>
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptChecklist"> <span>行前清單（含勾選狀態）</span></label>
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptBudget"> <span>預算明細（總預算、各類別、花費清單）</span></label>
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptShopping"> <span>購物記錄（金額、店家、備註）</span></label>
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptEmergency" checked> <span>緊急聯絡 + 行前必備</span></label>
+      </div>
+      <div class="form-actions" style="justify-content:flex-end;">
+        <div class="form-actions-right">
+          <button type="button" class="btn" onclick="closeExportPdfModal()">取消</button>
+          <button type="button" class="btn btn-primary" onclick="runExportPdf()">⎙ 開始列印</button>
         </div>
       </div>
     </div>
@@ -4611,7 +4649,7 @@ ${userQuery}`;
 
   loadOpps();
 
-  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal'].forEach(id => {
+  ['groupModal','moduleModal','apiModal','gatherModal','checklistModal','expenseModal','budgetTotalModal','shopModal','spotModal','multiHelpModal','newTripModal','exportPdfModal'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', (e) => {
       if (e.target.id === id) e.currentTarget.classList.remove('active');
@@ -5043,23 +5081,35 @@ ${userQuery}`;
   // ===== 列印 / PDF 匯出 =====
   function exportTripPdf() {
     if (!ITINERARY) { showToast('沒有作用中的旅遊'); return; }
-    // 動態建立列印用 DOM
+    document.getElementById('exportPdfModal').classList.add('active');
+  }
+  function closeExportPdfModal() {
+    document.getElementById('exportPdfModal').classList.remove('active');
+  }
+  function runExportPdf() {
+    const options = {
+      itinerary: true,
+      checklist: document.getElementById('pdfOptChecklist').checked,
+      budget: document.getElementById('pdfOptBudget').checked,
+      shopping: document.getElementById('pdfOptShopping').checked,
+      emergency: document.getElementById('pdfOptEmergency').checked
+    };
+    closeExportPdfModal();
     let container = document.getElementById('printContainer');
     if (container) container.remove();
     container = document.createElement('div');
     container.id = 'printContainer';
     container.className = 'print-container';
-    container.innerHTML = buildPrintHtml(ITINERARY);
+    container.innerHTML = buildPrintHtml(ITINERARY, options);
     document.body.appendChild(container);
     showToast('準備列印 · 可選「另存為 PDF」');
     setTimeout(() => {
       window.print();
-      // 列印對話框關閉後清理
       setTimeout(() => { container.remove(); }, 800);
     }, 250);
   }
 
-  function buildPrintHtml(it) {
+  function buildPrintHtml(it, options = { itinerary: true, checklist: false, budget: false, shopping: false, emergency: true }) {
     const startD = new Date(it.startDate + 'T00:00:00');
     const endD = new Date(it.endDate + 'T00:00:00');
     const dateRange = `${startD.getFullYear()}.${String(startD.getMonth()+1).padStart(2,'0')}.${String(startD.getDate()).padStart(2,'0')} – ${endD.getFullYear()}.${String(endD.getMonth()+1).padStart(2,'0')}.${String(endD.getDate()).padStart(2,'0')}`;
@@ -5126,8 +5176,15 @@ ${userQuery}`;
       `;
     }).join('');
 
+    // 行前清單
+    const checklistHtml = options.checklist ? buildPrintChecklist() : '';
+    // 預算明細
+    const budgetHtml = options.budget ? buildPrintBudget(it) : '';
+    // 購物記錄
+    const shoppingHtml = options.shopping ? buildPrintShopping() : '';
+
     // 緊急聯絡
-    const emergencyHtml = `
+    const emergencyHtml = options.emergency ? `
       <div class="print-section print-emergency">
         <h2>緊急 <em>聯絡 & 注意事項</em></h2>
         ${it.agency ? `
@@ -5150,7 +5207,7 @@ ${userQuery}`;
           </div>
         </div>
       </div>
-    `;
+    ` : '';
 
     return `
       <div class="print-cover">
@@ -5169,9 +5226,119 @@ ${userQuery}`;
         <h2>逐日 <em>行程</em></h2>
       </div>
       ${daysHtml}
+      ${checklistHtml}
+      ${budgetHtml}
+      ${shoppingHtml}
       ${emergencyHtml}
       <div class="print-footer">
         Generated by Personal Studio · ${new Date().toLocaleDateString('zh-TW')}
+      </div>
+    `;
+  }
+
+  function buildPrintChecklist() {
+    if (!trvChecklist || trvChecklist.length === 0) return '';
+    const sections = ['證件', '衣物', '3C 電器', '盥洗', '藥品', '其他'];
+    const total = trvChecklist.length;
+    const done = trvChecklist.filter(i => i.done).length;
+    const html = sections.map(sec => {
+      const items = trvChecklist.filter(i => i.section === sec);
+      if (!items.length) return '';
+      return `
+        <div style="margin-bottom: 4mm;">
+          <div style="font-family:'JetBrains Mono', monospace; font-size:9pt; color:#888 !important; letter-spacing:0.15em; margin-bottom:1.5mm;">${escape(sec)} · ${items.filter(i=>i.done).length}/${items.length}</div>
+          ${items.map(i => `
+            <div style="display:flex; gap:3mm; padding:1mm 0; font-size:10pt; border-bottom:1px dotted #eee;">
+              <span style="width:5mm; color:${i.done ? '#d4a574' : '#bbb'} !important; font-weight:bold;">${i.done ? '☑' : '☐'}</span>
+              <span style="flex:1; ${i.done ? 'text-decoration:line-through; color:#aaa !important;' : ''}">${escape(i.text)}${i.note ? ' <span style="color:#888 !important; font-size:9pt;">· ' + escape(i.note) + '</span>' : ''}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="print-section" style="page-break-before:always;">
+        <h2>行前 <em>清單</em> · ${done}/${total} 已完成</h2>
+        ${html}
+      </div>
+    `;
+  }
+
+  function buildPrintBudget(it) {
+    const used = trvExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const remaining = trvBudgetTotal - used;
+    const pct = trvBudgetTotal > 0 ? ((used / trvBudgetTotal) * 100).toFixed(1) : 0;
+    const cats = ['餐飲', '購物', '門票', '交通', '小費', '其他'];
+    const catRows = cats.map(c => {
+      const sum = trvExpenses.filter(e => e.category === c).reduce((s, e) => s + Number(e.amount || 0), 0);
+      const cnt = trvExpenses.filter(e => e.category === c).length;
+      if (cnt === 0) return '';
+      return `<tr><td style="padding:1.5mm 3mm;">${escape(c)}</td><td style="padding:1.5mm 3mm; text-align:right;">NT$${sum.toLocaleString()}</td><td style="padding:1.5mm 3mm; text-align:right; color:#888 !important;">${cnt} 筆</td></tr>`;
+    }).filter(x => x).join('');
+    const sorted = trvExpenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const rows = sorted.map(e => `
+      <tr>
+        <td style="padding:1.2mm 3mm; font-family:monospace; font-size:9pt; color:#888 !important;">${escape(e.date || '')}</td>
+        <td style="padding:1.2mm 3mm; font-size:9pt; color:#d4a574 !important;">[${escape(e.category)}]</td>
+        <td style="padding:1.2mm 3mm; font-size:10pt;">${escape(e.note || '—')}</td>
+        <td style="padding:1.2mm 3mm; text-align:right; font-size:10pt;">NT$${Number(e.amount).toLocaleString()}</td>
+      </tr>
+    `).join('');
+    return `
+      <div class="print-section" style="page-break-before:always;">
+        <h2>預算 <em>明細</em></h2>
+        <div style="display:flex; gap:8mm; margin-bottom:4mm; font-size:11pt;">
+          <div><span style="color:#888 !important;">總預算</span> <strong>NT$${trvBudgetTotal.toLocaleString()}</strong></div>
+          <div><span style="color:#888 !important;">已用</span> <strong style="color:#d4a574 !important;">NT$${used.toLocaleString()}</strong> (${pct}%)</div>
+          <div><span style="color:#888 !important;">剩餘</span> <strong>NT$${remaining.toLocaleString()}</strong></div>
+        </div>
+        ${catRows ? `
+          <table style="width:100%; border-collapse:collapse; margin-bottom:5mm; border:1px solid #ddd;">
+            <thead>
+              <tr style="background:#f5f0e6 !important; font-size:9pt;">
+                <th style="padding:2mm 3mm; text-align:left; font-family:'JetBrains Mono', monospace; letter-spacing:0.1em;">類別</th>
+                <th style="padding:2mm 3mm; text-align:right; font-family:'JetBrains Mono', monospace; letter-spacing:0.1em;">小計</th>
+                <th style="padding:2mm 3mm; text-align:right; font-family:'JetBrains Mono', monospace; letter-spacing:0.1em;">筆數</th>
+              </tr>
+            </thead>
+            <tbody>${catRows}</tbody>
+          </table>
+        ` : ''}
+        ${rows ? `
+          <div style="font-family:'JetBrains Mono', monospace; font-size:9pt; color:#888 !important; letter-spacing:0.15em; margin-bottom:1.5mm;">逐筆明細 · ${trvExpenses.length} 筆</div>
+          <table style="width:100%; border-collapse:collapse;">
+            <tbody>${rows}</tbody>
+          </table>
+        ` : '<div style="color:#888 !important; font-size:10pt;">尚無花費紀錄</div>'}
+      </div>
+    `;
+  }
+
+  function buildPrintShopping() {
+    if (!trvShopping || trvShopping.length === 0) {
+      return `
+        <div class="print-section" style="page-break-before:always;">
+          <h2>購物 <em>記錄</em></h2>
+          <div style="color:#888 !important; font-size:10pt;">尚無購物紀錄</div>
+        </div>
+      `;
+    }
+    const total = trvShopping.reduce((s, x) => s + Number(x.amount || 0) * (Number(x.qty) || 1), 0);
+    const rows = trvShopping.slice().sort((a, b) => b.createdAt - a.createdAt).map(x => `
+      <div style="display:flex; gap:4mm; padding:2mm 0; border-bottom:1px solid #eee; page-break-inside:avoid;">
+        ${x.photo ? `<img src="${x.photo}" style="width:22mm; height:22mm; object-fit:cover; border:1px solid #ddd; flex-shrink:0;">` : `<div style="width:22mm; height:22mm; border:1px solid #ddd; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#bbb !important; font-size:18pt;">⛬</div>`}
+        <div style="flex:1; min-width:0;">
+          <div style="font-family:'Fraunces', serif; font-size:11.5pt; font-weight:500;">${escape(x.name)}${x.qty > 1 ? ' × ' + x.qty : ''}</div>
+          <div style="font-size:10pt; color:#d4a574 !important; margin:1mm 0;">NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}</div>
+          ${x.where ? `<div style="font-size:9.5pt; color:#666 !important;">📍 ${escape(x.where)}</div>` : ''}
+          ${x.note ? `<div style="font-size:9.5pt; color:#888 !important;">${escape(x.note)}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+    return `
+      <div class="print-section" style="page-break-before:always;">
+        <h2>購物 <em>記錄</em> · ${trvShopping.length} 件 · NT$${total.toLocaleString()}</h2>
+        ${rows}
       </div>
     `;
   }
