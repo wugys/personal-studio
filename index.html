@@ -2642,7 +2642,10 @@
         <option value="symbol">股票代號</option>
         <option value="date">買入日期（新→舊）</option>
       </select>
-      <button class="btn btn-sm" onclick="openBatchPriceModal()" style="margin-left:auto;">⟳ 批次更新股價</button>
+      <span id="twSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
+      <button class="btn btn-sm" id="twSyncBtn" onclick="syncTwNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
+      <button class="btn btn-sm" onclick="openTwSyncModal()" title="跨裝置同步設定">⚙</button>
+      <button class="btn btn-sm" onclick="openBatchPriceModal()">⟳ 批次更新股價</button>
       <button class="btn btn-sm" onclick="exportTwStockData()" title="備份所有台股資料">↓ 匯出</button>
       <button class="btn btn-sm" onclick="document.getElementById('twStockImport').click()" title="從備份還原">↑ 匯入</button>
       <input type="file" id="twStockImport" accept=".json" style="display:none" onchange="importTwStockData(event)">
@@ -2672,6 +2675,64 @@
       <div id="twAnalysisModalBody" style="max-height: 65vh; overflow-y: auto;"></div>
       <div class="form-actions" style="justify-content:flex-end; margin-top:14px;">
         <button class="btn btn-primary" onclick="closeTwAnalysisModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 台股雲端同步設定 Modal（Supabase）============ -->
+  <div class="modal-backdrop" id="twSyncModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>☁ 跨裝置<em>雲端同步</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        透過你自己的 <strong>Supabase 專案</strong>同步持股、交易記錄。手機新增 → 電腦立刻看得到。
+        可重用旅遊多人功能用的 Supabase（chuanhung 專案），無需另開。
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:0.1em;">
+          <input type="checkbox" id="twSyncEnabled"> 啟用雲端同步
+        </label>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="twSyncSupabaseUrl" class="form-input" placeholder="https://xxx.supabase.co" style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillTwSyncFromTrv()" title="從旅遊多人功能設定帶入">↓ 用旅遊的</button>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <input type="text" id="twSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">User ID（多裝置要相同）</label>
+        <input type="text" id="twSyncUserId" class="form-input" placeholder="kevin-personal（自取，例如 email 或暱稱）">
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px;">
+          相同 ID 的裝置才會互通資料；不同 ID 等於不同帳號。
+        </div>
+      </div>
+
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 建表 SQL（複製到 Supabase 跑一次）</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">
+          到 Supabase Dashboard → 左側 <strong>SQL Editor</strong> → 點下方按鈕複製 SQL → 貼上 → Run。
+        </div>
+        <button class="btn btn-sm" type="button" onclick="copyTwSyncSql()" style="margin-top:10px;">📋 複製建表 SQL</button>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.5;">
+          💡 會建 2 張表：<code>tw_holdings</code>、<code>tw_transactions</code>，用 RLS Allow-All policy（適合個人用，因 Anon Key 已暴露在前端）。
+        </div>
+      </details>
+
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">
+        ⚠ 衝突策略：last-write-wins。若 A 裝置與 B 裝置同時改同一筆資料，後寫入雲端的版本會贏。建議短時間內不要兩台同步編輯。
+      </div>
+
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeTwSyncModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveTwSyncSettings()">儲存 + 立即同步</button>
       </div>
     </div>
   </div>
@@ -5638,7 +5699,8 @@ ${userQuery}`;
     realized: 'tw_realized_v1',  // 已實現損益（賣出時累積）
     news: 'tw_news_v1',          // { lastFetch: 'YYYY-MM-DD', perStock: { symbol: { fetchedAt, items: [...] } } }
     analysis: 'tw_analysis_v1',  // { perStock: { symbol: { fetchedAt, scoreBuy, scoreSell, summary, reasoning } } }
-    newsWorker: 'tw_news_worker_url_v1'  // Cloudflare Worker URL（A 方案：RSS 代理）
+    newsWorker: 'tw_news_worker_url_v1',  // Cloudflare Worker URL（A 方案：RSS 代理）
+    sync: 'tw_sync_v1'  // { enabled, supabaseUrl, supabaseKey, userId, lastPullAt }
   };
 
   // News / Analysis state
@@ -5852,6 +5914,10 @@ ${userQuery}`;
   let twRealizedPnL = 0;
   let twExpandedHoldingId = null; // 展開交易記錄的持股 ID
 
+  // ===== Supabase 跨裝置同步 state =====
+  let twSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
+  let twSyncClient = null;
+
   async function loadTwStock() {
     try { const h = await readKey(TW_STORAGE.holdings); twHoldings = h ? JSON.parse(h) : []; }
     catch (e) { twHoldings = []; }
@@ -5859,16 +5925,220 @@ ${userQuery}`;
     catch (e) { twTxns = []; }
     try { const r = await readKey(TW_STORAGE.realized); twRealizedPnL = r ? Number(r) : 0; }
     catch (e) { twRealizedPnL = 0; }
+    await loadTwSyncConfig();
     await loadTwNewsAnalysis();
     renderTwStockStats();
     renderHoldings();
     renderTwNewsFeed();
-    // 自動觸發：若今天 8AM 後尚未抓且有 API key + 有持股 → 開始抓
+    renderTwSyncBadge();
+    // 自動觸發：若今天 8AM 後尚未抓且有 worker → 開始抓
     checkAutoFetchTwNews();
+    // 自動雲端同步：啟用後啟動時拉雲端最新（不 block UI）
+    if (twSyncConfig.enabled) {
+      pullAllFromSupabase().then(r => {
+        if (r) {
+          renderTwStockStats();
+          renderHoldings();
+          renderTwSyncBadge();
+          if (r.hCount > 0 || r.tCount > 0) showToast(`☁ 已從雲端同步 · ${r.hCount} 持股 / ${r.tCount} 交易`);
+        }
+      }).catch(e => console.warn('auto pull fail', e));
+    }
   }
   async function saveTwHoldings() { await writeKey(TW_STORAGE.holdings, JSON.stringify(twHoldings)); }
   async function saveTwTxns() { await writeKey(TW_STORAGE.txns, JSON.stringify(twTxns)); }
   async function saveTwRealized() { await writeKey(TW_STORAGE.realized, String(twRealizedPnL)); }
+
+  // ============================================================
+  // 台股 Supabase 同步（last-write-wins by updated_at）
+  // ============================================================
+  async function loadTwSyncConfig() {
+    try {
+      const v = await readKey(TW_STORAGE.sync);
+      if (v) twSyncConfig = { ...twSyncConfig, ...JSON.parse(v) };
+    } catch (e) {}
+  }
+  async function saveTwSyncConfig() {
+    await writeKey(TW_STORAGE.sync, JSON.stringify(twSyncConfig));
+  }
+  async function initTwSyncClient() {
+    if (!twSyncConfig.enabled || !twSyncConfig.supabaseUrl || !twSyncConfig.supabaseKey || !twSyncConfig.userId) return null;
+    if (twSyncClient) return twSyncClient;
+    if (!window.supabase) {
+      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js', 'sdk-supabase');
+    }
+    twSyncClient = window.supabase.createClient(twSyncConfig.supabaseUrl, twSyncConfig.supabaseKey);
+    return twSyncClient;
+  }
+  // 推單筆（fire-and-forget，不 block UI）
+  async function pushHoldingToSupabase(h, deleted = false) {
+    try {
+      const sb = await initTwSyncClient();
+      if (!sb) return;
+      await sb.from('tw_holdings').upsert({
+        id: h.id,
+        user_id: twSyncConfig.userId,
+        data: h,
+        updated_at: new Date().toISOString(),
+        deleted
+      }, { onConflict: 'id' });
+    } catch (e) { console.warn('push holding fail', e); }
+  }
+  async function pushTransactionToSupabase(t, deleted = false) {
+    try {
+      const sb = await initTwSyncClient();
+      if (!sb) return;
+      await sb.from('tw_transactions').upsert({
+        id: t.id,
+        user_id: twSyncConfig.userId,
+        symbol: t.symbol || null,
+        data: t,
+        updated_at: new Date().toISOString(),
+        deleted
+      }, { onConflict: 'id' });
+    } catch (e) { console.warn('push tx fail', e); }
+  }
+  // 拉所有，merge by id（last-write-wins by updated_at）
+  async function pullAllFromSupabase() {
+    const sb = await initTwSyncClient();
+    if (!sb) return null;
+    const { data: hData, error: hErr } = await sb.from('tw_holdings')
+      .select('*').eq('user_id', twSyncConfig.userId).eq('deleted', false);
+    if (hErr) throw new Error('拉持股失敗: ' + hErr.message);
+    const { data: tData, error: tErr } = await sb.from('tw_transactions')
+      .select('*').eq('user_id', twSyncConfig.userId).eq('deleted', false);
+    if (tErr) throw new Error('拉交易失敗: ' + tErr.message);
+
+    const localHMap = new Map(twHoldings.map(h => [h.id, h]));
+    (hData || []).forEach(row => {
+      const local = localHMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localHMap.set(row.id, row.data);
+    });
+    twHoldings = Array.from(localHMap.values());
+
+    const localTMap = new Map(twTxns.map(t => [t.id, t]));
+    (tData || []).forEach(row => {
+      const local = localTMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localTMap.set(row.id, row.data);
+    });
+    twTxns = Array.from(localTMap.values());
+
+    await saveTwHoldings();
+    await saveTwTxns();
+    twSyncConfig.lastPullAt = Date.now();
+    await saveTwSyncConfig();
+    return { hCount: (hData || []).length, tCount: (tData || []).length };
+  }
+  async function pushAllToSupabase() {
+    let ok = 0;
+    for (const h of twHoldings) { try { await pushHoldingToSupabase(h); ok++; } catch (e) {} }
+    for (const t of twTxns) { try { await pushTransactionToSupabase(t); ok++; } catch (e) {} }
+    return ok;
+  }
+  async function syncTwNow() {
+    if (!twSyncConfig.enabled) { openTwSyncModal(); return; }
+    const btn = document.getElementById('twSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '☁ 同步中…'; }
+    try {
+      const r = await pullAllFromSupabase();
+      if (!r) throw new Error('Client 初始化失敗 · 請檢查設定');
+      await pushAllToSupabase();
+      renderHoldings();
+      renderTwStockStats();
+      renderTwSyncBadge();
+      showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
+    } catch (e) {
+      showToast('☁ 同步失敗：' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
+    }
+  }
+  function renderTwSyncBadge() {
+    const el = document.getElementById('twSyncBadge');
+    if (!el) return;
+    if (!twSyncConfig.enabled) {
+      el.textContent = '☁ 未啟用';
+      el.style.color = 'var(--ink-tertiary)';
+      return;
+    }
+    const t = twSyncConfig.lastPullAt;
+    el.textContent = t ? `☁ ${new Date(t).toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'})}` : '☁ 待同步';
+    el.style.color = 'var(--accent)';
+  }
+
+  // ===== Sync 設定 Modal =====
+  async function openTwSyncModal() {
+    await loadTwSyncConfig();
+    document.getElementById('twSyncEnabled').checked = !!twSyncConfig.enabled;
+    document.getElementById('twSyncSupabaseUrl').value = twSyncConfig.supabaseUrl || '';
+    document.getElementById('twSyncSupabaseKey').value = twSyncConfig.supabaseKey || '';
+    document.getElementById('twSyncUserId').value = twSyncConfig.userId || '';
+    // 嘗試自動帶旅遊已設好的 Supabase（給用戶方便）
+    if (!twSyncConfig.supabaseUrl && trvMultiConfig?.supabaseUrl) {
+      document.getElementById('twSyncSupabaseUrl').placeholder = `（旅遊已設：${trvMultiConfig.supabaseUrl}，可點「↓ 用旅遊的」帶入）`;
+    }
+    document.getElementById('twSyncModal').classList.add('active');
+  }
+  function closeTwSyncModal() { document.getElementById('twSyncModal').classList.remove('active'); }
+  function fillTwSyncFromTrv() {
+    if (trvMultiConfig?.supabaseUrl) document.getElementById('twSyncSupabaseUrl').value = trvMultiConfig.supabaseUrl;
+    if (trvMultiConfig?.supabaseKey) document.getElementById('twSyncSupabaseKey').value = trvMultiConfig.supabaseKey;
+    showToast(trvMultiConfig?.supabaseUrl ? '已帶入旅遊設定' : '旅遊尚未設定 Supabase');
+  }
+  async function saveTwSyncSettings() {
+    twSyncConfig.enabled = document.getElementById('twSyncEnabled').checked;
+    twSyncConfig.supabaseUrl = document.getElementById('twSyncSupabaseUrl').value.trim();
+    twSyncConfig.supabaseKey = document.getElementById('twSyncSupabaseKey').value.trim();
+    twSyncConfig.userId = document.getElementById('twSyncUserId').value.trim();
+    if (twSyncConfig.enabled) {
+      if (!twSyncConfig.supabaseUrl) return showToast('請填 Supabase URL');
+      if (!twSyncConfig.supabaseKey) return showToast('請填 Supabase Anon Key');
+      if (!twSyncConfig.userId) return showToast('請填 User ID（自取，多裝置要相同）');
+      if (!/^https:\/\/.+\.supabase\.co$/.test(twSyncConfig.supabaseUrl)) return showToast('Supabase URL 格式錯（應為 https://xxx.supabase.co）');
+    }
+    twSyncClient = null; // 重新初始化
+    await saveTwSyncConfig();
+    renderTwSyncBadge();
+    showToast('☁ 設定已儲存');
+    closeTwSyncModal();
+    // 立即跑一次同步
+    if (twSyncConfig.enabled) syncTwNow();
+  }
+  function copyTwSyncSql() {
+    const sql = `-- 在 Supabase Dashboard → SQL Editor 跑一次（建表）
+CREATE TABLE IF NOT EXISTS tw_holdings (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_tw_holdings_user ON tw_holdings(user_id);
+ALTER TABLE tw_holdings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON tw_holdings;
+CREATE POLICY "Allow all" ON tw_holdings FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS tw_transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  symbol TEXT,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_tw_transactions_user ON tw_transactions(user_id);
+ALTER TABLE tw_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON tw_transactions;
+CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (true);`;
+    navigator.clipboard.writeText(sql).then(
+      () => showToast('SQL 已複製，貼到 Supabase SQL Editor 跑一次'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
 
   // === 計算工具 ===
   function holdingCost(h) { return (h.shares || 0) * (h.avgCost || 0); }
@@ -6114,20 +6384,23 @@ ${userQuery}`;
       industry: document.getElementById('holdingIndustry').value.trim(),
       notes: document.getElementById('holdingNotes').value.trim()
     };
+    let saved;
     if (id) {
       const i = twHoldings.findIndex(h => h.id === id);
-      if (i > -1) twHoldings[i] = { ...twHoldings[i], ...data, updatedAt: Date.now() };
+      if (i > -1) { twHoldings[i] = { ...twHoldings[i], ...data, updatedAt: Date.now() }; saved = twHoldings[i]; }
     } else {
       // 檢查 symbol 是否已存在
       const exist = twHoldings.find(h => h.symbol === data.symbol);
       if (exist) { showToast(`已有持股 ${exist.name}，請改點編輯。`); return; }
-      twHoldings.push({ id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data });
+      saved = { id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      twHoldings.push(saved);
     }
     await saveTwHoldings();
     closeHoldingModal();
     renderHoldings();
     renderTwStockStats();
     showToast(id ? '持股已更新' : '已新增持股');
+    if (saved) pushHoldingToSupabase(saved); // 雲端同步（fire-and-forget）
   }
 
   async function deleteHolding() {
@@ -6145,6 +6418,7 @@ ${userQuery}`;
     closeHoldingModal();
     renderHoldings();
     renderTwStockStats();
+    pushHoldingToSupabase(h, true); // soft delete 到雲端
   }
 
   // === Transaction CRUD ===
@@ -6231,11 +6505,13 @@ ${userQuery}`;
       notes: document.getElementById('txnNotes').value.trim()
     };
     const isEdit = !!id;
+    let savedTxn;
     if (isEdit) {
       const i = twTxns.findIndex(t => t.id === id);
-      if (i > -1) twTxns[i] = { ...twTxns[i], ...data, updatedAt: Date.now() };
+      if (i > -1) { twTxns[i] = { ...twTxns[i], ...data, updatedAt: Date.now() }; savedTxn = twTxns[i]; }
     } else {
-      twTxns.push({ id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), ...data });
+      savedTxn = { id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      twTxns.push(savedTxn);
     }
     // 重算對應持股
     recomputeHolding(symbol);
@@ -6246,6 +6522,10 @@ ${userQuery}`;
     renderHoldings();
     renderTwStockStats();
     showToast(isEdit ? '交易已更新' : '已新增交易');
+    // 雲端同步：推交易 + 推該 symbol 對應的持股（recomputeHolding 改了它）
+    if (savedTxn) pushTransactionToSupabase(savedTxn);
+    const affected = twHoldings.find(h => h.symbol === symbol);
+    if (affected) pushHoldingToSupabase(affected);
   }
 
   async function deleteTxn() {
@@ -6261,6 +6541,10 @@ ${userQuery}`;
     closeTxnModal();
     renderHoldings();
     renderTwStockStats();
+    // 雲端同步：soft delete 交易 + 推回對應持股
+    pushTransactionToSupabase(t, true);
+    const affected = twHoldings.find(h => h.symbol === t.symbol);
+    if (affected) pushHoldingToSupabase(affected);
   }
 
   // 從所有 txns 重新計算單一持股的 shares + avgCost；同時累積 realized PnL
