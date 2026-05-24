@@ -3738,8 +3738,14 @@ alter publication supabase_realtime add table party_locations;</pre>
         </div>
         <div class="form-group">
           <label class="form-label">集合地點照片</label>
-          <input type="file" id="gatherPhotoFile" accept="image/*" capture="environment" onchange="onGatherPhotoSelected(event)" style="display:none;">
-          <button type="button" class="btn btn-sm" onclick="document.getElementById('gatherPhotoFile').click()" style="width:100%;">📷 拍照 / 選照片</button>
+          <!-- 移除 capture="environment" — 對 LINE in-app browser 不相容會跳黑畫面
+               改成讓 OS 跳「拍照 / 從相簿選」雙選單，更穩定 -->
+          <input type="file" id="gatherPhotoFile" accept="image/*" onchange="onGatherPhotoSelected(event)" style="display:none;">
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn btn-sm" onclick="document.getElementById('gatherPhotoFile').click()" style="flex:1;">📷 拍照 / 選照片</button>
+            <button type="button" class="btn btn-sm" onclick="clearGatherPhoto()" id="gatherPhotoClearBtn" style="display:none;">⌫ 移除</button>
+          </div>
+          <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:4px; line-height:1.5;">點按鈕後系統會詢問「拍照 / 從相簿選」。<strong style="color:var(--accent);">若在 LINE 內開卻無法拍照</strong>，請：分享網址 → 用 Safari 開啟，或從相簿選已拍好的照片。</div>
           <div id="gatherPhotoPreview" style="margin-top:8px; min-height:0;"></div>
           <input type="hidden" id="gatherPhotoData" value="">
         </div>
@@ -8449,10 +8455,13 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     document.getElementById('gatherLng').value = trvGather?.lng ?? '';
     document.getElementById('gatherPhotoData').value = trvGather?.photo || '';
     const preview = document.getElementById('gatherPhotoPreview');
+    const clearBtn = document.getElementById('gatherPhotoClearBtn');
     if (trvGather?.photo) {
       preview.innerHTML = `<img src="${trvGather.photo}" style="max-width:100%; max-height:160px; border-radius:4px; border:1px solid var(--line);"><div style="font-size:10px; color:var(--ink-tertiary); margin-top:4px;">點上方按鈕可重新拍照取代</div>`;
+      if (clearBtn) clearBtn.style.display = '';
     } else {
       preview.innerHTML = '';
+      if (clearBtn) clearBtn.style.display = 'none';
     }
     document.getElementById('gatherModal').classList.add('active');
   }
@@ -8485,9 +8494,18 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       const sizeKb = Math.round(dataUrl.length * 0.73 / 1024);
       document.getElementById('gatherPhotoPreview').innerHTML =
         `<img src="${dataUrl}" style="max-width:100%; max-height:160px; border-radius:4px; border:1px solid var(--line);"><div style="font-size:10px; color:var(--ink-tertiary); margin-top:4px;">已選 · 約 ${sizeKb} KB · 儲存後生效</div>`;
+      const clearBtn = document.getElementById('gatherPhotoClearBtn');
+      if (clearBtn) clearBtn.style.display = '';
     } catch (err) {
       showToast('照片處理失敗：' + err.message);
     }
+    // 重置 file input 讓使用者能重選同一張
+    e.target.value = '';
+  }
+  function clearGatherPhoto() {
+    document.getElementById('gatherPhotoData').value = '';
+    document.getElementById('gatherPhotoPreview').innerHTML = '';
+    document.getElementById('gatherPhotoClearBtn').style.display = 'none';
   }
 
   // canvas 壓縮：最寬 maxW、JPEG quality
