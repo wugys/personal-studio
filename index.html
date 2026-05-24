@@ -9685,12 +9685,14 @@ ${daysBrief}
     }
     try {
       let b64 = text.replace('PERSONAL-STUDIO-MULTI-V1:', '');
-      // 修復行動裝置 / LINE 跨平台貼上常見的字元損壞：
-      b64 = b64.replace(/\s+/g, '');                          // 去除空白、換行、tab
-      b64 = b64.replace(/–/g, '-').replace(/—/g, '-');         // 智慧標點 en/em-dash → -
-      b64 = b64.replace(/ /g, '+');                            // LINE 把 + 換成空白還原（保險）
+      // 修復行動裝置 / LINE 跨平台貼上常見的字元損壞，**順序很重要**：
+      b64 = b64.replace(/–/g, '-').replace(/—/g, '-');         // ① 智慧標點 en/em-dash → -
+      b64 = b64.replace(/ /g, '+');                            // ② LINE 訊息把 + 換成空白 → 先還原（必須在 strip 空白前）
+      b64 = b64.replace(/[\t\n\r\f\v]+/g, '');                 // ③ 只去 tab/換行，不去空白（已轉成 +）
       // 同時接受新版 base64url (-_) 與舊版 base64 (+/) 兩種格式
       let cfg = null;
+      let lastDecoded = '';
+      let attemptIdx = -1;
       const decodeAttempts = [
         () => b64UrlDecode(b64),                              // 新版 base64url
         () => decodeURIComponent(escape(atob(b64))),          // 舊版相容
@@ -9701,21 +9703,41 @@ ${daysBrief}
         }
       ];
       let lastErr = null;
-      for (const fn of decodeAttempts) {
+      for (let i = 0; i < decodeAttempts.length; i++) {
         try {
-          const decoded = fn();
-          if (decoded && decoded.trim().startsWith('{')) { cfg = JSON.parse(decoded); break; }
-        } catch (e) { lastErr = e; }
+          const decoded = decodeAttempts[i]();
+          if (decoded && decoded.trim().startsWith('{')) {
+            lastDecoded = decoded;
+            attemptIdx = i;
+            cfg = JSON.parse(decoded);
+            break;
+          }
+        } catch (e) {
+          lastErr = e;
+          // 若 decode 成功但 JSON.parse 失敗，記下解出來的字串供診斷
+          try {
+            const tmp = decodeAttempts[i]();
+            if (tmp && typeof tmp === 'string') { lastDecoded = tmp; attemptIdx = i; }
+          } catch (e2) {}
+        }
       }
       if (!cfg) {
+        // 顯示「解出的字串」前後段，這樣才能看到 & 出現在哪
+        const dec = lastDecoded || '(無)';
         const dbg = [
           `錯誤：${lastErr ? lastErr.message : '所有解碼方式皆失敗'}`,
+          `成功解碼但 JSON.parse 失敗的 attempt：${attemptIdx}`,
           `剪貼簿長度：${text.length}`,
           `前 80 字：${text.slice(0, 80)}`,
           `後 40 字：${text.slice(-40)}`,
-          `去白空後的 b64 長度：${b64.length}`,
+          `預處理後 b64 長度：${b64.length}`,
           `b64 前 60 字：${b64.slice(0, 60)}`,
-          `b64 後 20 字：${b64.slice(-20)}`,
+          `b64 中段（200-260）：${b64.slice(200, 260)}`,
+          `b64 後 30 字：${b64.slice(-30)}`,
+          `decoded 長度：${dec.length}`,
+          `decoded 前 200 字：${dec.slice(0, 200)}`,
+          `decoded 中段（150-350）：${dec.slice(150, 350)}`,
+          `decoded 後 100 字：${dec.slice(-100)}`,
           `User-Agent：${navigator.userAgent}`
         ].join('\n');
         await showCopiableError('設定碼解析失敗', dbg);
