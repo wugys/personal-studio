@@ -1788,6 +1788,124 @@
     .spot-media-btn .icon { font-size: 16px; }
   }
 
+  /* === 群組聊天室 === */
+  #chatPanelInner { display: flex !important; }
+  .chat-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; background: var(--bg-card);
+    border: 1px solid var(--line); border-radius: 6px 6px 0 0;
+    border-bottom: none;
+  }
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--line);
+    padding: 16px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .chat-messages::-webkit-scrollbar { width: 6px; }
+  .chat-messages::-webkit-scrollbar-thumb {
+    background: var(--ink-muted); border-radius: 3px;
+  }
+  .chat-day-divider {
+    text-align: center; padding: 8px 0;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-tertiary); letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .chat-bubble {
+    max-width: 75%; padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 13.5px; line-height: 1.5;
+    word-wrap: break-word;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .chat-bubble.me {
+    align-self: flex-end;
+    background: rgba(212, 165, 116, 0.18);
+    border: 1px solid rgba(212, 165, 116, 0.3);
+    border-bottom-right-radius: 2px;
+  }
+  .chat-bubble.other {
+    align-self: flex-start;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-bottom-left-radius: 2px;
+  }
+  .chat-bubble.broadcast {
+    align-self: center; max-width: 95%;
+    background: rgba(212, 165, 116, 0.08);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 14px;
+  }
+  .chat-bubble.groupbuy {
+    align-self: center; max-width: 95%;
+    background: rgba(106, 140, 105, 0.08);
+    border: 1px solid #9bc59a;
+    border-radius: 6px;
+    padding: 10px 14px;
+  }
+  .chat-bubble-author {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-tertiary); letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .chat-bubble.me .chat-bubble-author {
+    color: var(--accent); text-align: right;
+  }
+  .chat-bubble-content {
+    color: var(--ink-primary); white-space: pre-wrap;
+  }
+  .chat-bubble-time {
+    font-family: var(--mono); font-size: 9px;
+    color: var(--ink-tertiary); align-self: flex-end;
+    margin-top: 2px;
+  }
+  .chat-bubble.broadcast .chat-bubble-content::before {
+    content: '📢 廣播'; display: block;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--accent); letter-spacing: 0.15em;
+    margin-bottom: 4px;
+  }
+  .chat-bubble.groupbuy .chat-bubble-content::before {
+    content: '⛬ 揪團團購'; display: block;
+    font-family: var(--mono); font-size: 10px;
+    color: #9bc59a; letter-spacing: 0.15em;
+    margin-bottom: 4px;
+  }
+  .chat-empty {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--ink-tertiary); font-size: 13px;
+    gap: 6px;
+  }
+  .chat-empty .glyph {
+    font-family: var(--serif); font-style: italic;
+    font-size: 36px; color: var(--accent-deep);
+  }
+  .chat-input-row {
+    display: flex; gap: 8px;
+    padding: 10px 12px; background: var(--bg-card);
+    border: 1px solid var(--line); border-radius: 0 0 6px 6px;
+    border-top: 1px dashed var(--line);
+  }
+  .chat-input-row textarea {
+    flex: 1; min-height: 36px; max-height: 120px;
+    background: var(--bg-elevated); border: 1px solid var(--line);
+    color: var(--ink-primary); padding: 8px 10px;
+    border-radius: 4px; resize: none;
+    font-family: var(--sans); font-size: 14px;
+    line-height: 1.4;
+  }
+  .chat-input-row textarea:focus { outline: none; border-color: var(--accent); }
+  .chat-send-btn { flex-shrink: 0; padding: 8px 16px; font-size: 13px; }
+
+  @media (max-width: 768px) {
+    #chatPanelInner { height: calc(100vh - 200px) !important; }
+    .chat-input-row textarea { font-size: 16px; }
+  }
+
   /* === 同團成員列表 === */
   .party-list { display: flex; flex-direction: column; gap: 8px; }
   .party-member-row {
@@ -2533,6 +2651,7 @@
       <button class="travel-tab" data-trv-tab="shopping" onclick="setTravelTab('shopping')">⛬ 購物</button>
       <button class="travel-tab" data-trv-tab="butler" onclick="setTravelTab('butler')">◈ AI 管家</button>
       <button class="travel-tab" data-trv-tab="party" onclick="setTravelTab('party')">⚇ 同團</button>
+      <button class="travel-tab" data-trv-tab="chat" onclick="setTravelTab('chat')">💬 聊天</button>
       <button class="travel-tab" data-trv-tab="info" onclick="setTravelTab('info')">⚐ 保險 eSIM</button>
       <button class="travel-tab" data-trv-tab="settings" onclick="setTravelTab('settings')">⚙ 設定</button>
     </div>
@@ -2791,6 +2910,25 @@
             <li>每餐附餐費 RMB 80（團費已含）</li>
             <li>司導小費已含在團費</li>
           </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 群組聊天室 -->
+    <div id="trvPanel-chat" class="travel-panel">
+      <div id="chatDisabledHint" style="padding:18px; background:var(--bg-card); border:1px dashed var(--line); border-radius:6px; text-align:center; color:var(--ink-secondary); display:none;">
+        <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">尚未啟用多人功能</div>
+        <div style="font-size:13px;">請先到設定啟用多人功能。</div>
+      </div>
+      <div id="chatPanelInner" style="display:none; height:calc(100vh - 220px); min-height:400px; display:flex; flex-direction:column;">
+        <div class="chat-header">
+          <div style="font-family:var(--serif); font-size:18px; font-weight:500;">💬 群組聊天</div>
+          <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); letter-spacing:0.1em;" id="chatGroupTag">—</div>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-row">
+          <textarea id="chatInput" placeholder="輸入訊息…" rows="1" onkeydown="onChatKeyDown(event)" oninput="autoResizeChat(this)"></textarea>
+          <button class="btn btn-primary chat-send-btn" onclick="sendChatMessage()">送出</button>
         </div>
       </div>
     </div>
@@ -3162,6 +3300,10 @@ alter publication supabase_realtime add table party_locations;</pre>
         <div class="more-item" onclick="closeMoreSheet();setTravelTab('party')">
           <div class="more-item-icon">⚇</div>
           <div class="more-item-label">同團</div>
+        </div>
+        <div class="more-item" onclick="closeMoreSheet();setTravelTab('chat')">
+          <div class="more-item-icon">💬</div>
+          <div class="more-item-label">聊天</div>
         </div>
         <div class="more-item" onclick="closeMoreSheet();setTravelTab('checklist')">
           <div class="more-item-icon">☑</div>
@@ -4053,7 +4195,8 @@ alter publication supabase_realtime add table party_locations;</pre>
         const tabLabels = {
           timeline: '行程導覽', map: '地圖', gather: '集合倒數',
           checklist: '行前清單', budget: '預算記錄', shopping: '購物記錄',
-          butler: 'AI 管家', info: '保險 eSIM', settings: '設定'
+          butler: 'AI 管家', party: '同團', chat: '聊天室',
+          info: '保險 eSIM', settings: '設定'
         };
         trail.push({ label: tabLabels[trvActiveTab] || trvActiveTab, action: null, current: true });
       }
@@ -7094,6 +7237,7 @@ ${baseSchema}
     if (tab === 'timeline') refreshGpsSilent();
     if (tab === 'home') renderHomeStats();
     if (tab === 'party') renderPartyTab();
+    if (tab === 'chat') renderChatTab();
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -9091,19 +9235,139 @@ ${daysBrief}
   }
 
   function openChatPanel() {
-    showToast('聊天室介面開發中，廣播功能已可用');
-    // TODO: 之後做 chat panel
+    setTravelTab('chat');
+  }
+
+  // === 聊天室狀態 ===
+  let chatMessages = []; // 本地快取
+
+  async function renderChatTab() {
+    const disabled = document.getElementById('chatDisabledHint');
+    const inner = document.getElementById('chatPanelInner');
+    if (!disabled || !inner) return;
+    if (!trvMultiConfig.enabled || !trvMultiState.ready) {
+      disabled.style.display = 'block';
+      inner.style.display = 'none';
+      return;
+    }
+    disabled.style.display = 'none';
+    inner.style.display = 'flex';
+    document.getElementById('chatGroupTag').textContent = `GROUP · ${trvMultiConfig.groupId.toUpperCase()}`;
+    await loadChatMessages();
+  }
+
+  async function loadChatMessages() {
+    if (!trvMultiState.supabase) return;
+    const { data, error } = await trvMultiState.supabase
+      .from('party_messages')
+      .select('*')
+      .eq('group_id', trvMultiConfig.groupId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) { console.warn('loadChatMessages fail:', error); return; }
+    chatMessages = (data || []).reverse(); // 最舊在前
+    renderChatMessages();
+  }
+
+  function renderChatMessages() {
+    const box = document.getElementById('chatMessages');
+    if (!box) return;
+    if (chatMessages.length === 0) {
+      box.innerHTML = '<div class="chat-empty"><span class="glyph">💬</span><div>還沒有訊息</div><div style="font-size:11px;">送出第一則打破沉默吧</div></div>';
+      return;
+    }
+    let lastDay = null;
+    const myUid = trvMultiState.user?.uid;
+    let html = '';
+    chatMessages.forEach(m => {
+      const d = new Date(m.created_at);
+      const dayKey = d.toISOString().slice(0, 10);
+      if (dayKey !== lastDay) {
+        const today = new Date().toISOString().slice(0, 10);
+        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        let label = dayKey;
+        if (dayKey === today) label = '今天';
+        else if (dayKey === yesterday) label = '昨天';
+        else label = `${d.getMonth()+1}/${d.getDate()}`;
+        html += `<div class="chat-day-divider">— ${label} —</div>`;
+        lastDay = dayKey;
+      }
+      const isMe = m.user_id === myUid;
+      const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const type = m.msg_type || 'chat';
+      let cls;
+      if (type === 'broadcast') cls = 'broadcast';
+      else if (type === 'groupbuy') cls = 'groupbuy';
+      else cls = isMe ? 'me' : 'other';
+      let content = escape(m.content || '');
+      if (type === 'groupbuy' && m.payload) {
+        try {
+          const p = typeof m.payload === 'string' ? JSON.parse(m.payload) : m.payload;
+          if (p.item) content = escape(p.item) + (p.price ? ` · 單價 NT$${p.price}` : '');
+        } catch (e) {}
+      }
+      html += `
+        <div class="chat-bubble ${cls}">
+          ${!isMe && type === 'chat' ? `<div class="chat-bubble-author">${escape(m.display_name || '匿名')}</div>` : ''}
+          ${(type === 'broadcast' || type === 'groupbuy') ? `<div class="chat-bubble-author">${escape(m.display_name || '匿名')}</div>` : ''}
+          <div class="chat-bubble-content">${content}</div>
+          <div class="chat-bubble-time">${time}</div>
+        </div>
+      `;
+    });
+    box.innerHTML = html;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function autoResizeChat(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+  }
+
+  function onChatKeyDown(e) {
+    // Enter 送出，Shift+Enter 換行
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  }
+
+  async function sendChatMessage() {
+    const ta = document.getElementById('chatInput');
+    const text = ta.value.trim();
+    if (!text) return;
+    if (!trvMultiState.supabase || !trvMultiState.user) { showToast('未連線'); return; }
+    ta.value = '';
+    autoResizeChat(ta);
+    const { error } = await trvMultiState.supabase.from('party_messages').insert({
+      group_id: trvMultiConfig.groupId,
+      user_id: trvMultiState.user.uid,
+      display_name: trvMultiState.user.displayName,
+      content: text,
+      msg_type: 'chat'
+    });
+    if (error) {
+      ta.value = text; // 還原
+      showToast('送出失敗：' + error.message);
+    }
   }
 
   function onPartyMessageReceived(msg) {
-    // 自己發的不重複通知
+    // 自己發的也要 append 到聊天 panel（保持即時感）
+    chatMessages.push(msg);
+    if (chatMessages.length > 200) chatMessages = chatMessages.slice(-200);
+    if (trvActiveTab === 'chat') {
+      renderChatMessages();
+    }
+    // 自己發的不通知
     if (msg.user_id === trvMultiState.user?.uid) return;
     const prefix = msg.msg_type === 'broadcast' ? '📢 廣播' : msg.msg_type === 'groupbuy' ? '⛬ 揪團' : '💬 訊息';
     const text = `[${prefix}] ${msg.display_name}：${msg.content}`;
     if (trvMultiConfig.notifyBroadcast && 'Notification' in window && Notification.permission === 'granted') {
       new Notification(prefix, { body: `${msg.display_name}：${msg.content}` });
     }
-    showToast(text);
+    // 不在 chat tab 時才 toast，避免重複資訊
+    if (trvActiveTab !== 'chat') showToast(text);
   }
 
   async function togglePartyNotify() {
