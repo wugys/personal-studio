@@ -57,6 +57,8 @@
   .brand { display: flex; flex-direction: column; gap: 4px; }
   .brand-mark { font-family: var(--mono); font-size: 11px; letter-spacing: 0.25em; color: var(--ink-tertiary); text-transform: uppercase; }
   .brand-title { font-family: var(--serif); font-size: 24px; font-weight: 400; font-style: italic; letter-spacing: -0.01em; }
+  .brand-tagline-mobile { display: none; }
+  .header-mobile-actions { display: none; }
   .header-meta { text-align: right; font-family: var(--mono); font-size: 11px; color: var(--ink-tertiary); line-height: 1.8; }
   .header-meta .time { color: var(--accent); font-size: 13px; }
 
@@ -716,18 +718,38 @@
 
   @media (max-width: 768px) {
     .page { padding: 14px 14px 60px; }
-    .header { flex-direction: row; gap: 12px; margin-bottom: 14px; padding-bottom: 12px; }
-    .brand-mark { font-size: 9px; }
-    .brand-title { font-size: 18px; }
-    .header-meta { text-align: right; font-size: 10px; }
-    .header-meta .time { font-size: 12px; }
-    .hero { margin-bottom: 12px; }
-    .hero-eyebrow { margin-bottom: 6px; }
-    .hero-title { font-size: 24px; margin-bottom: 0; }
-    .hero-subtitle { display: none; }
+
+    /* === 手機 Header 大改造：合併標語 + 核心模組 + 設定 === */
+    .header {
+      flex-direction: row; align-items: center;
+      gap: 12px; margin-bottom: 14px; padding-bottom: 12px;
+    }
+    .brand-mark { display: none; }          /* 隱藏 PERSONAL · STUDIO · MMXXVI */
+    .header-meta { display: none; }         /* 隱藏時間/日期區塊 */
+    .brand { flex: 1; min-width: 0; }
+    .brand-title { font-size: 19px; line-height: 1.1; }
+    .brand-tagline-mobile {
+      display: block; font-family: var(--serif);
+      font-size: 12px; color: var(--ink-tertiary);
+      font-style: italic; margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .brand-tagline-mobile em { color: var(--accent); font-style: italic; }
+    .header-mobile-actions {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .section-title-mobile {
+      font-family: var(--serif); font-size: 16px; font-weight: 500;
+      color: var(--ink-primary);
+    }
+
+    /* 隱藏 hero 整塊（已合併到 brand 區） */
+    .hero { display: none; }
+    /* 隱藏控制列（功能移到 header ⚙）*/
+    .control-bar { display: none; }
+
     .quick-access { margin-bottom: 14px; padding-bottom: 10px; }
     .qa-chip { padding: 8px 12px; font-size: 12.5px; }
-    .control-bar { flex-direction: column; align-items: stretch; margin-bottom: 16px; padding-bottom: 10px; }
     .control-right { justify-content: space-between; }
     .api-header { flex-direction: column; align-items: flex-start; }
     .modal { padding: 26px 20px; }
@@ -1753,11 +1775,16 @@
     <div class="brand">
       <div class="brand-mark">PERSONAL · STUDIO · MMXXVI</div>
       <div class="brand-title">私人工作室</div>
+      <div class="brand-tagline-mobile">屬於你的<em>數位書房</em></div>
     </div>
     <div class="header-meta">
       <div class="time" id="currentTime">—</div>
       <div id="currentDate">—</div>
       <div style="margin-top: 6px;" id="syncStatus">◌ 雲端已同步</div>
+    </div>
+    <div class="header-mobile-actions">
+      <div class="section-title-mobile">核心模組</div>
+      <button class="icon-btn" onclick="openDashMenu()" title="設定" style="width:36px; height:36px; font-size:16px;">⚙</button>
     </div>
   </header>
 
