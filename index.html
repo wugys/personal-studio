@@ -1788,6 +1788,66 @@
     .spot-media-btn .icon { font-size: 16px; }
   }
 
+  /* === 同團成員列表 === */
+  .party-list { display: flex; flex-direction: column; gap: 8px; }
+  .party-member-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-card); border: 1px solid var(--line);
+    border-radius: 6px; transition: all 0.2s;
+  }
+  .party-member-row:hover { background: var(--bg-card-hover); border-color: var(--line-strong); }
+  .party-member-row.me { border-left: 3px solid var(--accent); }
+  .party-member-row.online { border-left: 3px solid #6a8c69; }
+  .pm-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--bg-elevated); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; border: 1px solid var(--line);
+  }
+  .pm-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .pm-avatar .initial {
+    font-family: var(--serif); font-size: 18px; font-style: italic; color: var(--accent);
+  }
+  .pm-body { flex: 1; min-width: 0; }
+  .pm-name {
+    font-family: var(--serif); font-size: 15px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pm-name .badge {
+    font-family: var(--mono); font-size: 8px; letter-spacing: 0.15em;
+    padding: 1px 5px; border-radius: 2px; text-transform: uppercase;
+    background: rgba(212, 165, 116, 0.15); color: var(--accent);
+  }
+  .pm-name .badge.online {
+    background: rgba(106, 140, 105, 0.15); color: #9bc59a;
+  }
+  .pm-status {
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-tertiary);
+    margin-top: 2px; letter-spacing: 0.05em;
+  }
+  .pm-status .dot-online {
+    display: inline-block; width: 6px; height: 6px;
+    background: #6a8c69; border-radius: 50%; margin-right: 5px;
+    box-shadow: 0 0 0 0 rgba(106, 140, 105, 0.6);
+    animation: gpsLive 2s ease-in-out infinite;
+  }
+  .pm-distance {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* 地圖上其他人 marker */
+  .other-member-marker { background: transparent !important; border: none !important; }
+  .other-member-dot {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #9bc59a; border: 3px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: var(--serif); font-style: italic;
+    font-size: 11px; font-weight: 600;
+  }
+
   /* === Spot Modal 新版 layout === */
   .spot-modal-head {
     display: flex; align-items: center; gap: 12px;
@@ -2472,6 +2532,7 @@
       <button class="travel-tab" data-trv-tab="budget" onclick="setTravelTab('budget')">¥ 預算</button>
       <button class="travel-tab" data-trv-tab="shopping" onclick="setTravelTab('shopping')">⛬ 購物</button>
       <button class="travel-tab" data-trv-tab="butler" onclick="setTravelTab('butler')">◈ AI 管家</button>
+      <button class="travel-tab" data-trv-tab="party" onclick="setTravelTab('party')">⚇ 同團</button>
       <button class="travel-tab" data-trv-tab="info" onclick="setTravelTab('info')">⚐ 保險 eSIM</button>
       <button class="travel-tab" data-trv-tab="settings" onclick="setTravelTab('settings')">⚙ 設定</button>
     </div>
@@ -2730,6 +2791,48 @@
             <li>每餐附餐費 RMB 80（團費已含）</li>
             <li>司導小費已含在團費</li>
           </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 同團 -->
+    <div id="trvPanel-party" class="travel-panel">
+      <div id="partyDisabledHint" style="padding:18px; background:var(--bg-card); border:1px dashed var(--line); border-radius:6px; text-align:center; color:var(--ink-secondary); display:none;">
+        <div style="font-family:var(--serif); font-size:18px; color:var(--accent); margin-bottom:8px;">尚未啟用多人功能</div>
+        <div style="font-size:13px; line-height:1.6;">請先到「設定 → 多人功能」啟用並填入 Supabase / LIFF 設定。</div>
+        <button class="btn btn-primary" style="margin-top:14px;" onclick="setTravelTab('settings'); setTimeout(()=>document.getElementById('multiUserSection')?.scrollIntoView({behavior:'smooth'}), 200);">前往設定</button>
+      </div>
+
+      <div id="partyEnabled" style="display:none;">
+        <!-- 我的狀態 -->
+        <div class="checklist-section">
+          <h3><span class="num">01</span>我的狀態</h3>
+          <div class="setting-row">
+            <div class="setting-label">分享我的位置<small>同團即時看到我在哪</small></div>
+            <div class="switch" id="locShareSwitch" onclick="toggleLocationShare()"></div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">瀏覽器通知<small>有廣播訊息會推送</small></div>
+            <div class="switch" id="partyNotifySwitch" onclick="togglePartyNotify()"></div>
+          </div>
+        </div>
+
+        <!-- 成員列表 -->
+        <div class="checklist-section">
+          <h3>
+            <span class="num">02</span>同團成員 <span id="partyMembersCount" style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.1em;">0 人</span>
+          </h3>
+          <div id="partyMembersList" class="party-list"></div>
+        </div>
+
+        <!-- 廣播 -->
+        <div class="checklist-section">
+          <h3><span class="num">03</span>互動</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openPartyBroadcast()">📢 廣播訊息給全員</button>
+            <button class="btn" onclick="openPartyGroupBuy()">⛬ 揪團團購</button>
+            <button class="btn" onclick="openChatPanel()">💬 群組聊天室</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3056,6 +3159,10 @@ alter publication supabase_realtime add table party_locations;</pre>
       <div class="more-sheet-handle"></div>
       <h3>更多功能</h3>
       <div class="more-grid">
+        <div class="more-item" onclick="closeMoreSheet();setTravelTab('party')">
+          <div class="more-item-icon">⚇</div>
+          <div class="more-item-label">同團</div>
+        </div>
         <div class="more-item" onclick="closeMoreSheet();setTravelTab('checklist')">
           <div class="more-item-icon">☑</div>
           <div class="more-item-label">行前清單</div>
@@ -6210,15 +6317,24 @@ ${userQuery}`;
     supabaseUrl: '',     // https://xxx.supabase.co
     supabaseKey: '',     // Supabase anon (public) key
     groupId: '',         // 群組代碼（同團要相同）
-    displayName: ''      // 顯示名稱（非 LINE 環境時用）
+    displayName: '',     // 顯示名稱（非 LINE 環境時用）
+    shareLocation: false, // 是否分享位置
+    notifyBroadcast: false // 是否啟用廣播通知
   };
   let trvMultiState = {
     ready: false,        // SDK 載入並連線成功
     user: null,          // { uid, displayName, picture }
     error: null,
     membersOnline: 0,
-    supabase: null,      // Supabase client 實例
-    membersChannel: null // realtime subscription
+    supabase: null,
+    membersChannel: null,    // 成員 realtime
+    locationsChannel: null,  // 位置 realtime
+    messagesChannel: null,   // 訊息 realtime
+    members: [],             // 所有成員快取
+    locations: {},           // 各成員位置快取 { uid: { lat, lng, accuracy, updated_at } }
+    locationWatchId: null,
+    lastLocationPush: 0,
+    otherMemberMarkers: {}   // Leaflet markers by uid
   };
 
   // ===== 列印 / PDF 匯出 =====
@@ -6973,10 +7089,11 @@ ${baseSchema}
       void panel.offsetWidth;
       panel.classList.add('active');
     }
-    if (tab === 'map') setTimeout(() => initBigMap(), 50);
+    if (tab === 'map') setTimeout(() => { initBigMap(); updateOtherMemberMarkers(); }, 50);
     else stopGpsTracking(); // 離開地圖頁停 GPS 省電
     if (tab === 'timeline') refreshGpsSilent();
     if (tab === 'home') renderHomeStats();
+    if (tab === 'party') renderPartyTab();
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -7020,10 +7137,31 @@ ${baseSchema}
   }
 
   function openMultiFromHome() {
-    setTravelTab('settings');
-    setTimeout(() => {
-      document.getElementById('multiUserSection')?.scrollIntoView({ behavior: 'smooth' });
-    }, 200);
+    if (trvMultiConfig.enabled && trvMultiState.ready) {
+      setTravelTab('party');
+    } else {
+      setTravelTab('settings');
+      setTimeout(() => {
+        document.getElementById('multiUserSection')?.scrollIntoView({ behavior: 'smooth' });
+      }, 200);
+    }
+  }
+
+  function renderPartyTab() {
+    const disabled = document.getElementById('partyDisabledHint');
+    const enabled = document.getElementById('partyEnabled');
+    if (!disabled || !enabled) return;
+    if (!trvMultiConfig.enabled || !trvMultiState.ready) {
+      disabled.style.display = 'block';
+      enabled.style.display = 'none';
+      return;
+    }
+    disabled.style.display = 'none';
+    enabled.style.display = 'block';
+    // 套用 switch 狀態
+    document.getElementById('locShareSwitch')?.classList.toggle('on', !!trvMultiConfig.shareLocation);
+    document.getElementById('partyNotifySwitch')?.classList.toggle('on', !!trvMultiConfig.notifyBroadcast);
+    renderPartyMembers();
   }
 
   // ===== 全域搜尋 =====
@@ -8673,7 +8811,23 @@ ${daysBrief}
         .on('postgres_changes', {
           event: '*', schema: 'public', table: 'party_members',
           filter: `group_id=eq.${trvMultiConfig.groupId}`
-        }, () => refreshOnlineCount())
+        }, () => refreshPartyMembers())
+        .subscribe();
+
+      // 訂閱位置變更
+      trvMultiState.locationsChannel = sb.channel('locations-' + trvMultiConfig.groupId)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'party_locations',
+          filter: `group_id=eq.${trvMultiConfig.groupId}`
+        }, payload => onPartyLocationChange(payload))
+        .subscribe();
+
+      // 訂閱訊息（廣播 / 揪團）
+      trvMultiState.messagesChannel = sb.channel('messages-' + trvMultiConfig.groupId)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'party_messages',
+          filter: `group_id=eq.${trvMultiConfig.groupId}`
+        }, payload => onPartyMessageReceived(payload.new))
         .subscribe();
 
       // 每 30 秒更新自己的 last_seen（presence heartbeat）
@@ -8685,7 +8839,12 @@ ${daysBrief}
           .eq('user_id', profile.uid);
       }, 30000);
 
-      await refreshOnlineCount();
+      await refreshPartyMembers();
+      await refreshPartyLocations();
+
+      // 自動恢復位置共享（如果設定為 on）
+      if (trvMultiConfig.shareLocation) startLocationSharing();
+
       trvMultiState.ready = true;
       setMultiStatus(`✓ 已連線 · ${profile.displayName}（${platform}）`, 'ok');
     } catch (e) {
@@ -8705,15 +8864,282 @@ ${daysBrief}
     renderHomeStats();
   }
 
+  // === 抓所有成員 ===
+  async function refreshPartyMembers() {
+    if (!trvMultiState.supabase) return;
+    const { data, error } = await trvMultiState.supabase
+      .from('party_members')
+      .select('*')
+      .eq('group_id', trvMultiConfig.groupId)
+      .order('last_seen', { ascending: false });
+    if (error) { console.warn('refreshPartyMembers fail:', error); return; }
+    trvMultiState.members = data || [];
+    // 計算在線（5 分鐘內）
+    const now = Date.now();
+    trvMultiState.membersOnline = trvMultiState.members.filter(m => {
+      const lastSeen = m.last_seen ? new Date(m.last_seen).getTime() : 0;
+      return now - lastSeen < 5 * 60 * 1000;
+    }).length;
+    renderHomeStats();
+    renderPartyMembers();
+  }
+
+  function renderPartyMembers() {
+    const listEl = document.getElementById('partyMembersList');
+    if (!listEl) return;
+    const countEl = document.getElementById('partyMembersCount');
+    const members = trvMultiState.members || [];
+    const now = Date.now();
+    if (countEl) countEl.textContent = `${members.length} 人 · ${trvMultiState.membersOnline} 在線`;
+    if (members.length === 0) {
+      listEl.innerHTML = '<div style="padding:20px; text-align:center; color:var(--ink-tertiary); font-size:13px;">尚無成員（包含你）。請稍候，連線初始化中…</div>';
+      return;
+    }
+    listEl.innerHTML = members.map(m => {
+      const isMe = trvMultiState.user && m.user_id === trvMultiState.user.uid;
+      const lastSeen = m.last_seen ? new Date(m.last_seen).getTime() : 0;
+      const isOnline = (now - lastSeen) < 5 * 60 * 1000;
+      const lastSeenText = isOnline ? '線上' : formatRelativeTime(lastSeen);
+      const initial = m.display_name ? m.display_name.charAt(0).toUpperCase() : '?';
+      const loc = trvMultiState.locations[m.user_id];
+      let distanceText = '';
+      if (loc && trvGpsCurrent && !isMe) {
+        const d = haversine(trvGpsCurrent, [loc.latitude, loc.longitude]);
+        distanceText = d > 1 ? `📍 ${d.toFixed(1)} km` : `📍 ${Math.round(d*1000)} m`;
+      }
+      return `
+        <div class="party-member-row ${isMe ? 'me' : ''} ${isOnline ? 'online' : ''}">
+          <div class="pm-avatar">
+            ${m.picture_url ? `<img src="${escape(m.picture_url)}" alt="" onerror="this.replaceWith(document.createElement('div'));">` : `<span class="initial">${escape(initial)}</span>`}
+          </div>
+          <div class="pm-body">
+            <div class="pm-name">
+              ${escape(m.display_name || '匿名')}
+              ${isMe ? '<span class="badge">我</span>' : ''}
+              ${isOnline ? '<span class="badge online">線上</span>' : ''}
+            </div>
+            <div class="pm-status">
+              ${isOnline ? '<span class="dot-online"></span>' : ''}${escape(lastSeenText)} · ${escape(m.platform || 'web')}
+            </div>
+          </div>
+          ${distanceText ? `<div class="pm-distance">${distanceText}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function formatRelativeTime(ts) {
+    if (!ts) return '從未上線';
+    const diff = Date.now() - ts;
+    if (diff < 60000) return '剛剛';
+    if (diff < 3600000) return Math.floor(diff/60000) + ' 分鐘前';
+    if (diff < 86400000) return Math.floor(diff/3600000) + ' 小時前';
+    return Math.floor(diff/86400000) + ' 天前';
+  }
+
+  // === 位置共享 ===
+  async function refreshPartyLocations() {
+    if (!trvMultiState.supabase) return;
+    const { data, error } = await trvMultiState.supabase
+      .from('party_locations')
+      .select('*')
+      .eq('group_id', trvMultiConfig.groupId);
+    if (error) { console.warn('refreshPartyLocations fail:', error); return; }
+    trvMultiState.locations = {};
+    (data || []).forEach(l => { trvMultiState.locations[l.user_id] = l; });
+    updateOtherMemberMarkers();
+    renderPartyMembers(); // 距離可能更新
+  }
+
+  function onPartyLocationChange(payload) {
+    const row = payload.new || payload.old;
+    if (!row) return;
+    if (payload.eventType === 'DELETE') {
+      delete trvMultiState.locations[row.user_id];
+    } else {
+      trvMultiState.locations[row.user_id] = row;
+    }
+    updateOtherMemberMarkers();
+    renderPartyMembers();
+  }
+
+  function toggleLocationShare() {
+    trvMultiConfig.shareLocation = !trvMultiConfig.shareLocation;
+    document.getElementById('locShareSwitch').classList.toggle('on', trvMultiConfig.shareLocation);
+    saveTravelKey(TRAVEL_STORAGE.multiConfig, trvMultiConfig);
+    if (trvMultiConfig.shareLocation) {
+      startLocationSharing();
+    } else {
+      stopLocationSharing();
+    }
+  }
+
+  async function startLocationSharing() {
+    if (!('geolocation' in navigator)) { showToast('裝置不支援 GPS'); return; }
+    if (!trvMultiState.supabase || !trvMultiState.user) { showToast('多人功能未連線'); return; }
+    if (trvMultiState.locationWatchId !== null) return;
+
+    trvMultiState.locationWatchId = navigator.geolocation.watchPosition(
+      pos => onMyLocationUpdate(pos),
+      err => { console.warn('GPS error:', err); showToast('GPS 失敗：' + err.message); },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    );
+    showToast('已開始分享位置');
+  }
+
+  async function stopLocationSharing() {
+    if (trvMultiState.locationWatchId !== null) {
+      navigator.geolocation.clearWatch(trvMultiState.locationWatchId);
+      trvMultiState.locationWatchId = null;
+    }
+    // 從 server 刪除自己的位置
+    if (trvMultiState.supabase && trvMultiState.user) {
+      await trvMultiState.supabase
+        .from('party_locations')
+        .delete()
+        .eq('group_id', trvMultiConfig.groupId)
+        .eq('user_id', trvMultiState.user.uid);
+    }
+    showToast('已停止分享位置');
+  }
+
+  async function onMyLocationUpdate(pos) {
+    trvGpsCurrent = [pos.coords.latitude, pos.coords.longitude];
+    const now = Date.now();
+    // 30 秒節流
+    if (now - trvMultiState.lastLocationPush < 30000) return;
+    trvMultiState.lastLocationPush = now;
+    if (!trvMultiState.supabase || !trvMultiState.user) return;
+    await trvMultiState.supabase
+      .from('party_locations')
+      .upsert({
+        group_id: trvMultiConfig.groupId,
+        user_id: trvMultiState.user.uid,
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'group_id,user_id' });
+  }
+
+  // === 地圖上其他人 marker ===
+  function updateOtherMemberMarkers() {
+    if (!trvMap || typeof L === 'undefined') return;
+    const colors = ['#9bc59a', '#7eb1d4', '#e8a87c', '#d4a1c4', '#c97b6a', '#a78bd4', '#d4c47c'];
+    const myUid = trvMultiState.user?.uid;
+    // 移除已不存在的 markers
+    Object.keys(trvMultiState.otherMemberMarkers).forEach(uid => {
+      if (!trvMultiState.locations[uid] || uid === myUid) {
+        trvMap.removeLayer(trvMultiState.otherMemberMarkers[uid]);
+        delete trvMultiState.otherMemberMarkers[uid];
+      }
+    });
+    // 新增/更新 markers
+    Object.entries(trvMultiState.locations).forEach(([uid, loc], i) => {
+      if (uid === myUid) return;
+      const ll = [loc.latitude, loc.longitude];
+      const member = trvMultiState.members.find(m => m.user_id === uid);
+      const name = member?.display_name || '匿名';
+      const initial = name.charAt(0).toUpperCase();
+      const color = colors[i % colors.length];
+      if (trvMultiState.otherMemberMarkers[uid]) {
+        trvMultiState.otherMemberMarkers[uid].setLatLng(ll);
+      } else {
+        const icon = L.divIcon({
+          className: 'other-member-marker',
+          html: `<div class="other-member-dot" style="background:${color};">${escape(initial)}</div>`,
+          iconSize: [22, 22], iconAnchor: [11, 11]
+        });
+        const marker = L.marker(ll, { icon, zIndexOffset: 800 }).addTo(trvMap);
+        const updatedAt = loc.updated_at ? new Date(loc.updated_at).getTime() : 0;
+        marker.bindPopup(`<strong>${escape(name)}</strong><br>${escape(formatRelativeTime(updatedAt))}<br>${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`);
+        trvMultiState.otherMemberMarkers[uid] = marker;
+      }
+    });
+  }
+
+  // === 廣播 + 揪團 + 聊天 ===
+  async function openPartyBroadcast() {
+    const msg = prompt('輸入要廣播給全員的訊息：');
+    if (!msg || !msg.trim()) return;
+    if (!trvMultiState.supabase) { showToast('未連線'); return; }
+    await trvMultiState.supabase.from('party_messages').insert({
+      group_id: trvMultiConfig.groupId,
+      user_id: trvMultiState.user.uid,
+      display_name: trvMultiState.user.displayName,
+      content: msg.trim(),
+      msg_type: 'broadcast'
+    });
+    showToast('廣播已送出');
+  }
+
+  async function openPartyGroupBuy() {
+    const item = prompt('要揪團的商品：');
+    if (!item || !item.trim()) return;
+    const priceStr = prompt('單價 NT$（可留空）：');
+    const content = `揪團團購：${item.trim()}${priceStr ? ' · NT$' + priceStr : ''}`;
+    if (!trvMultiState.supabase) { showToast('未連線'); return; }
+    await trvMultiState.supabase.from('party_messages').insert({
+      group_id: trvMultiConfig.groupId,
+      user_id: trvMultiState.user.uid,
+      display_name: trvMultiState.user.displayName,
+      content,
+      msg_type: 'groupbuy',
+      payload: { item: item.trim(), price: priceStr ? Number(priceStr) : null }
+    });
+    showToast('揪團訊息已送出');
+  }
+
+  function openChatPanel() {
+    showToast('聊天室介面開發中，廣播功能已可用');
+    // TODO: 之後做 chat panel
+  }
+
+  function onPartyMessageReceived(msg) {
+    // 自己發的不重複通知
+    if (msg.user_id === trvMultiState.user?.uid) return;
+    const prefix = msg.msg_type === 'broadcast' ? '📢 廣播' : msg.msg_type === 'groupbuy' ? '⛬ 揪團' : '💬 訊息';
+    const text = `[${prefix}] ${msg.display_name}：${msg.content}`;
+    if (trvMultiConfig.notifyBroadcast && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification(prefix, { body: `${msg.display_name}：${msg.content}` });
+    }
+    showToast(text);
+  }
+
+  async function togglePartyNotify() {
+    if (!trvMultiConfig.notifyBroadcast) {
+      if (!('Notification' in window)) { showToast('不支援通知'); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { showToast('需要允許通知'); return; }
+    }
+    trvMultiConfig.notifyBroadcast = !trvMultiConfig.notifyBroadcast;
+    document.getElementById('partyNotifySwitch').classList.toggle('on', trvMultiConfig.notifyBroadcast);
+    saveTravelKey(TRAVEL_STORAGE.multiConfig, trvMultiConfig);
+  }
+
   function teardownMultiUser() {
     if (trvMultiState.heartbeatId) {
       clearInterval(trvMultiState.heartbeatId);
       trvMultiState.heartbeatId = null;
     }
-    if (trvMultiState.membersChannel) {
-      try { trvMultiState.membersChannel.unsubscribe(); } catch (e) {}
-      trvMultiState.membersChannel = null;
+    [trvMultiState.membersChannel, trvMultiState.locationsChannel, trvMultiState.messagesChannel].forEach(ch => {
+      if (ch) { try { ch.unsubscribe(); } catch (e) {} }
+    });
+    trvMultiState.membersChannel = null;
+    trvMultiState.locationsChannel = null;
+    trvMultiState.messagesChannel = null;
+    // 停止位置共享
+    if (trvMultiState.locationWatchId !== null) {
+      navigator.geolocation.clearWatch(trvMultiState.locationWatchId);
+      trvMultiState.locationWatchId = null;
     }
+    // 移除地圖上其他人 markers
+    if (trvMap) {
+      Object.values(trvMultiState.otherMemberMarkers).forEach(m => { try { trvMap.removeLayer(m); } catch (e) {} });
+    }
+    trvMultiState.otherMemberMarkers = {};
+    trvMultiState.members = [];
+    trvMultiState.locations = {};
     trvMultiState.supabase = null;
     trvMultiState.ready = false;
     trvMultiState.user = null;
