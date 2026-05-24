@@ -9526,7 +9526,8 @@ ${daysBrief}
     };
     const payload = b64UrlEncode(JSON.stringify(cfg));
     const base = 'https://personal-studio-theta.vercel.app/';
-    const link = `${base}?trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
+    // 用 # hash 不用 ? query：避開 LINE / 伺服器中間人對 query 的處理
+    const link = `${base}#trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
 
     try {
       await navigator.clipboard.writeText(link);
@@ -9648,30 +9649,41 @@ ${daysBrief}
 
   // === 啟動時處理 URL 參數（分享連結）===
   async function processShareLinkParams() {
-    const params = new URLSearchParams(window.location.search);
-    const tripParam = params.get('trip');
-    const joinParam = params.get('join');
+    // 同時讀 hash 和 query（hash 優先，因為 hash 不會被 server / LINE 處理）
+    let hashStr = window.location.hash.slice(1);
+    // 有些情況 hash 會被多層 encode，盡量解開
+    try { if (hashStr.includes('%')) hashStr = decodeURIComponent(hashStr); } catch (e) {}
+    const hashParams = new URLSearchParams(hashStr);
+    const queryParams = new URLSearchParams(window.location.search);
+    const tripParam = hashParams.get('trip') || queryParams.get('trip');
+    const joinParam = hashParams.get('join') || queryParams.get('join');
     if (!tripParam && !joinParam) return;
 
     // 處理 join：自動填多人設定
     if (joinParam) {
       try {
-        // 先試 URL-safe base64，失敗再試標準 base64（向下相容）
-        let decoded;
-        try {
-          decoded = b64UrlDecode(joinParam);
-        } catch (e1) {
-          try {
-            decoded = decodeURIComponent(escape(atob(joinParam)));
-          } catch (e2) {
-            throw new Error('base64 解碼失敗（連結可能被破壞）');
-          }
+        // 連結若被多層 URL encode，先解一層
+        let raw = joinParam;
+        try { if (raw.includes('%')) raw = decodeURIComponent(raw); } catch (e) {}
+        // 嘗試 URL-safe base64 → 標準 base64
+        let decoded = null;
+        const attempts = [
+          () => b64UrlDecode(raw),
+          () => decodeURIComponent(escape(atob(raw))),
+          () => atob(raw),
+          () => b64UrlDecode(raw.replace(/ /g, '+')),  // 空格還原
+        ];
+        let lastErr = '';
+        for (const fn of attempts) {
+          try { decoded = fn(); if (decoded && decoded.startsWith('{')) break; }
+          catch (e) { lastErr = e.message; }
         }
+        if (!decoded) throw new Error('base64 解碼全部失敗 · payload 前 30 字：' + raw.slice(0, 30) + '...');
         let cfg;
         try {
           cfg = JSON.parse(decoded);
         } catch (e) {
-          throw new Error('JSON 格式錯誤：' + decoded.slice(0, 60));
+          throw new Error('JSON 格式錯誤：解碼後得到「' + decoded.slice(0, 80) + '」');
         }
         // 讀取本機已有的 multi config 並合併（保留 displayName 等）
         let existing = {};
@@ -9709,7 +9721,7 @@ ${daysBrief}
       }
     }
 
-    // 清掉 URL params（保持乾淨，避免重整時再跑一次）
+    // 清掉 URL params + hash（保持乾淨，避免重整時再跑一次）
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, '', window.location.pathname);
     }
