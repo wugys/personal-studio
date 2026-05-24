@@ -9665,25 +9665,35 @@ ${daysBrief}
         // 連結若被多層 URL encode，先解一層
         let raw = joinParam;
         try { if (raw.includes('%')) raw = decodeURIComponent(raw); } catch (e) {}
-        // 嘗試 URL-safe base64 → 標準 base64
+        // 嘗試多種 base64 解碼，**只有解到 `{` 開頭才接受**
         let decoded = null;
         const attempts = [
           () => b64UrlDecode(raw),
           () => decodeURIComponent(escape(atob(raw))),
           () => atob(raw),
-          () => b64UrlDecode(raw.replace(/ /g, '+')),  // 空格還原
+          () => b64UrlDecode(raw.replace(/ /g, '+').replace(/=+$/, '')),
         ];
-        let lastErr = '';
         for (const fn of attempts) {
-          try { decoded = fn(); if (decoded && decoded.startsWith('{')) break; }
-          catch (e) { lastErr = e.message; }
+          try {
+            const result = fn();
+            if (result && result.trim().startsWith('{')) {
+              decoded = result.trim();
+              break;
+            }
+          } catch (e) {}
         }
-        if (!decoded) throw new Error('base64 解碼全部失敗 · payload 前 30 字：' + raw.slice(0, 30) + '...');
+        if (!decoded) {
+          const dbg = `URL：${window.location.href.slice(0, 120)}...\n\nrawParam 長度：${raw.length}\n前 80 字：${raw.slice(0, 80)}\n\n所有 base64 嘗試都失敗或解出來不是 JSON 物件。\n\n可能原因：\n1. 連結被 LINE/瀏覽器破壞\n2. 連結沒完整複製到\n\n請改用「📋 複製設定碼 + 貼上設定碼」備案。`;
+          alert('分享連結解析失敗\n\n' + dbg);
+          return;
+        }
         let cfg;
         try {
           cfg = JSON.parse(decoded);
         } catch (e) {
-          throw new Error('JSON 格式錯誤：解碼後得到「' + decoded.slice(0, 80) + '」');
+          const dbg = `解碼成功但 JSON 解析失敗。\n\n解碼後內容：\n${decoded.slice(0, 300)}\n\n錯誤：${e.message}`;
+          alert('JSON 格式錯誤\n\n' + dbg);
+          return;
         }
         // 讀取本機已有的 multi config 並合併（保留 displayName 等）
         let existing = {};
@@ -9703,7 +9713,7 @@ ${daysBrief}
         trvMultiConfig = { ...trvMultiConfig, ...merged };
         showToast('✓ 已套用同團設定');
       } catch (e) {
-        showToast('分享連結解析失敗：' + e.message);
+        alert('分享連結處理失敗\n\n錯誤：' + e.message + '\n\nURL：' + window.location.href.slice(0, 200));
       }
     }
 
