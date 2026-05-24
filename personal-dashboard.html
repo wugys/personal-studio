@@ -2064,6 +2064,44 @@
   body.trip-window .more-item[onclick*="dashboard"] {
     display: none !important;
   }
+
+  /* ===== 旅遊頁專屬版面（在 travelView active 時） =====
+     1) 全域 header 拿掉「屬於你的 AI 生活」與「核心模組」標籤
+     2) travel-hero 縮減約 2/3（更緊湊）
+     3) travel-tabs 桌面也 sticky 黏頂部 */
+  body.travel-active .brand-title,
+  body.travel-active .section-title-mobile,
+  body.travel-active .brand-tagline-mobile {
+    display: none !important;
+  }
+  body.travel-active .travel-hero {
+    padding: 12px 18px !important;
+    margin-bottom: 12px !important;
+  }
+  body.travel-active .travel-hero-eyebrow {
+    font-size: 9.5px !important;
+    margin-bottom: 5px !important;
+    letter-spacing: 0.2em !important;
+  }
+  body.travel-active .travel-hero-eyebrow::before { display: none !important; }
+  body.travel-active .travel-hero h1 {
+    font-size: clamp(18px, 2.4vw, 24px) !important;
+    margin-bottom: 6px !important;
+    line-height: 1.2 !important;
+  }
+  body.travel-active .travel-hero-meta {
+    font-size: 10px !important;
+    gap: 14px !important;
+  }
+  body.travel-active .travel-hero-meta strong {
+    font-size: 13px !important;
+  }
+  /* travel-tabs 桌面也 sticky（手機那段在 @media 已設過） */
+  body.travel-active .travel-tabs {
+    position: sticky; top: 0; z-index: 50;
+    margin-bottom: 14px;
+    background: var(--bg-base);
+  }
   /* Guest 模式底部加上小提示 */
   body.guest-mode .view.active::after {
     content: '✦ 共同行程檢視 · 由團主分享 ✦';
@@ -2689,19 +2727,7 @@
 
   <!-- ============ 旅遊模組 VIEW ============ -->
   <div id="travelView" class="view">
-    <button class="back-btn" onclick="showView('tripsView')">← 切換旅遊</button>
-
-    <div class="travel-hero">
-      <div class="travel-hero-eyebrow" id="travelHeroEyebrow">TRAVEL · CONCIERGE</div>
-      <h1 id="travelHeroTitle">—</h1>
-      <div class="travel-hero-meta" id="travelHeroMeta">
-        <div><strong id="trvDDay">—</strong> 天倒數</div>
-        <div>出發 · <strong id="trvHeroDate">—</strong></div>
-        <div>航班 · <strong id="trvHeroFlight">—</strong></div>
-        <div>團費 · <strong id="trvHeroCost">—</strong></div>
-      </div>
-    </div>
-
+    <!-- tabs 移到最上面（桌面 + 手機都 sticky） -->
     <div class="travel-tabs">
       <button class="travel-tab active" data-trv-tab="home" onclick="setTravelTab('home')">🏠 首頁</button>
       <button class="travel-tab" data-trv-tab="timeline" onclick="setTravelTab('timeline')">✦ 行程</button>
@@ -2715,6 +2741,19 @@
       <button class="travel-tab" data-trv-tab="chat" onclick="setTravelTab('chat')">💬 聊天</button>
       <button class="travel-tab" data-trv-tab="info" onclick="setTravelTab('info')">⚐ 保險 eSIM</button>
       <button class="travel-tab" data-trv-tab="settings" onclick="setTravelTab('settings')">⚙ 設定</button>
+    </div>
+
+    <button class="back-btn" onclick="showView('tripsView')">← 切換旅遊</button>
+
+    <div class="travel-hero">
+      <div class="travel-hero-eyebrow" id="travelHeroEyebrow">TRAVEL · CONCIERGE</div>
+      <h1 id="travelHeroTitle">—</h1>
+      <div class="travel-hero-meta" id="travelHeroMeta">
+        <div><strong id="trvDDay">—</strong> 天倒數</div>
+        <div>出發 · <strong id="trvHeroDate">—</strong></div>
+        <div>航班 · <strong id="trvHeroFlight">—</strong></div>
+        <div>團費 · <strong id="trvHeroCost">—</strong></div>
+      </div>
     </div>
 
     <!-- 首頁 -->
