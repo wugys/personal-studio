@@ -2590,12 +2590,22 @@
       </div>
     </div>
 
-    <div class="risk-banner" style="background:rgba(212,165,116,0.06); border-color: rgba(212,165,116,0.25); border-left-color: var(--accent); color: var(--ink-secondary);">
-      ⚠ 此模組為個人投資紀錄工具，所有資料儲存於本機與雲端，不會回傳任何第三方。股價請手動更新或之後升級自動抓取功能。
-    </div>
-
     <!-- 統計卡 -->
     <div class="stats-row" id="twStockStats"></div>
+
+    <!-- 動態新聞區塊（取代原本的警語） -->
+    <div class="tw-news-section" id="twNewsSection">
+      <div class="tw-news-header">
+        <h3>📰 持股新聞 · <em>每日 8:00 AM 自動更新</em></h3>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <span id="twNewsLastUpdate" style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.1em;">尚未更新</span>
+          <button class="btn btn-sm" onclick="refreshAllTwNews()" id="twNewsRefreshBtn">🔄 立即更新</button>
+        </div>
+      </div>
+      <div id="twNewsFeed" class="tw-news-feed">
+        <div style="text-align:center; padding:20px; color:var(--ink-tertiary); font-size:13px;">尚無新聞 · 點「立即更新」抓取（需 Anthropic API Key）</div>
+      </div>
+    </div>
 
     <!-- 工具列 -->
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
@@ -3738,14 +3748,16 @@ alter publication supabase_realtime add table party_locations;</pre>
         </div>
         <div class="form-group">
           <label class="form-label">集合地點照片</label>
-          <!-- 移除 capture="environment" — 對 LINE in-app browser 不相容會跳黑畫面
-               改成讓 OS 跳「拍照 / 從相簿選」雙選單，更穩定 -->
           <input type="file" id="gatherPhotoFile" accept="image/*" onchange="onGatherPhotoSelected(event)" style="display:none;">
-          <div style="display:flex; gap:6px;">
-            <button type="button" class="btn btn-sm" onclick="document.getElementById('gatherPhotoFile').click()" style="flex:1;">📷 拍照 / 選照片</button>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm" onclick="openCameraForGather()" style="flex:1;">🎥 開相機拍照</button>
+            <button type="button" class="btn btn-sm" onclick="document.getElementById('gatherPhotoFile').click()" style="flex:1;">🖼 從相簿選</button>
             <button type="button" class="btn btn-sm" onclick="clearGatherPhoto()" id="gatherPhotoClearBtn" style="display:none;">⌫ 移除</button>
           </div>
-          <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:4px; line-height:1.5;">點按鈕後系統會詢問「拍照 / 從相簿選」。<strong style="color:var(--accent);">若在 LINE 內開卻無法拍照</strong>，請：分享網址 → 用 Safari 開啟，或從相簿選已拍好的照片。</div>
+          <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:4px; line-height:1.5;">
+            <strong style="color:var(--accent);">「開相機拍照」</strong>是直接用瀏覽器 API 開相機（不經過 LINE 的破爛 OS picker，較穩定）。<br>
+            首次使用會請求相機權限，請按「允許」。
+          </div>
           <div id="gatherPhotoPreview" style="margin-top:8px; min-height:0;"></div>
           <input type="hidden" id="gatherPhotoData" value="">
         </div>
@@ -8506,6 +8518,86 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     document.getElementById('gatherPhotoData').value = '';
     document.getElementById('gatherPhotoPreview').innerHTML = '';
     document.getElementById('gatherPhotoClearBtn').style.display = 'none';
+  }
+
+  // ===== 自製相機（getUserMedia）— 繞過 LINE WebView 對 input[capture] 的破爛實作 =====
+  async function openCameraForGather() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showToast('此瀏覽器不支援相機 API，請改用「從相簿選」');
+      return;
+    }
+    // 建立全螢幕 camera modal
+    const modal = document.createElement('div');
+    modal.id = 'cameraModal';
+    modal.style.cssText = 'position:fixed; inset:0; background:#000; z-index:99998; display:flex; flex-direction:column;';
+    modal.innerHTML = `
+      <video id="camPreview" autoplay playsinline muted style="flex:1; width:100%; object-fit:cover; background:#000;"></video>
+      <div id="camStatus" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-family:var(--mono); font-size:14px; letter-spacing:0.2em; text-align:center;">啟動相機中…</div>
+      <div style="display:flex; gap:10px; padding:14px; background:#0e0d0b;">
+        <button id="camSwap" style="padding:14px 16px; background:transparent; color:#fff; border:1px solid #444; border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:12px;">⇆ 切換</button>
+        <button id="camCapture" style="flex:1; padding:14px; background:#d4a574; color:#0e0d0b; border:none; border-radius:4px; font-family:var(--mono); font-size:13px; font-weight:600; cursor:pointer; letter-spacing:0.15em;">📸 拍照</button>
+        <button id="camCancel" style="padding:14px 20px; background:transparent; color:#fff; border:1px solid #444; border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:12px;">取消</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    let stream = null;
+    let facing = 'environment';  // 預設後鏡頭
+    const startStream = async () => {
+      try {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facing },
+          audio: false
+        });
+        const video = document.getElementById('camPreview');
+        if (video) {
+          video.srcObject = stream;
+          video.onloadedmetadata = () => {
+            const st = document.getElementById('camStatus');
+            if (st) st.style.display = 'none';
+          };
+        }
+      } catch (err) {
+        const st = document.getElementById('camStatus');
+        if (st) st.innerHTML = `相機開啟失敗<br><span style="font-size:11px; color:#c97b6a;">${escape(err.message)}</span><br><br><span style="font-size:11px;">請檢查瀏覽器相機權限</span>`;
+      }
+    };
+
+    const cleanup = () => {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      modal.remove();
+    };
+
+    document.getElementById('camCancel').onclick = cleanup;
+    document.getElementById('camSwap').onclick = async () => {
+      facing = facing === 'environment' ? 'user' : 'environment';
+      await startStream();
+    };
+    document.getElementById('camCapture').onclick = () => {
+      const video = document.getElementById('camPreview');
+      if (!video || !video.videoWidth) { showToast('相機尚未就緒'); return; }
+      const w = Math.min(800, video.videoWidth);
+      const h = Math.round(video.videoHeight * w / video.videoWidth);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      document.getElementById('gatherPhotoData').value = dataUrl;
+      const sizeKb = Math.round(dataUrl.length * 0.73 / 1024);
+      document.getElementById('gatherPhotoPreview').innerHTML =
+        `<img src="${dataUrl}" style="max-width:100%; max-height:160px; border-radius:4px; border:1px solid var(--line);"><div style="font-size:10px; color:var(--ink-tertiary); margin-top:4px;">已拍 · 約 ${sizeKb} KB · 儲存後生效</div>`;
+      const clearBtn = document.getElementById('gatherPhotoClearBtn');
+      if (clearBtn) clearBtn.style.display = '';
+      cleanup();
+    };
+
+    startStream();
+  }
+
+  // ===== 動態新聞功能（stub，避免按鈕報錯，完整實作下個 commit）=====
+  function refreshAllTwNews() {
+    showToast('新聞功能開發中，下個版本上線');
   }
 
   // canvas 壓縮：最寬 maxW、JPEG quality
