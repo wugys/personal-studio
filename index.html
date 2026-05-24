@@ -9501,6 +9501,18 @@ ${daysBrief}
     showToast('多人功能設定已儲存');
   }
 
+  // URL-safe base64（避開 + / =，防止 LINE / URL 把這些字元破壞）
+  function b64UrlEncode(s) {
+    return btoa(unescape(encodeURIComponent(s)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64UrlDecode(s) {
+    // 補回 padding
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    return decodeURIComponent(escape(atob(s)));
+  }
+
   // === 分享連結（含 trip + multi config）===
   async function copyShareLinkForParty() {
     if (!ITINERARY) { showToast('沒有作用中的 trip'); return; }
@@ -9511,10 +9523,8 @@ ${daysBrief}
       liffId: document.getElementById('multiLiffId').value.trim(),
       supabaseUrl: url, supabaseKey: key,
       groupId: document.getElementById('multiGroupId').value.trim(),
-      // 不帶 displayName，讓團員自己填
     };
-    const payload = btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
-    // 用 Vercel 永久網址（不要用 localhost / LAN IP）
+    const payload = b64UrlEncode(JSON.stringify(cfg));
     const base = 'https://personal-studio-theta.vercel.app/';
     const link = `${base}?trip=${encodeURIComponent(ITINERARY.id)}&join=${payload}`;
 
@@ -9646,7 +9656,23 @@ ${daysBrief}
     // 處理 join：自動填多人設定
     if (joinParam) {
       try {
-        const cfg = JSON.parse(decodeURIComponent(escape(atob(joinParam))));
+        // 先試 URL-safe base64，失敗再試標準 base64（向下相容）
+        let decoded;
+        try {
+          decoded = b64UrlDecode(joinParam);
+        } catch (e1) {
+          try {
+            decoded = decodeURIComponent(escape(atob(joinParam)));
+          } catch (e2) {
+            throw new Error('base64 解碼失敗（連結可能被破壞）');
+          }
+        }
+        let cfg;
+        try {
+          cfg = JSON.parse(decoded);
+        } catch (e) {
+          throw new Error('JSON 格式錯誤：' + decoded.slice(0, 60));
+        }
         // 讀取本機已有的 multi config 並合併（保留 displayName 等）
         let existing = {};
         try {
