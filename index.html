@@ -9038,7 +9038,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     if (workerUrlRaw) {
       // 走 worker (RSS) — 用單詞名稱 query（Google News 對多詞 + 數字組合會 reject）
       const workerUrl = (workerUrlRaw || '').trim();
-      const q = (name || symbol || '').trim().replace(/[ -]/g, ''); // strip 控制字元
+      const q = (name || symbol || '').trim(); // strip 控制字元
       if (!q) throw new Error('Query 為空');
       let url;
       try { url = new URL(workerUrl); }
