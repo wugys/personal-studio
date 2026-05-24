@@ -9563,6 +9563,19 @@ ${daysBrief}
     while (s.length % 4) s += '=';
     return decodeURIComponent(escape(atob(s)));
   }
+  // 還原 HTML entity（iOS LINE in-app browser 偶爾會把剪貼簿內的 " 變成 &quot;）
+  function unescapeHtmlEntities(s) {
+    if (!s || typeof s !== 'string' || s.indexOf('&') === -1) return s;
+    return s
+      .replace(/&quot;/g, '"')
+      .replace(/&#34;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&');  // &amp; 必須最後，避免雙重展開
+  }
 
   // === 縮短連結（is.gd 免費服務，支援 CORS）===
   async function shortenUrl(longUrl) {
@@ -9706,19 +9719,25 @@ ${daysBrief}
       for (let i = 0; i < decodeAttempts.length; i++) {
         try {
           const decoded = decodeAttempts[i]();
-          if (decoded && decoded.trim().startsWith('{')) {
-            lastDecoded = decoded;
-            attemptIdx = i;
-            cfg = JSON.parse(decoded);
-            break;
+          if (!decoded || typeof decoded !== 'string') continue;
+          // 兩個候選：原始 decoded，以及 HTML entity 還原後的版本
+          // （iOS LINE in-app browser 的剪貼簿 / atob 在某些情境下會把 " 變成 &quot;）
+          const candidates = [decoded];
+          const unescaped = unescapeHtmlEntities(decoded);
+          if (unescaped !== decoded) candidates.push(unescaped);
+          for (const cand of candidates) {
+            if (!cand.trim().startsWith('{')) continue;
+            lastDecoded = cand; attemptIdx = i;
+            try {
+              cfg = JSON.parse(cand);
+              break;
+            } catch (e) {
+              lastErr = e;
+            }
           }
+          if (cfg) break;
         } catch (e) {
           lastErr = e;
-          // 若 decode 成功但 JSON.parse 失敗，記下解出來的字串供診斷
-          try {
-            const tmp = decodeAttempts[i]();
-            if (tmp && typeof tmp === 'string') { lastDecoded = tmp; attemptIdx = i; }
-          } catch (e2) {}
         }
       }
       if (!cfg) {
