@@ -844,6 +844,151 @@
   .syncing { color: var(--accent) !important; }
 
   /* ============================================================
+     列印 / PDF 匯出樣式
+     ============================================================ */
+  .print-container { display: none; }   /* 螢幕下永不顯示 */
+  @media print {
+    @page {
+      size: A4 portrait;
+      margin: 16mm 14mm;
+    }
+    body {
+      background: #fff !important;
+      color: #111 !important;
+      font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important;
+      font-size: 11pt;
+    }
+    body::before, body::after { display: none !important; }
+    .page > *:not(.print-container),
+    .travel-bottom-bar, .breadcrumb-bar, .more-sheet, .dash-menu-backdrop,
+    .modal-backdrop, .toast, .drag-hint, .gather-popup {
+      display: none !important;
+    }
+    .page {
+      max-width: none !important; margin: 0 !important; padding: 0 !important;
+    }
+    .print-container { display: block !important; }
+    .print-container * { color: #111 !important; background: transparent !important; border-color: #ccc !important; }
+    .print-cover {
+      text-align: center; padding: 30mm 0 20mm;
+      border-bottom: 2px solid #d4a574;
+    }
+    .print-cover .eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9pt; letter-spacing: 0.3em; color: #888 !important;
+      margin-bottom: 8mm; text-transform: uppercase;
+    }
+    .print-cover h1 {
+      font-family: 'Fraunces', 'Noto Sans TC', serif;
+      font-size: 32pt; font-weight: 400; font-style: italic;
+      margin: 0 0 6mm; letter-spacing: -0.02em;
+    }
+    .print-cover h1 em { color: #d4a574 !important; font-style: italic; }
+    .print-cover .sub {
+      font-size: 12pt; color: #555 !important; margin-bottom: 4mm;
+    }
+    .print-cover .meta {
+      display: flex; justify-content: center; gap: 14mm;
+      flex-wrap: wrap; font-size: 10pt; color: #444 !important;
+      margin-top: 6mm; font-family: 'JetBrains Mono', monospace;
+    }
+    .print-cover .meta strong { color: #d4a574 !important; font-size: 13pt; font-family: 'Fraunces', serif; }
+
+    .print-section { margin-top: 8mm; page-break-inside: avoid; }
+    .print-section h2 {
+      font-family: 'Fraunces', 'Noto Sans TC', serif;
+      font-size: 14pt; font-weight: 500;
+      border-bottom: 1px solid #d4a574; color: #d4a574 !important;
+      padding-bottom: 2mm; margin-bottom: 4mm;
+    }
+    .print-section h2 em { font-style: italic; }
+
+    .print-flight-row, .print-hotel-row {
+      display: flex; padding: 2mm 0; border-bottom: 1px dashed #ddd;
+      font-size: 10.5pt;
+    }
+    .print-flight-row > span, .print-hotel-row > span { padding: 0 4mm; }
+    .print-flight-row .code, .print-hotel-row .date { width: 18mm; color: #888 !important; }
+
+    .print-day {
+      page-break-inside: avoid; page-break-before: always;
+      margin-bottom: 6mm;
+    }
+    .print-day:first-of-type { page-break-before: auto; }
+    .print-day-header {
+      background: #f5f0e6 !important;
+      padding: 4mm 5mm; margin-bottom: 4mm;
+      border-left: 4px solid #d4a574;
+    }
+    .print-day-header h2 {
+      font-family: 'Fraunces', 'Noto Sans TC', serif;
+      font-size: 16pt; font-weight: 500; margin: 0;
+      color: #d4a574 !important; border: none; padding: 0;
+    }
+    .print-day-header .day-num {
+      font-family: 'JetBrains Mono', monospace; font-size: 9pt;
+      color: #888 !important; margin-bottom: 1mm; letter-spacing: 0.15em;
+    }
+    .print-day-header .subtitle {
+      font-size: 10pt; color: #666 !important; margin-top: 1mm;
+    }
+
+    .print-spot {
+      display: flex; gap: 4mm; padding: 2.5mm 0;
+      border-bottom: 1px solid #eee;
+      page-break-inside: avoid;
+    }
+    .print-spot:last-child { border-bottom: none; }
+    .print-spot-time {
+      width: 16mm; flex-shrink: 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10pt; color: #888 !important;
+      padding-top: 1mm;
+    }
+    .print-spot-type {
+      width: 12mm; flex-shrink: 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 8.5pt; color: #d4a574 !important;
+      padding-top: 1.5mm; text-align: center;
+      border: 1px solid #d4a574; height: 5mm;
+      letter-spacing: 0.1em;
+    }
+    .print-spot-body { flex: 1; min-width: 0; }
+    .print-spot-name {
+      font-family: 'Fraunces', 'Noto Sans TC', serif;
+      font-size: 11.5pt; font-weight: 500; margin-bottom: 1mm;
+    }
+    .print-spot-desc {
+      font-size: 9.5pt; color: #444 !important;
+      line-height: 1.5;
+    }
+    .print-spot-gps {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 8.5pt; color: #aaa !important;
+      margin-top: 1mm;
+    }
+
+    .print-emergency {
+      page-break-before: always; padding-top: 10mm;
+    }
+    .print-emergency-card {
+      border: 2px solid #c97b6a; padding: 5mm 6mm;
+      margin-bottom: 4mm;
+    }
+    .print-emergency-card .label {
+      font-family: 'JetBrains Mono', monospace; font-size: 9pt;
+      color: #c97b6a !important; letter-spacing: 0.2em;
+      margin-bottom: 2mm; text-transform: uppercase;
+    }
+    .print-footer {
+      text-align: center; margin-top: 10mm;
+      font-family: 'JetBrains Mono', monospace; font-size: 9pt;
+      color: #aaa !important; padding-top: 4mm;
+      border-top: 1px solid #eee;
+    }
+  }
+
+  /* ============================================================
      旅遊模組 · Travel Module
      ============================================================ */
   .travel-hero {
@@ -2029,6 +2174,12 @@
           <div class="home-card-en">PARTY</div>
           <div class="home-card-stat" id="hc-multi">未設定</div>
         </div>
+        <div class="home-card" onclick="exportTripPdf()">
+          <div class="home-card-icon">⎙</div>
+          <div class="home-card-name">列印 · PDF</div>
+          <div class="home-card-en">EXPORT</div>
+          <div class="home-card-stat">分享給同伴 / 列印帶出門</div>
+        </div>
         <div class="home-card" onclick="setTravelTab('settings')">
           <div class="home-card-icon">⚙</div>
           <div class="home-card-name">設定 · LINE</div>
@@ -2381,6 +2532,7 @@
       <div class="checklist-section">
         <h3><span class="num">04</span>資料</h3>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="exportTripPdf()">⎙ 列印 / 匯出 PDF</button>
           <button class="btn" onclick="exportTravelData()">↓ 匯出旅遊資料</button>
           <button class="btn" onclick="document.getElementById('travelImportFile').click()">↑ 匯入</button>
           <input type="file" id="travelImportFile" accept=".json" style="display:none" onchange="importTravelData(event)">
@@ -4887,6 +5039,142 @@ ${userQuery}`;
     supabase: null,      // Supabase client 實例
     membersChannel: null // realtime subscription
   };
+
+  // ===== 列印 / PDF 匯出 =====
+  function exportTripPdf() {
+    if (!ITINERARY) { showToast('沒有作用中的旅遊'); return; }
+    // 動態建立列印用 DOM
+    let container = document.getElementById('printContainer');
+    if (container) container.remove();
+    container = document.createElement('div');
+    container.id = 'printContainer';
+    container.className = 'print-container';
+    container.innerHTML = buildPrintHtml(ITINERARY);
+    document.body.appendChild(container);
+    showToast('準備列印 · 可選「另存為 PDF」');
+    setTimeout(() => {
+      window.print();
+      // 列印對話框關閉後清理
+      setTimeout(() => { container.remove(); }, 800);
+    }, 250);
+  }
+
+  function buildPrintHtml(it) {
+    const startD = new Date(it.startDate + 'T00:00:00');
+    const endD = new Date(it.endDate + 'T00:00:00');
+    const dateRange = `${startD.getFullYear()}.${String(startD.getMonth()+1).padStart(2,'0')}.${String(startD.getDate()).padStart(2,'0')} – ${endD.getFullYear()}.${String(endD.getMonth()+1).padStart(2,'0')}.${String(endD.getDate()).padStart(2,'0')}`;
+    const titleParts = it.title.split('·').map(s => s.trim());
+    const titleHtml = titleParts.length >= 2
+      ? `<em>${escape(titleParts[0])}</em><br>${titleParts.slice(1).map(escape).join(' · ')}`
+      : `<em>${escape(it.title)}</em>`;
+
+    // 航班
+    const flightsHtml = (it.flights && it.flights.length) ? `
+      <div class="print-section">
+        <h2>航班 <em>資訊</em></h2>
+        ${it.flights.map(f => `
+          <div class="print-flight-row">
+            <span class="code">${escape(f.code)}</span>
+            <span>${escape(f.from)} → ${escape(f.to)}</span>
+            <span>${escape(f.dep)} – ${escape(f.arr)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    // 飯店
+    const hotels = [];
+    it.days.forEach(d => {
+      d.spots.forEach(s => {
+        if (s.type === '住宿') hotels.push({ date: d.date, name: s.name, desc: s.desc });
+      });
+    });
+    const hotelsHtml = hotels.length ? `
+      <div class="print-section">
+        <h2>住宿 <em>列表</em></h2>
+        ${hotels.map(h => `
+          <div class="print-hotel-row">
+            <span class="date">${escape(h.date.slice(5))}</span>
+            <span><strong>${escape(h.name)}</strong>${h.desc ? '<br><span style="font-size:9pt; color:#888;">' + escape(h.desc) + '</span>' : ''}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    // 每日行程
+    const daysHtml = it.days.map(d => {
+      const spotsHtml = d.spots.map(s => `
+        <div class="print-spot">
+          <div class="print-spot-time">${escape(s.time)}</div>
+          <div class="print-spot-type">${escape(s.type)}</div>
+          <div class="print-spot-body">
+            <div class="print-spot-name">${escape(s.name)}</div>
+            ${s.desc ? `<div class="print-spot-desc">${escape(s.desc)}</div>` : ''}
+            ${s.gps ? `<div class="print-spot-gps">GPS · ${s.gps[0].toFixed(4)}, ${s.gps[1].toFixed(4)}</div>` : ''}
+          </div>
+        </div>
+      `).join('');
+      return `
+        <div class="print-day">
+          <div class="print-day-header">
+            <div class="day-num">DAY · ${String(d.day).padStart(2, '0')} · ${escape(d.date)} · ${escape(d.weekday)}</div>
+            <h2>${escape(d.title)}</h2>
+            ${d.subtitle ? `<div class="subtitle">${escape(d.subtitle)}</div>` : ''}
+          </div>
+          ${spotsHtml}
+        </div>
+      `;
+    }).join('');
+
+    // 緊急聯絡
+    const emergencyHtml = `
+      <div class="print-section print-emergency">
+        <h2>緊急 <em>聯絡 & 注意事項</em></h2>
+        ${it.agency ? `
+          <div class="print-emergency-card">
+            <div class="label">旅行社</div>
+            <div style="font-size:11pt;">${escape(it.agency)}</div>
+          </div>
+        ` : ''}
+        <div class="print-emergency-card">
+          <div class="label">行前必備</div>
+          <div style="font-size:10pt; line-height:1.7;">
+            護照（效期 6 個月以上）· 台胞證 / 簽證 · 個人藥品 · 保暖衣物 · 防曬用品 · 行動電源（&lt;20000mAh）· 轉接頭 · 信用卡 / 現金
+          </div>
+        </div>
+        <div class="print-emergency-card">
+          <div class="label">當地通用</div>
+          <div style="font-size:10pt; line-height:1.7;">
+            台灣外交部全球急難救助 · +886-3-3982629（24h）<br>
+            駐外館處：請依旅遊國家查詢 boca.gov.tw
+          </div>
+        </div>
+      </div>
+    `;
+
+    return `
+      <div class="print-cover">
+        <div class="eyebrow">PERSONAL · STUDIO · TRAVEL ITINERARY</div>
+        <h1>${titleHtml}</h1>
+        <div class="sub">${escape(it.destination || '')}</div>
+        <div class="meta">
+          <div><strong>${it.days.length}</strong> 天</div>
+          <div><strong>${escape(dateRange)}</strong></div>
+          ${it.cost ? `<div>NT$<strong>${it.cost.toLocaleString()}</strong></div>` : ''}
+        </div>
+      </div>
+      ${flightsHtml}
+      ${hotelsHtml}
+      <div class="print-section">
+        <h2>逐日 <em>行程</em></h2>
+      </div>
+      ${daysHtml}
+      ${emergencyHtml}
+      <div class="print-footer">
+        Generated by Personal Studio · ${new Date().toLocaleDateString('zh-TW')}
+      </div>
+    `;
+  }
 
   // ===== Trips List =====
   async function loadCustomTrips() {
