@@ -3127,7 +3127,14 @@
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
             <button class="btn btn-primary" onclick="saveMultiConfig()">✓ 儲存並重啟連線</button>
             <button class="btn" onclick="testMultiConnection()">⚐ 測試連線</button>
-            <button class="btn" onclick="openMultiHelp()">？ 申請步驟教學</button>
+            <button class="btn" onclick="openMultiHelp()">？ 教學</button>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">
+            <button class="btn btn-sm" onclick="copyMultiConfigToClipboard()" title="把當前所有設定複製，到其他裝置貼上一鍵填好">📋 複製設定（給其他裝置）</button>
+            <button class="btn btn-sm" onclick="pasteMultiConfigFromClipboard()" title="從剪貼簿貼上設定">📋 貼上設定（從其他裝置）</button>
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:6px; letter-spacing:0.05em;">
+            電腦複製設定 → 手機點「貼上設定」即可一鍵填好同樣的 LIFF / Supabase / 群組代碼
           </div>
           <div id="multiStatusBox" style="margin-top:14px; padding:12px 14px; background:var(--bg-elevated); border-radius:4px; font-family:var(--mono); font-size:11.5px; color:var(--ink-secondary); line-height:1.6; min-height:40px;">尚未啟用</div>
         </div>
@@ -9488,6 +9495,64 @@ ${daysBrief}
     teardownMultiUser();
     await initMultiUser();
     showToast('多人功能設定已儲存');
+  }
+
+  async function copyMultiConfigToClipboard() {
+    const cfg = {
+      liffId: document.getElementById('multiLiffId').value.trim(),
+      supabaseUrl: document.getElementById('multiSupabaseUrl').value.trim(),
+      supabaseKey: document.getElementById('multiSupabaseKey').value.trim(),
+      groupId: document.getElementById('multiGroupId').value.trim(),
+      displayName: document.getElementById('multiDisplayName').value.trim()
+    };
+    if (!cfg.supabaseUrl || !cfg.supabaseKey) {
+      showToast('請先填好 Supabase URL / Key 再複製');
+      return;
+    }
+    const payload = 'PERSONAL-STUDIO-MULTI-V1:' + btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
+    try {
+      await navigator.clipboard.writeText(payload);
+      showToast('設定已複製 · 到其他裝置按「📋 貼上設定」');
+    } catch (e) {
+      // fallback: 顯示 textarea 讓使用者手動複製
+      const ta = document.createElement('textarea');
+      ta.value = payload;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); showToast('設定已複製'); }
+      catch (err) { prompt('請手動複製這串設定文字（很長，全選複製）：', payload); }
+      document.body.removeChild(ta);
+    }
+  }
+
+  async function pasteMultiConfigFromClipboard() {
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (e) {
+      text = prompt('請貼上「📋 複製設定」產生的文字：') || '';
+    }
+    text = text.trim();
+    if (!text.startsWith('PERSONAL-STUDIO-MULTI-V1:')) {
+      showToast('剪貼簿內容不是有效的設定碼');
+      return;
+    }
+    try {
+      const b64 = text.replace('PERSONAL-STUDIO-MULTI-V1:', '');
+      const cfg = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      if (cfg.liffId) document.getElementById('multiLiffId').value = cfg.liffId;
+      if (cfg.supabaseUrl) document.getElementById('multiSupabaseUrl').value = cfg.supabaseUrl;
+      if (cfg.supabaseKey) document.getElementById('multiSupabaseKey').value = cfg.supabaseKey;
+      if (cfg.groupId) document.getElementById('multiGroupId').value = cfg.groupId;
+      // 顯示名稱可保留本機原本的（你可能不想 Kevin → 變成別人的）
+      // 但如果是空就帶入
+      const dn = document.getElementById('multiDisplayName');
+      if (!dn.value && cfg.displayName) dn.value = cfg.displayName;
+      showToast('✓ 設定已填入 · 請點「儲存並重啟連線」');
+    } catch (e) {
+      showToast('解析失敗：' + e.message);
+    }
   }
 
   async function copySupabaseSql() {
