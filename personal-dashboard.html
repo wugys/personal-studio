@@ -9034,19 +9034,26 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   // 抓單一股票新聞 — A 方案：Cloudflare Worker + Google News RSS（免費，無需 API key）
   // Fallback：若無 worker URL 但有 API key，仍走 Anthropic web_search
   async function fetchStockNews(symbol, name) {
-    const workerUrl = await readKey(TW_STORAGE.newsWorker);
-    if (workerUrl) {
+    const workerUrlRaw = await readKey(TW_STORAGE.newsWorker);
+    if (workerUrlRaw) {
       // 走 worker (RSS) — 用單詞名稱 query（Google News 對多詞 + 數字組合會 reject）
-      const q = name || symbol;
-      const sep = workerUrl.includes('?') ? '&' : '?';
-      const url = `${workerUrl.replace(/\/+$/, '')}/${sep}q=${encodeURIComponent(q)}`;
-      const resp = await fetch(url);
-      // 即使 status 非 200，也試著解 JSON 拿 error 欄位
-      let body, errMsg = '';
+      const workerUrl = (workerUrlRaw || '').trim();
+      const q = (name || symbol || '').trim().replace(/[ -]/g, ''); // strip 控制字元
+      if (!q) throw new Error('Query 為空');
+      let url;
+      try { url = new URL(workerUrl); }
+      catch (e) { throw new Error('Worker URL 格式錯誤：' + workerUrl); }
+      url.searchParams.set('q', q);
+      const finalUrl = url.toString();
+      console.log('[news.fetch]', finalUrl);
+      const resp = await fetch(finalUrl, { cache: 'no-store' });
+      let body;
       try { body = await resp.json(); } catch (e) { body = null; }
       if (!resp.ok) {
-        errMsg = body?.error || `HTTP ${resp.status}`;
-        throw new Error(`Worker 回 ${resp.status} · ${errMsg}（query: ${q}）`);
+        const upstream = body?.upstreamStatus ? ` · 上游 ${body.upstreamStatus}` : '';
+        const errMsg = body?.error || `HTTP ${resp.status}`;
+        console.error('[news.fail]', { status: resp.status, body, url: finalUrl });
+        throw new Error(`Worker ${resp.status} · ${errMsg}${upstream}（query: ${q}）`);
       }
       if (body?.error) throw new Error('Worker: ' + body.error);
       return { items: body?.items || [] };
@@ -9193,15 +9200,21 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const btn = document.getElementById('twNewsWorkerTestBtn');
     btn.disabled = true; btn.textContent = '測試中…';
     try {
-      const sep = v.includes('?') ? '&' : '?';
-      // 用單詞 query（Google News 對多詞 + 數字組合會拒）
-      const url = `${v.replace(/\/+$/, '')}/${sep}q=${encodeURIComponent('台積電')}`;
-      const resp = await fetch(url);
+      // URL constructor 確保編碼乾淨
+      let url;
+      try { url = new URL(v); }
+      catch (e) { throw new Error('URL 格式錯誤 · ' + v); }
+      url.searchParams.set('q', '台積電');
+      const finalUrl = url.toString();
+      console.log('[news.test]', finalUrl);
+      const resp = await fetch(finalUrl, { cache: 'no-store' });
       let data;
       try { data = await resp.json(); } catch (e) { data = null; }
       if (!resp.ok) {
-        const upstream = data?.error || `HTTP ${resp.status}`;
-        throw new Error(upstream);
+        const upstream = data?.upstreamStatus ? ` · 上游 ${data.upstreamStatus}` : '';
+        const errMsg = data?.error || `HTTP ${resp.status}`;
+        console.error('[news.test.fail]', { status: resp.status, data, url: finalUrl });
+        throw new Error(errMsg + upstream);
       }
       if (data?.error) throw new Error(data.error);
       const n = (data?.items || []).length;
