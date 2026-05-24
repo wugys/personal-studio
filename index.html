@@ -2018,6 +2018,41 @@
     .spot-time { padding-top: 0; min-width: 0; }
     /* 手機隱藏舊的橫向 tab，改用底部 bar */
     body.travel-active .travel-tabs { display: none; }
+  }
+
+  /* ===== Guest Mode（團友專用模式）=====
+     URL 含 ?trip= 時自動啟用。隱藏所有非旅遊內容、保護隱私（Supabase key 等） */
+  body.guest-mode .footer,
+  body.guest-mode .back-btn,
+  body.guest-mode .dash-menu-backdrop,
+  body.guest-mode .more-sheet,
+  body.guest-mode .more-sheet-backdrop,
+  body.guest-mode [data-trv-tab="settings"],
+  body.guest-mode #multiUserSection,
+  body.guest-mode .home-card[onclick*="settings"],
+  body.guest-mode .more-item[onclick*="settings"],
+  body.guest-mode .more-item[onclick*="dashboard"],
+  body.guest-mode [onclick*="copyShareLinkForParty"],
+  body.guest-mode [onclick*="copyMultiConfigToClipboard"],
+  body.guest-mode .breadcrumb-bar [onclick*="dashboardView"] {
+    display: none !important;
+  }
+  /* Guest 模式底部加上小提示 */
+  body.guest-mode .view.active::after {
+    content: '✦ 共同行程檢視 · 由團主分享 ✦';
+    display: block;
+    text-align: center;
+    padding: 24px 16px 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: rgba(244, 234, 213, 0.35);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 768px) {
+    /* 防止手機底部 bar 也露出設定 */
+    body.guest-mode .travel-bottom-bar [data-trv-tab="settings"] { display: none !important; }
     .home-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .home-card { min-height: 110px; padding: 18px 14px; }
     .home-card-icon { font-size: 24px; }
@@ -10044,7 +10079,32 @@ ${daysBrief}
     }
   }
 
-  loadAll().then(() => processShareLinkParams());
+  // ===== Guest Mode（團友專用模式）=====
+  // URL 含 ?trip= 時自動啟用，refresh 後仍維持（存於 storage）
+  // 用 ?admin=1 可隨時解鎖（給團主自己測試用）
+  const GUEST_MODE_KEY = 'studio_guest_mode_v1';
+  async function applyGuestMode() {
+    const queryParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    // 解鎖：?admin=1 → 清掉 guest mode
+    if (queryParams.get('admin') === '1' || hashParams.get('admin') === '1') {
+      try { await writeKey(GUEST_MODE_KEY, ''); } catch (e) {}
+      document.body.classList.remove('guest-mode');
+      return;
+    }
+    // 啟用：URL 含 trip 參數 → 進入 guest mode 並持久化
+    const tripFromUrl = queryParams.get('trip') || hashParams.get('trip');
+    let stored = '';
+    try { stored = (await readKey(GUEST_MODE_KEY)) || ''; } catch (e) {}
+    if (tripFromUrl || stored === '1') {
+      try { await writeKey(GUEST_MODE_KEY, '1'); } catch (e) {}
+      document.body.classList.add('guest-mode');
+      // guest mode 下強制進旅遊頁（避免閃過 dashboard）
+      try { showView('travelView'); } catch (e) {}
+    }
+  }
+
+  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams());
 </script>
 
 </body>
