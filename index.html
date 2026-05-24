@@ -9690,11 +9690,12 @@ ${daysBrief}
     const url = document.getElementById('multiSupabaseUrl').value.trim();
     const key = document.getElementById('multiSupabaseKey').value.trim();
     if (!url || !key) { showToast('請先填好 Supabase URL / Key'); return; }
-    const cfg = {
-      liffId: document.getElementById('multiLiffId').value.trim(),
-      supabaseUrl: url, supabaseKey: key,
-      groupId: document.getElementById('multiGroupId').value.trim(),
-    };
+    // 只放入「實際有填的」欄位，避免空字串覆蓋接收端原有的值
+    const cfg = { supabaseUrl: url, supabaseKey: key };
+    const liffIdVal = document.getElementById('multiLiffId').value.trim();
+    const groupIdVal = document.getElementById('multiGroupId').value.trim();
+    if (liffIdVal) cfg.liffId = liffIdVal;
+    if (groupIdVal) cfg.groupId = groupIdVal;
     const payload = b64UrlEncode(JSON.stringify(cfg));
     const base = 'https://personal-studio-theta.vercel.app/';
     // 注意：用 ? 而不是 # — hash fragment 在 is.gd 縮網址 / LINE 內建瀏覽器 redirect 過程會被吃掉
@@ -9771,17 +9772,20 @@ ${daysBrief}
   }
 
   async function copyMultiConfigToClipboard() {
-    const cfg = {
-      liffId: document.getElementById('multiLiffId').value.trim(),
-      supabaseUrl: document.getElementById('multiSupabaseUrl').value.trim(),
-      supabaseKey: document.getElementById('multiSupabaseKey').value.trim(),
-      groupId: document.getElementById('multiGroupId').value.trim(),
-      displayName: document.getElementById('multiDisplayName').value.trim()
-    };
-    if (!cfg.supabaseUrl || !cfg.supabaseKey) {
+    // 只放入「實際有填的」欄位，避免空字串覆蓋接收端原有的值
+    const url = document.getElementById('multiSupabaseUrl').value.trim();
+    const key = document.getElementById('multiSupabaseKey').value.trim();
+    if (!url || !key) {
       showToast('請先填好 Supabase URL / Key 再複製');
       return;
     }
+    const cfg = { supabaseUrl: url, supabaseKey: key };
+    const liffIdVal = document.getElementById('multiLiffId').value.trim();
+    const groupIdVal = document.getElementById('multiGroupId').value.trim();
+    const dnVal = document.getElementById('multiDisplayName').value.trim();
+    if (liffIdVal) cfg.liffId = liffIdVal;
+    if (groupIdVal) cfg.groupId = groupIdVal;
+    if (dnVal) cfg.displayName = dnVal;
     // 用 base64url（A-Za-z0-9-_）避免 + / = 在 LINE / 跨裝置複製時被改成空白或截斷
     const payload = 'PERSONAL-STUDIO-MULTI-V1:' + b64UrlEncode(JSON.stringify(cfg));
     try {
@@ -10124,12 +10128,16 @@ ${daysBrief}
           const raw = await readKey(TRAVEL_STORAGE.multiConfig);
           if (raw) existing = JSON.parse(raw);
         } catch (e) {}
+        // 過濾掉空字串 / null / undefined，避免覆蓋接收端原有的值
+        const filteredCfg = Object.fromEntries(
+          Object.entries(cfg).filter(([k, v]) => v != null && String(v).trim() !== '')
+        );
         const merged = {
           ...existing,
-          ...cfg,
+          ...filteredCfg,
           enabled: true,
           // displayName 優先用本機原本的；如沒有，留空讓 LIFF 帶或使用者填
-          displayName: existing.displayName || cfg.displayName || ''
+          displayName: existing.displayName || filteredCfg.displayName || ''
         };
         delete merged.firebaseConfig;
         await writeKey(TRAVEL_STORAGE.multiConfig, JSON.stringify(merged));
