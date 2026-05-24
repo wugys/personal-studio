@@ -56,13 +56,19 @@
   }
   .brand { display: flex; flex-direction: column; gap: 4px; }
   .brand-mark { font-family: var(--mono); font-size: 11px; letter-spacing: 0.25em; color: var(--ink-tertiary); text-transform: uppercase; }
-  .brand-title { font-family: var(--serif); font-size: 24px; font-weight: 400; font-style: italic; letter-spacing: -0.01em; }
+  .brand-mark strong { color: var(--accent); font-weight: 600; }
+  .brand-title {
+    font-family: var(--serif); font-size: clamp(22px, 3.5vw, 36px);
+    font-weight: 300; font-style: italic; letter-spacing: -0.02em;
+    line-height: 1.15; margin-top: 4px;
+  }
+  .brand-title em { font-style: italic; color: var(--accent); font-weight: 400; }
   .brand-tagline-mobile { display: none; }
   .header-mobile-actions { display: none; }
   .header-meta { text-align: right; font-family: var(--mono); font-size: 11px; color: var(--ink-tertiary); line-height: 1.8; }
   .header-meta .time { color: var(--accent); font-size: 13px; }
 
-  .hero { margin-bottom: 22px; }
+  .hero { display: none; }   /* 主標已搬到 .brand-title，hero 不再需要 */
   .hero-eyebrow {
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.3em;
     color: var(--accent); text-transform: uppercase; margin-bottom: 10px;
@@ -724,17 +730,17 @@
       flex-direction: row; align-items: center;
       gap: 12px; margin-bottom: 14px; padding-bottom: 12px;
     }
-    .brand-mark { display: none; }          /* 隱藏 PERSONAL · STUDIO · MMXXVI */
+    .brand-mark { display: none; }          /* 隱藏桌面版 mark */
     .header-meta { display: none; }         /* 隱藏時間/日期區塊 */
     .brand { flex: 1; min-width: 0; }
-    .brand-title { font-size: 19px; line-height: 1.1; }
+    .brand-title { font-size: 21px; line-height: 1.15; margin-top: 0; }
     .brand-tagline-mobile {
-      display: block; font-family: var(--serif);
-      font-size: 12px; color: var(--ink-tertiary);
-      font-style: italic; margin-top: 1px;
+      display: block; font-family: var(--mono);
+      font-size: 9.5px; color: var(--accent);
+      letter-spacing: 0.2em; margin-top: 2px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-weight: 500;
     }
-    .brand-tagline-mobile em { color: var(--accent); font-style: italic; }
     .header-mobile-actions {
       display: flex; align-items: center; gap: 10px; flex-shrink: 0;
     }
@@ -827,8 +833,9 @@
     .section-title { font-size: 18px; }
     .section-title .num { font-size: 9px; }
 
-    /* Level 2 (進入群組後) 標題列 */
-    .group-detail-header { margin-bottom: 14px; }
+    /* Level 2 (進入群組後) - 隱藏工具列（功能移到 ⚙ 菜單）*/
+    .group-detail-header { display: none; }
+    .group-detail-title { margin-bottom: 10px; padding: 0; }
     .group-detail-title h2 { font-size: 22px; }
     .group-detail-title-en { font-size: 9px; }
     .group { padding: 12px 0 !important; }
@@ -1773,9 +1780,9 @@
 
   <header class="header">
     <div class="brand">
-      <div class="brand-mark">PERSONAL · STUDIO · MMXXVI</div>
-      <div class="brand-title">私人工作室</div>
-      <div class="brand-tagline-mobile">屬於你的<em>數位書房</em></div>
+      <div class="brand-mark">PERSONAL · STUDIO · MMXXVI · <strong>KEVIN</strong></div>
+      <div class="brand-title">屬於你的<em>數位書房</em></div>
+      <div class="brand-tagline-mobile">WELCOME BACK · KEVIN</div>
     </div>
     <div class="header-meta">
       <div class="time" id="currentTime">—</div>
@@ -2887,19 +2894,8 @@ alter publication supabase_realtime add table party_locations;</pre>
 <div class="dash-menu-backdrop" id="dashMenu" onclick="if(event.target===this)closeDashMenu()">
   <div class="dash-menu">
     <div class="dash-menu-handle"></div>
-    <h3>儀表板選單</h3>
-    <div class="dash-menu-item" onclick="closeDashMenu(); setViewMode('grouped')">
-      <span class="dash-menu-icon">⊞</span><span>分組顯示</span>
-    </div>
-    <div class="dash-menu-item" onclick="closeDashMenu(); setViewMode('unified')">
-      <span class="dash-menu-icon">▦</span><span>整合顯示（全部攤平）</span>
-    </div>
-    <div class="dash-menu-item" onclick="closeDashMenu(); openGroupModal()">
-      <span class="dash-menu-icon">+</span><span>新增群組</span>
-    </div>
-    <div class="dash-menu-item" onclick="closeDashMenu(); openModuleModal()">
-      <span class="dash-menu-icon">+</span><span>新增模組</span>
-    </div>
+    <h3 id="dashMenuTitle">儀表板選單</h3>
+    <div id="dashMenuItems"></div>
   </div>
 </div>
 
@@ -3437,8 +3433,38 @@ alter publication supabase_realtime add table party_locations;</pre>
     document.getElementById('bcBackBtn').disabled = viewHistory.length <= 1;
   }
 
-  function openDashMenu() { document.getElementById('dashMenu').classList.add('active'); }
+  function openDashMenu() {
+    renderDashMenu();
+    document.getElementById('dashMenu').classList.add('active');
+  }
   function closeDashMenu() { document.getElementById('dashMenu').classList.remove('active'); }
+
+  function renderDashMenu() {
+    const inGroup = dashLevel === 'group';
+    const g = inGroup && currentGroupId ? groups.find(x => x.id === currentGroupId) : null;
+    document.getElementById('dashMenuTitle').textContent = inGroup && g
+      ? `${g.emoji || '◆'} ${g.name}`
+      : '儀表板選單';
+    const items = [];
+    if (inGroup) {
+      items.push({ icon: '↩', label: '返回全部群組', action: 'backToGroupsOverview()' });
+      if (g) items.push({ icon: '✎', label: '編輯這個群組', action: `openGroupModal('${g.id}')` });
+      items.push({ sep: true });
+    }
+    items.push({ icon: '⊞', label: '分組顯示', action: "setViewMode('grouped')" });
+    items.push({ icon: '▦', label: '整合顯示（全部攤平）', action: "setViewMode('unified')" });
+    items.push({ sep: true });
+    items.push({ icon: '+', label: '新增群組', action: 'openGroupModal()' });
+    items.push({ icon: '+', label: '新增模組', action: 'openModuleModal()' });
+
+    const html = items.map(it => {
+      if (it.sep) return '<div style="height:1px; background:var(--line); margin:6px 0;"></div>';
+      return `<div class="dash-menu-item" onclick="closeDashMenu(); ${it.action}">
+        <span class="dash-menu-icon">${escape(it.icon)}</span><span>${escape(it.label)}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('dashMenuItems').innerHTML = html;
+  }
 
   function setViewMode(mode) {
     viewMode = mode;
@@ -3459,6 +3485,18 @@ alter publication supabase_realtime add table party_locations;</pre>
     if (viewMode === 'grouped') renderGrouped();
     else renderUnified();
     updateApiCount();
+    updateMobileHeaderTitle();
+  }
+
+  function updateMobileHeaderTitle() {
+    const el = document.querySelector('.section-title-mobile');
+    if (!el) return;
+    if (dashLevel === 'group' && currentGroupId) {
+      const g = groups.find(x => x.id === currentGroupId);
+      el.textContent = g ? g.name : '未分組';
+    } else {
+      el.textContent = '核心模組';
+    }
   }
 
   function renderQuickAccess() {
