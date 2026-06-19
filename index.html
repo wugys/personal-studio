@@ -334,6 +334,63 @@
   .module-arrow { font-family: var(--serif); font-style: italic; color: var(--accent); font-size: 13px; transition: transform 0.3s; }
   .module:hover .module-arrow { transform: translateX(3px); }
 
+  /* === Compact view（非 dashboard 頁面通用：隱藏首頁標題、壓縮 module 內版面）=== */
+  /* quick-access 有 inline style="display:flex"（line ~4770），必須用 !important 才壓得住 */
+  body.compact-view .brand-title,
+  body.dense-page .brand-title { display: none; }
+  body.compact-view .quick-access,
+  body.dense-page .quick-access { display: none !important; }
+
+  /* play-header 壓縮（適用於 twStockView / doubleView / leverageView 等所有 play 頁）*/
+  body.compact-view .play-header { margin-bottom: 12px; padding-bottom: 12px; gap: 12px; }
+  body.compact-view .play-header-left h1 { font-size: 24px; margin-bottom: 4px; }
+  body.compact-view .play-header-left p { font-size: 12.5px; }
+  body.compact-view .play-tag { font-size: 10px; margin-bottom: 6px; }
+  /* stats-row 壓縮 */
+  body.compact-view .stats-row { gap: 8px; margin-bottom: 14px; }
+  body.compact-view .stat-card { padding: 10px 14px; }
+  body.compact-view .stat-label { font-size: 9px; margin-bottom: 4px; }
+  body.compact-view .stat-value { font-size: 20px; }
+  body.compact-view .stat-sub { font-size: 8px; margin-top: 4px; }
+  /* 台股新聞區塊壓縮 */
+  body.compact-view .tw-news-section { padding: 10px 14px; margin-bottom: 10px; }
+  body.compact-view .tw-news-header { margin-bottom: 8px; padding-bottom: 8px; }
+  body.compact-view .tw-news-header h3 { font-size: 13px; }
+  body.compact-view .tw-news-feed { max-height: 180px; }
+  /* back-btn 緊湊 */
+  body.compact-view .back-btn { margin-bottom: 8px; }
+
+  /* === Dense layout（投資中心子分區一頁顯示）=== */
+  body.dense-page .control-bar .section-title { display: none; }
+  body.dense-page .control-bar { margin-bottom: 8px; padding-bottom: 6px; }
+
+  .dense-group .group-detail-header { margin-bottom: 6px; }
+  .dense-group .group-detail-title { margin-bottom: 2px; }
+  .dense-group .group-detail-title h2 { font-size: 20px; }
+  .dense-group .group-detail-title-en { font-size: 9px; }
+  .dense-group .group { padding: 4px 0 !important; }
+  .dense-group .group-body-wrap { gap: 10px; }
+  .dense-group .subsection { gap: 3px; }
+  .dense-group .subsection-header { padding: 0 0 3px; margin-bottom: 0; }
+  .dense-group .subsection-title { font-size: 12px; }
+  .dense-group .subsection-name-en { font-size: 8px; }
+  .dense-group .subsection-hint { font-size: 9px; }
+  .dense-group .group-body {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px;
+  }
+  .dense-group .module {
+    min-height: 52px; padding: 8px 10px;
+  }
+  .dense-group .module-header { margin-bottom: 4px; }
+  .dense-group .module-icon { width: 22px; height: 22px; font-size: 12px; }
+  .dense-group .module-status { font-size: 7px; padding: 1px 4px; letter-spacing: 0.08em; }
+  .dense-group .module-name { font-size: 12px; margin-bottom: 0; line-height: 1.2; }
+  .dense-group .module-name-en { display: none; }
+  .dense-group .module-desc { display: none; }
+  .dense-group .module-footer { display: none; }
+  .dense-group .module-actions { display: none; }
+
   .view { display: none; }
   .view.active { display: block; animation: viewSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
   .view.active.backward { animation: viewSlideInBack 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -4545,6 +4602,8 @@ alter publication supabase_realtime add table party_locations;</pre>
         if (viewHistory.length > 30) viewHistory.shift();
       }
     }
+    // 非 dashboard 頁進入 compact-view（隱藏 page chrome、壓縮 module 內版面）
+    document.body.classList.toggle('compact-view', id !== 'dashboardView');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     renderBreadcrumb();
   }
@@ -4823,7 +4882,9 @@ alter publication supabase_realtime add table party_locations;</pre>
       bodyHtml = `<div class="group-body">${inGroup.map(m => moduleCardHtml(m)).join('')}</div>`;
     }
 
+    const denseClass = currentGroupId === 'g_invest' ? ' dense-group' : '';
     container.innerHTML = `
+      <div class="group-detail-wrap${denseClass}">
       <div class="group-detail-header">
         <button class="back-btn" onclick="backToGroupsOverview()" style="margin:0;">← 全部群組</button>
         ${currentGroupId ? `
@@ -4841,12 +4902,14 @@ alter publication supabase_realtime add table party_locations;</pre>
         ondrop="onGroupDrop(event, '${currentGroupId || ''}')">
         <div class="group-body-wrap">${bodyHtml}</div>
       </div>
+      </div>
     `;
   }
 
   function enterGroup(groupId) {
     dashLevel = 'group';
     currentGroupId = groupId;
+    document.body.classList.toggle('dense-page', groupId === 'g_invest');
     renderDashboard();
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4854,6 +4917,7 @@ alter publication supabase_realtime add table party_locations;</pre>
   function backToGroupsOverview() {
     dashLevel = 'overview';
     currentGroupId = null;
+    document.body.classList.remove('dense-page');
     renderDashboard();
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -11378,7 +11442,19 @@ ${daysBrief}
     }
   }
 
-  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams());
+  function applyEnterParam() {
+    try {
+      const enterId = new URLSearchParams(window.location.search).get('enter');
+      if (!enterId) return;
+      if (enterId === 'ungrouped' || groups.find(g => g.id === enterId)) {
+        enterGroup(enterId === 'ungrouped' ? '' : enterId);
+      } else if (document.getElementById(enterId)) {
+        showView(enterId);
+      }
+    } catch (e) {}
+  }
+
+  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam());
 </script>
 
 </body>
