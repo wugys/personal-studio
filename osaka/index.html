@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="theme-color" content="#F3EEE6" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="大阪奈良管家" />
+<link rel="apple-touch-icon" href="data:image/png;base64,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" />
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%20%22%E5%A4%A7%E9%98%AA%20%EF%BC%8B%20%E5%A5%88%E8%89%AF%20%E4%BA%94%E6%97%A5%20%C2%B7%20%E6%97%85%E9%81%8A%E7%AE%A1%E5%AE%B6%22%2C%20%22short_name%22%3A%20%22%E5%A4%A7%E9%98%AA%E5%A5%88%E8%89%AF%22%2C%20%22start_url%22%3A%20%22.%22%2C%20%22display%22%3A%20%22standalone%22%2C%20%22background_color%22%3A%20%22%23F3EEE6%22%2C%20%22theme_color%22%3A%20%22%23F3EEE6%22%2C%20%22icons%22%3A%20%5B%7B%22src%22%3A%20%22data%3Aimage/png%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAABmJLR0QA/wD/AP%2BgvaeTAAASi0lEQVR4nO2daVgUV7qAv%2BqVZu8GGrDZFQFBECEKLhF3BaKTxZjNmMyYGE1ixknizdzRyZ2smkyWm9yr8yRmEqM3i5NroiIu0biBsqpBUHaBZt%2BbBpqmu7rmB4sgHKlW6K4U3/v4izrnfJ9db586dc6pakrbXA0IMhwCayeAcBeUAyGCciBEUA6ECMqBEEE5ECIoB0IE5UCIoBwIEZQDIYJyIERQDoQIyoEQQTkQIigHQgTlQIigHAgRlAMhgnIgRFAOhAjKgRBBORAiKAdCBOVAiKAcCBGUAyGCciBEUA6ECMqBEEE5ECIoB0IE5UCIoBwIEZQDIYJyIERQDoQIyoEQQTkQIigHQgTlQIigHAgRlAMhIrJ2AtZE197SWluqaVTrtI3dunZjtw4ARBKZVOYgc3R1dPGSe060sXO2dppWYzzKoWtrVBek1ZZkt7fUjljYXu7pOSnKa/JMmaOrBXLjFNS4ejG%2BpqGiODu5viyHYRizKlIUpfSPCIxKcHT1GqPcOMh4kaNb13497UBVfhqAeVoMhKIoVVBMSOyDYhu7UcyNs4wLOeorcnNOf93dqR2V1qQyx/CFT7p5h45Ka1yG/3IUZycXZiTdTYcxFIqiJs9YMXH6slFsk4PwWw4m7/z%2B8twzY9S6X/j8KbNXAVBj1L7V4fM8x/XU/x87MwCgLOd0/sUfx659q8NbOcpzz9zIOTXWUUqv/Ky%2BljLWUawFP%2BVobSi7fuEHy8TKS/le06i2TCwLw0M5TLQx59QeE01bLtwve0wmC4WzJDyUo/zqL2ymPkcRbVNV2dXTloxoGfgmh1GvK7p0zPJxSy4d7Vma4RN8k6M876xRb4WTZOjqVF87b/m4YwqvFt4YhqnIM/sMCUUSpW%2Bom3eozEEBADptc0NFbl15nok2mNVOWd55/2mL%2BTTtwSs5mquLdO3NZlXxCZ0bOmeVzF4x8I%2BTopbp2pvzzu2vuG7GbaqurbGltlTuMdGsBLgMry4r9WU57AtTFDV9yR%2Bil62/xYweZPaK6PjnIhf/nqLM6Alqb5iRAPfhlRxNVfnsC4fOfcRv6vzbl/EPXxA652H2bTabkwD34Y8ctLFb21zDsrDcM2DyPfFsSk6ekajwnMSyWW1TlYk2sizMffgjR0drPcOYWBYOjnmA9ciRCpq5gmWzJhPdoalnWZj78EeOrvYWliVFEht3XzN2Yyh9w0QSKcvC5o6IuQx/5OjWt7Ms6ahQCYRi9i0LRRIHBdvdgYauDvYtcxz%2ByMGwXt2Q2DqY27iUdRUcc3ARSiBkWdLQ1Wlu4906tt2SQMifqSP%2ByCGRObIs2d5aa9buc4ZhOlrrWBaW2rJNg/vwRw57JyXLkvrOtuaaYvYtN1cX6XVsNyfbsU6D%2B/BHDlsnV7GNLcvCRZlJ7FsuzDjEsqREZt%2BzQMMP%2BCMHAKXwDGRZtLo4u7o4m03JqsLMmtIrLJtVeE7m08Ibn%2BQAd79w9oWzju5sqi68fZmmqsLs4/8wIwHfMPaFuQ/P5IgQCNnesxi79ef3v1ty6fiwO/xMJro4%2B%2Bj5f71j7NazbFAgFLn7T2Ob628B/tx3AYDYxk7pG15beplleRNt%2BPX03uLLx71DZit9Qm0dXACgU9tUX5Gnvp7a0WreRLhHwDSRVGZ20hyGbw81NVUVpB/62CqhY373Mvslut8EvLqsAICLKsjJzcfycZ2UfjwzA/gnBwBY5RHWwChWGwB%2BW/BQDo%2BAac5KX0tGdFb6K/14dZ/SAw/lAKCCYu63ZLiQWQ/yaXqjH17KAS6qIPcAC91VTpgUJffkz6bigfBTDgCYMmuVUMR2h84dI5LIgmc9ONZRrAVv5ZA5KCbPSBzrKEEzVvD4dYO8lQMA/MIXOLsHjF37cs%2BJPmHzxq59q8NnOShKELHgSaFIMhaNC8XSiPlrzXqq5TcHn%2BUAADtn95CxGROEznnY1sltLFrmDjyXAwB8Qu8d9TsXz4lRXsGzRrdNDsJ/OQAgPG6NzMFltFqzdXKbGvf4aLXGZcaFHGKp7fSlzwrNeRyBhFAkmb50vUjCq9VXEuNCDgBwcvMJu/fRu28nbN5jji6qu2/nN8F4kQMAVMGxfuEjPDl9e/wjFqkmzxytfLjPOJIDAEJmPaT0nXpndZU%2BocGxllyysT7jSw6KEkxb9LSDYoK5FR1dvSKXrKOo8fVxja//LQCIJLLohOdtbJ3YV5HZy6PjnxeKbcYuK24y7uSAnrf2JL7I8o5DLLWNTniBxwsot2E8ygEAji6qqGXPjXhzKxRJopdvvIPLED8Yp3IAgItqcuSSdbd5/FogEEYufYavezXYMH7lAAClX3jEgqeGHWZSlCBi0dNKHx5u/mPPuJYDACYERk%2BNe%2BKWxVWKoqbOX%2BM5McpaWXGE8S4HAHgFxw70g6Ko8Lg1XkEx1s2KC/Dqibc7xit4FgVUzpl9ABC%2B4MlxNQ16G1COXlTBsQKRBCjAq0k/fHscEhlFcMyBEEE5ECIoB0IE5UCIoBwIEZQDIYJyIERQDoQIyoEQQTkQIigHQgTlQIigHAgRlAMhgnIgRFAOhAjKgRBBORAiKAdCBOVAiKAcCBGUAyGCciBEUA6ECMqBEEE5ECIoB0IE5UCIoBwIEZQDIYJyIERQDoQIyoEQ4ehrn/S1V04cPnYmI6%2Booq6lw8CIZM5Kr0lh0%2BcuSVw%2B08t2%2BB9W667JPPztgV8y8spqWzuNlNRO7uqp8pk4OSgsIjJmxlRPQjVgtKe2PbLtlJaRxfx5/44VrsMXY5qTNt//Xlr3LX8WTfvjNztXewjo8j3rnt6Vb%2Bz7O%2BWYsD1pa%2Bwwvy/HLhwX4N5rnxjt1W/fff2z1Go9CJyDE9asmh/kImwtTf3x/w5cajSCyC3qsa2vPz3TdfDLZZm2zJ2vvPZNvs4%2BePnjD8yfMsFRZNBUF2YeP3gos7oLpAvfSX47bvj3FZsaDm1%2B%2BIP0LgYocdgLez57zGv47pRuLS%2Bo0pT%2B9Nftx2tpABC4LvrT248EOnoG%2BitEAN0NhWk/ffrBlzm2C1/YvHqKvdDJJ9jLfuiZZxuOA3Ct5%2BjM3f3KS19e72SAkoU%2B%2B/HHTwX1/HBw5Mx5Mf6vrn8/ra0ha%2B%2BWF9u373op1vnmJ9%2BV/cU73%2BZ3MPbz/vT%2B1qVOvQemRc1dHh/73oZXDjaQI9KVx5Iv6RkAAMZwPelo4cPPBA/7qQidfac403CurzOgxK5%2BoaEhvWX11el7d%2B0r8Hh0xzvPx7iQzzfrcByAW9bqc/e89XV%2BJwMAAtfFa1cHDfhJaZEqcV2itxAAGH3Zwe0709qZ/mPGvLMpdTSAwM5daTf4fbNOM596aJqY3HUbC5OSCwx9TdEVJw5f1pubNqPJ%2BWLzph05vhs//eiF25kxOuEsBpfkYNpTvk%2BqMDIAAJRd1Kxpt/ysgTgodqZbz9WErj/xr58bTH1H6NZGjQkA6MYz%2B5NLOkwDawncV36YfGDbnOGvKV2Xk49XeSxbGd07IKEbTiWlD9BuZAzVZ7ZvfHWfZu7fdr21Oog0rhm1cJaES3IYci9m951YoVeA35DTKfQO8O5NmOnOTbvc2X/AUe4gAACg6898sGblY89t%2B2TPwfM56jYDAIBQamdvM2zXzWhTD51u9l3y2LOJsfY9LZs0KUdON7M8XUxHwQ%2BvbXjjlO2qD3e%2BsmDCSJeHuw1naTgkh6m5qqq970svcFI4DcmNcpDL%2B64QjKGqso7uPSCaMqe/N2dMHdVXTv6wa/tfnl29YvGKZ7Z8dCCrzjB8xMYzh1N1QcsWT1LELJvbG4/RZR06UWUatsIgmM5fv3rpxf9Jrad1DRU17fSIFe4unBXgkBzQ1am7%2BRUSiSRDe2hKLBH1/1XXcbO4Xez6158MlwsHV2FMXQ0F5/Z/vGnNpt05QztvuvJ48iVTePyiCQKwvWfZ3N4bIMZw7fCxwpHPNdNZmlvUbgJg6LqzO1799MIIHcBdhrMCXJLDxlZ28%2BQajd1DP2vG0G3s/6vMbkBxyjl6/Sf7976z%2BdGF0/0VUsEgS0zaa19t/67ACIMwFh05UiCesXS%2BUgAANhFLFnr03h7TFSeSRh4nClzjX9wUqxAAADD6Gwf/%2Bue91zrJxe82nBXgkBwChUpl35ePqbVJM6SvZbQtLX0jfUqs8nYfPNchcPCfvXrT6zu/%2BennI/s%2Be/fl3ydEeEh7LGGM6vT0ykFfz67LycfUstilsQ4mmqZpWhi8aKFX3%2BmqP8lmnCj1e%2BBvb66d0jO4NLVf/XLLfyVVDH8FG41wFodLt9ji0NjpdsmntCYAoKtulBnAd/DZp9Wl6l5jKOnU2EjbvgNMR%2BG5E%2BXKBYtCeqY4JM7e4XHe4XErn7j/8w0b9hUYGGA0TS0M%2BPXX0F44fLqB1p7cet/JYVIxac4fOdM8N9FlhOlLyn7qMzv%2B0rjx9SS1kWHoxpSPXvlAsWvLrFtvZ0cpnIXhkhyUw5zVid5nvys3MsB0ZF%2B4opsXM/Bu1lB4Mb2h59svdF%2ByapFr/xlgWrO/%2B/BzR9H07fcN/nxtg2ZFu39TUEkD5agYMGlmajp7OKXD76E3t8a7D6jQkbFr6z8yO5jecWJ1/KOqEbtWgevcLX//Y/OGjy400wxjqDj0xhaXv3%2ByLmzgfMsohrMknEoGpGFr//JEkIwCAFPjz3u%2BLxhwJaarkj5PUtMAQEn9V762ceatU9NdGf/837P1g0d2pvr8/AYTACUJmDPbR3izrRNHLolmPP7UvVNCgkNu/otavWaJR984MS/paBG7caLY5743djwZ2qMD05n31dZtB8oGpT6q4SyG8D//42Vr5zAASuwedW%2BktDz710qtvuHSmaw6oUxkaKvJv7D/ox1fZLbQlMjtnife3L4%2BRjFQa0abe/SH9DpNyfnj6VU6E92t0zbXVuRdPLzz/X0ZLbRQEb3xrZfi3EQAAPrGkvz07z//UR2YuDJQJnRU2Pf3nsaWSk13U/aFwjYGAJi2Wr1HiFIiljvLBABAt5bnl6hLL59MKWlnAICy8QiZ6m7SieRymVCijJgd0JRytkhDAzC6ysyMGrm/q8lk49BdeWfhOAD3Ft4AAKCrJvv44RNnM3KLKhpaOroZka2zu1dg2PS5SxLjZ3rJhl6aDW0VeZcyMrOycooq61qaW1s0HUaRnbO7z%2BRpsYvuf2BBiLy32zCVfv302t29dy5Cv7W7v9wQ3HuIaTy46cEPMgevu4qjNx/47/vdBCOtygIAGCsObdv43oVGum9sKZn/9mcTv153J%2BG4AEflQLgANxRFOAnKgRBBORAiKAdCBOVAiKAcCBGUAyGCciBEuLTwNghGX3m2MOtInTAhNj7OTgiMNrcsM7maDpt4zzIP58FO6zKyvztql7A1WDlwFZcx1KUWpCU1CCJVnnaMrqq13Ttw/nKFzZDp1eGr33HiVcVJXzaYbCkAEEyctHylq2hIPh62Jn2LHnx8oubJh5nu5QocW1u5CSVy9Ja2lbS1Xqlp85ng7SKUKp3E1R1Oif6et5xCRleU2kpp6luUPn4D550pob1K2pbZLH8gImq6q28oVby73BSrUtqwq37HaFvbPEMXPOgTHOsVFGx7s8VB%2Bbj5TJXT5y%2BfUzsHBdlwtfvmal49UApV3BNy9d7c4lbiVhimplbjHRh7r4M6tb6LvGGG6TR0S8Q2QzYts6xuDozmSumvv5RmHSopriavswqkfosnQGq5%2BtbVGu7AbTkAwCY4ePH87vR/ljURNgnXXzV4RMrso7w9yytLNUNOL6OvSinNPnDl4O4W/41hE23NrD4YQ07Ovg9vtN52OzClcI9I8I9YEBA1T1r8eW4peecg5SyVdes6dLePaUU4O%2Ba4iUAeFzG7Mv3UAbvp1BCZ9Y0lN7qExqImMAkc2/IzOkOW3PJUk1Q1JyBSaVR%2BezEjpzPUx0loVvXBiEODf%2BcrtL/9N0pm7yYDAKAcFZ52xTVVpoDA4SswrfpOicxONuxBLsD5ngMAgJL6rY6YpM67mHtr76HLbbZZFjYzITA6IWjeKpUhXd0wbEdOib2W%2B9ukFZdo7qh6P0KJvdPtR61Ma0p%2BXi0DAGDs1GhlDnLS49v68pPV1Gxf72GeteYInJWD0VenVtVU1F/NbqMBQOIU%2BYcgD2pQt29UV1441aJp6ux58rStySBqqUr7sbZ3ZzJjqE%2BvrNXqK8%2Brq7VAySdER3Vmf1NQUGZkVf1OkTpB5ZFrWcdK0r%2BvpJZNCe1/ir4/n3MlWUcKUvcVVHqHxieM4JpVwf0cCBHO9hyI9UE5ECIoB0IE5UCIoBwIEZQDIYJyIERQDoQIyoEQQTkQIigHQgTlQIigHAiRfwNEs1uLFKXrEQAAAABJRU5ErkJggg%3D%3D%22%2C%20%22sizes%22%3A%20%22180x180%22%2C%20%22type%22%3A%20%22image/png%22%2C%20%22purpose%22%3A%20%22any%20maskable%22%7D%5D%7D" />
+<title>大阪 · 奈良 五日</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Serif+TC:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bone:#F3EEE6; --paper:#FBF8F3; --paper-2:#F7F2EA;
+    --ink:#2B2724; --ink-soft:#6E665C; --ink-faint:#9B9389;
+    --line:#E3DBCD; --line-soft:#ECE5D9;
+    --gold:#A9854F; --gold-soft:#C7AE83; --shu:#BC4630;
+    --d1:#6E665C; --d2:#BC4630; --d3:#A9854F; --d4:#5F7367; --d5:#8A5A6B;
+    --serif:"Noto Serif TC",serif; --lat:"Cormorant Garamond",serif;
+    --sans:"Noto Sans TC",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --appbar:54px; --tabbar:62px;
+    --safeb:env(safe-area-inset-bottom,0px);
+    --safet:env(safe-area-inset-top,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bone);}
+  body{color:var(--ink);font-family:var(--sans);font-weight:300;line-height:1.8;
+    letter-spacing:.01em;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overscroll-behavior-y:none;}
+  a{color:inherit;text-decoration:none;}
+  .eyebrow{font-weight:500;font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);display:block;}
+
+  /* APP BAR */
+  .appbar{position:fixed;top:0;left:0;right:0;height:calc(var(--appbar) + var(--safet));padding-top:var(--safet);z-index:900;
+    background:rgba(243,238,230,.92);backdrop-filter:saturate(150%) blur(12px);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;padding-left:20px;padding-right:20px;}
+  .ab-title{font-family:var(--serif);font-size:16px;font-weight:500;letter-spacing:.05em;color:var(--ink);}
+  .ab-title span{color:var(--ink-soft);font-weight:400;font-size:13px;}
+  .ab-date{font-family:var(--lat);font-size:15px;letter-spacing:.1em;font-weight:600;color:var(--gold);}
+
+  /* MAIN */
+  main{padding-top:calc(var(--appbar) + var(--safet));padding-bottom:calc(var(--tabbar) + var(--safeb) + 14px);min-height:100vh;}
+  .view{display:none;animation:fade .42s ease;}
+  .view.active{display:block;}
+  @keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .pad{padding:24px 20px 8px;}
+  .vhead{padding:22px 20px 4px;}
+  .vhead h2{font-family:var(--serif);font-weight:500;font-size:25px;margin:7px 0 0;letter-spacing:.04em;}
+  .vhead .s{font-size:12.5px;color:var(--ink-soft);font-weight:300;margin-top:8px;}
+
+  /* CONCIERGE */
+  .concierge{margin:20px;background:var(--paper);border:1px solid var(--line);border-top:3px solid var(--gold);padding:26px 22px 22px;}
+  .c-row{display:flex;align-items:center;gap:10px;margin-bottom:4px;}
+  .live{width:8px;height:8px;border-radius:50%;background:var(--shu);position:relative;flex:0 0 auto;}
+  .live::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:1px solid var(--shu);opacity:.5;animation:pulse 2.4s ease-out infinite;}
+  @keyframes pulse{0%{transform:scale(.7);opacity:.6}100%{transform:scale(1.8);opacity:0}}
+  .c-tag{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--shu);font-weight:500;}
+  .c-dn{font-family:var(--lat);font-size:12.5px;letter-spacing:.12em;color:var(--ink-faint);margin-left:auto;font-weight:600;}
+  .concierge h3{font-family:var(--serif);font-weight:500;font-size:20px;margin:10px 0 0;letter-spacing:.03em;}
+  .c-msg{font-size:14px;line-height:1.95;color:var(--ink);font-weight:300;margin:13px 0 0;}
+  .c-strip{display:flex;margin-top:20px;border-top:1px solid var(--line-soft);}
+  .c-strip .cell{flex:1;padding:13px 0 2px;}
+  .c-strip .cell:first-child{padding-right:14px;}
+  .c-strip .cell:last-child{padding-left:14px;border-left:1px solid var(--line-soft);}
+  .c-strip .cl{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;margin-bottom:3px;}
+  .c-strip .cv{font-size:13px;color:var(--ink);font-weight:400;}
+  .c-strip .cv b{color:var(--shu);font-weight:600;}
+
+  /* KEY INFO */
+  .keygrid{margin:8px 20px 0;border-top:1px solid var(--line);}
+  .keygrid .ki{display:flex;align-items:flex-start;gap:14px;padding:15px 0;border-bottom:1px solid var(--line-soft);}
+  .keygrid .ki .kk{flex:0 0 64px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;padding-top:3px;}
+  .keygrid .ki .kv{flex:1;font-size:14px;color:var(--ink);font-weight:400;line-height:1.55;}
+  .keygrid .ki .kv small{color:var(--ink-soft);font-size:12px;}
+  .keygrid .ki .kv .tel{font-family:var(--lat);font-size:18px;font-weight:600;letter-spacing:.04em;color:var(--ink);border-bottom:1px solid var(--gold-soft);padding-bottom:1px;}
+  .weather{margin:18px 20px 0;background:var(--paper);border:1px solid var(--line);padding:14px 18px;font-size:12.5px;color:var(--ink-soft);font-weight:300;line-height:1.7;}
+  .weather b{color:var(--ink);font-weight:500;}
+  .hint{margin:18px 20px 0;font-size:12px;color:var(--ink-faint);font-weight:300;text-align:center;letter-spacing:.05em;}
+
+  /* DAY PILLS */
+  .daypills{position:sticky;top:calc(var(--appbar) + var(--safet));z-index:50;background:var(--bone);display:flex;gap:8px;overflow-x:auto;
+    padding:14px 20px 12px;border-bottom:1px solid var(--line);-ms-overflow-style:none;scrollbar-width:none;}
+  .daypills::-webkit-scrollbar{display:none;}
+  .pill{flex:0 0 auto;border:1px solid var(--line);background:var(--paper);border-radius:30px;padding:8px 15px;font-size:12.5px;font-weight:400;
+    color:var(--ink-soft);letter-spacing:.04em;cursor:pointer;transition:.2s;}
+  .pill .pn{font-family:var(--lat);font-weight:600;font-size:14px;margin-right:5px;color:var(--gold);}
+  .pill.active{background:var(--ink);border-color:var(--ink);color:#F4EFE6;}
+  .pill.active .pn{color:var(--gold-soft);}
+
+  .day-panel{display:none;padding:8px 0 0;}
+  .day-panel.active{display:block;animation:fade .35s ease;}
+  .dp-head{padding:22px 20px 0;display:flex;align-items:flex-start;gap:16px;}
+  .dp-no{font-family:var(--lat);font-size:58px;line-height:.8;font-weight:500;color:var(--ink);flex:0 0 auto;}
+  .dp-no .pre{display:block;font-size:10px;letter-spacing:.28em;color:var(--ink-faint);font-family:var(--sans);font-weight:500;margin-bottom:7px;}
+  .dp-theme{font-family:var(--serif);font-size:20px;font-weight:500;letter-spacing:.04em;margin:4px 0 0;}
+  .dp-date{font-size:12px;color:var(--ink-soft);margin-top:5px;letter-spacing:.08em;font-weight:300;}
+  .badge{display:inline-block;margin-left:8px;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--shu);
+    border:1px solid var(--shu);border-radius:20px;padding:2px 9px;font-weight:500;vertical-align:1px;}
+  .badge.past{color:var(--ink-faint);border-color:var(--line);}
+
+  .spots{margin:24px 20px 0;border-top:1px solid var(--line-soft);}
+  .spot{display:flex;gap:14px;padding:24px 0;border-bottom:1px solid var(--line-soft);}
+  .spot .idx{font-family:var(--lat);font-size:16px;font-weight:600;color:var(--gold);flex:0 0 20px;line-height:1.7;}
+  .spot .body{flex:1;min-width:0;}
+  .spot .sname{font-family:var(--serif);font-size:17px;font-weight:500;letter-spacing:.02em;}
+  .spot .stype{display:inline-block;margin-left:9px;font-size:9.5px;letter-spacing:.12em;color:var(--ink-soft);border:1px solid var(--line);
+    border-radius:3px;padding:2px 7px;font-weight:400;vertical-align:2px;white-space:nowrap;}
+  .spot .feat{font-size:13.5px;line-height:1.85;color:var(--ink);font-weight:300;margin:10px 0 0;}
+
+  /* REC BLOCK */
+  .rec{margin:13px 0 0;background:var(--paper-2);border:1px solid var(--line-soft);padding:12px 14px;}
+  .rec .rr{display:flex;gap:11px;padding:6px 0;}
+  .rec .rr+.rr{border-top:1px dashed var(--line);}
+  .rec .rl{flex:0 0 auto;font-size:10px;letter-spacing:.08em;font-weight:600;color:#fff;background:var(--gold);border-radius:3px;
+    padding:3px 0;width:38px;text-align:center;height:fit-content;margin-top:2px;}
+  .rec .rl.play{background:var(--d4);}
+  .rec .rl.buy{background:var(--d5);}
+  .rec .rv{flex:1;font-size:12.5px;line-height:1.72;color:var(--ink-soft);font-weight:300;}
+  .rec .rv b{font-weight:500;color:var(--ink);}
+  .spot .sinfo{margin:11px 0 0;font-size:11.5px;line-height:1.75;color:var(--ink-soft);font-weight:300;background:var(--paper-2);border:1px dashed var(--line);border-radius:6px;padding:8px 11px;}
+  .spot .sinfo b{font-weight:600;color:var(--ink);}
+
+  .spot .tip{font-size:12.5px;line-height:1.78;color:var(--ink-soft);font-weight:300;margin:13px 0 0;padding-left:13px;border-left:2px solid var(--gold-soft);}
+  .spot .tip b{color:var(--gold);font-weight:500;letter-spacing:.1em;font-size:9.5px;text-transform:uppercase;display:block;margin-bottom:2px;}
+
+  .navbtn{display:inline-flex;align-items:center;gap:6px;margin-top:15px;border:1px solid var(--ink);border-radius:4px;padding:9px 14px;
+    font-size:12px;letter-spacing:.05em;color:var(--ink);font-weight:400;}
+  .navbtn svg{stroke:var(--ink);}
+  .navbtn:active{background:var(--paper-2);}
+
+  .vids{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+  .vids .vlabel{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;width:100%;margin-bottom:-1px;}
+  .vchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);border-radius:30px;
+    padding:7px 13px;font-size:11.5px;color:var(--ink);font-weight:400;letter-spacing:.02em;}
+  .vchip:active{background:var(--paper-2);}
+
+  /* SVG MAP */
+  .svgmap-wrap{height:54vh;min-height:330px;background:var(--paper);border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;}
+  #routeSvg{width:100%;height:100%;display:block;}
+  .map-detail{margin:16px 20px 0;background:var(--paper);border:1px solid var(--line);padding:16px 18px;min-height:58px;}
+  .map-detail.placeholder{color:var(--ink-faint);font-size:12.5px;font-weight:300;text-align:center;}
+  .md-top{display:flex;align-items:center;gap:9px;margin-bottom:6px;}
+  .md-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+  .md-day{font-family:var(--lat);font-size:12px;font-weight:600;letter-spacing:.12em;color:var(--ink-faint);}
+  .md-type{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);border:1px solid var(--line);border-radius:3px;padding:2px 7px;}
+  .md-name{font-family:var(--serif);font-size:18px;font-weight:500;letter-spacing:.02em;margin-bottom:6px;}
+  .md-tip{font-size:13px;color:var(--ink-soft);font-weight:300;line-height:1.7;}
+  .md-nav{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-size:12.5px;letter-spacing:.05em;color:var(--ink);border-bottom:1px solid var(--ink);padding-bottom:2px;}
+  .md-nav svg{stroke:var(--ink);}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 14px;padding:18px 20px 4px;}
+  .legend button{background:none;border:0;cursor:pointer;font-family:var(--sans);font-size:12px;color:var(--ink-soft);display:flex;align-items:center;
+    gap:7px;padding:3px 0;font-weight:400;letter-spacing:.03em;}
+  .legend button .sw{width:11px;height:11px;border-radius:50%;flex:0 0 auto;}
+  .legend button.off{color:var(--ink-faint);opacity:.4;}
+
+  /* INFO ACCORDIONS */
+  .acc{margin:18px 20px 0;border:1px solid var(--line);background:var(--paper);}
+  .acc+.acc{margin-top:14px;}
+  .acc>summary{list-style:none;cursor:pointer;padding:18px 20px;display:flex;align-items:center;gap:12px;}
+  .acc>summary::-webkit-details-marker{display:none;}
+  .acc>summary .an{font-family:var(--lat);font-size:13px;font-weight:600;color:var(--gold);letter-spacing:.08em;}
+  .acc>summary h4{font-family:var(--serif);font-size:17px;font-weight:500;margin:0;letter-spacing:.04em;flex:1;}
+  .acc>summary .chev{width:9px;height:9px;border-right:1.5px solid var(--ink-soft);border-bottom:1.5px solid var(--ink-soft);transform:rotate(45deg);transition:transform .25s;margin-right:2px;}
+  .acc[open]>summary .chev{transform:rotate(-135deg);}
+  .acc .ac-body{padding:0 20px 20px;border-top:1px solid var(--line-soft);}
+  .sub-h{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:500;margin:18px 0 8px;}
+  .ilist{list-style:none;margin:0;padding:0;}
+  .ilist li{font-size:13px;line-height:1.7;color:var(--ink);font-weight:300;padding:7px 0 7px 20px;position:relative;}
+  .ilist li::before{content:"";position:absolute;left:0;top:13px;width:6px;height:6px;border-radius:50%;background:var(--gold-soft);}
+  .ilist.cross li::before{background:none;border:1px solid var(--ink-faint);width:5px;height:5px;top:12px;border-radius:0;transform:rotate(45deg);}
+  .ilist li b{color:var(--shu);font-weight:500;}
+  .hl-box{background:linear-gradient(180deg,rgba(169,133,79,.08),transparent);border:1px solid var(--gold-soft);padding:14px 16px;margin-top:16px;}
+  .hl-box p{margin:0;font-size:13px;color:var(--ink);font-weight:400;line-height:1.7;}
+  .hl-box p b{color:var(--shu);font-weight:600;}
+  .fx{display:flex;align-items:baseline;gap:14px;margin-top:14px;}
+  .fx .big{font-family:var(--lat);font-size:46px;font-weight:500;line-height:.9;color:var(--ink);}
+  .fx .big small{font-size:14px;color:var(--ink-soft);font-weight:500;}
+  .fx .note{font-size:12px;color:var(--ink-soft);font-weight:300;line-height:1.65;flex:1;}
+  .fx .note b{color:var(--shu);font-weight:500;}
+  .calc{background:var(--paper-2);border:1px solid var(--line);padding:14px 16px;margin-top:16px;font-size:13px;color:var(--ink);font-weight:300;line-height:1.85;}
+  .calc code{font-family:var(--lat);font-size:16px;font-weight:600;color:var(--ink);}
+  .krow{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:13px;font-weight:300;}
+  .krow .kk{flex:0 0 74px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;padding-top:2px;}
+  .krow .kv{flex:1;color:var(--ink-soft);}
+  .krow .kv b{color:var(--ink);font-weight:500;}
+
+  /* SOS */
+  #v-sos{background:var(--ink);min-height:calc(100vh - var(--appbar));}
+  #v-sos .vhead h2{color:#F4EFE6;}
+  #v-sos .vhead .eyebrow{color:var(--gold-soft);}
+  #v-sos .vhead .s{color:#A89F90;}
+  .call{display:block;margin:0 20px;border-top:1px solid rgba(255,255,255,.13);padding:20px 0;}
+  .call:first-of-type{margin-top:8px;}
+  .call .who{font-size:11.5px;letter-spacing:.14em;color:var(--gold-soft);font-weight:500;text-transform:uppercase;margin-bottom:12px;}
+  .call .num{display:flex;align-items:center;gap:12px;padding:9px 0;}
+  .call .num .lab{flex:0 0 44px;font-size:11px;color:#A89F90;letter-spacing:.06em;}
+  .call .num .tel{font-family:var(--lat);font-size:24px;font-weight:600;letter-spacing:.05em;color:#F4EFE6;flex:1;}
+  .call .num .ph{width:34px;height:34px;border-radius:50%;border:1px solid rgba(199,174,131,.5);display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .sos-foot{margin:24px 20px 0;border-top:1px solid rgba(255,255,255,.1);padding-top:20px;}
+  .sos-foot .tno{font-family:var(--lat);font-size:14px;letter-spacing:.1em;color:var(--gold-soft);font-weight:600;}
+  .sos-foot .disc{margin-top:14px;font-size:11px;color:#827A6B;line-height:1.7;font-weight:300;}
+
+  /* TAB BAR */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:900;height:calc(var(--tabbar) + var(--safeb));padding-bottom:var(--safeb);
+    background:rgba(251,248,243,.95);backdrop-filter:saturate(150%) blur(12px);border-top:1px solid var(--line);display:flex;}
+  .tabbar button{flex:1;background:none;border:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:var(--ink-faint);font-family:var(--sans);font-size:10.5px;font-weight:400;letter-spacing:.08em;padding-top:2px;position:relative;transition:color .2s;}
+  .tabbar button svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.5;}
+  .tabbar button.active{color:var(--ink);}
+  .tabbar button.active svg{stroke:var(--gold);}
+  .tabbar button.active::before{content:"";position:absolute;top:0;width:26px;height:2px;background:var(--gold);border-radius:2px;}
+
+  /* EXPLORE */
+  .exp-card{margin:18px 20px 0;background:var(--paper);border:1px solid var(--line);padding:18px 20px;}
+  .exp-card .eh{display:flex;align-items:baseline;gap:10px;margin-bottom:10px;}
+  .exp-card .eh .en{font-family:var(--lat);font-size:13px;font-weight:600;color:var(--gold);letter-spacing:.08em;}
+  .exp-card .eh h4{font-family:var(--serif);font-size:18px;font-weight:500;margin:0;letter-spacing:.03em;flex:1;}
+  .exp-card .eh .tagn{font-size:10px;letter-spacing:.1em;color:var(--shu);font-weight:500;}
+  .exp-item{padding:9px 0;border-top:1px solid var(--line-soft);}
+  .exp-item:first-of-type{border-top:0;}
+  .exp-item .ei-d{font-size:12.5px;color:var(--ink-soft);font-weight:300;line-height:1.7;}
+  .exp-item .ei-d b{color:var(--ink);font-weight:500;}
+
+  /* CHECKLIST */
+  .ckl-prog{display:flex;align-items:center;gap:12px;margin:16px 0 6px;}
+  .ckl-prog .bar{flex:1;height:6px;background:var(--line);border-radius:6px;overflow:hidden;}
+  .ckl-prog .bar span{display:block;height:100%;background:var(--gold);width:0;transition:width .3s;}
+  .ckl-prog .pct{font-family:var(--lat);font-size:14px;font-weight:600;color:var(--gold);letter-spacing:.04em;}
+  .ckl-grp{margin-top:16px;}
+  .ckl-grp .gh{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:500;margin-bottom:4px;}
+  .ckl-item{display:flex;align-items:flex-start;gap:11px;padding:9px 0;border-bottom:1px solid var(--line-soft);cursor:pointer;}
+  .ckl-box{flex:0 0 auto;width:19px;height:19px;border:1.5px solid var(--ink-faint);border-radius:4px;margin-top:1px;position:relative;transition:.15s;}
+  .ckl-item.done .ckl-box{background:var(--gold);border-color:var(--gold);}
+  .ckl-item.done .ckl-box::after{content:"";position:absolute;left:6px;top:2px;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
+  .ckl-lab{font-size:13.5px;color:var(--ink);font-weight:300;line-height:1.5;}
+  .ckl-item.done .ckl-lab{color:var(--ink-faint);text-decoration:line-through;}
+  .ckl-reset{margin-top:18px;font-size:11.5px;color:var(--ink-soft);border:1px solid var(--line);border-radius:4px;padding:8px 14px;background:var(--paper-2);cursor:pointer;}
+
+  /* PHRASES */
+  .ph-grp{margin-top:16px;}
+  .ph-grp .gh{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:500;margin-bottom:6px;}
+  .ph-row{padding:10px 0;border-bottom:1px solid var(--line-soft);}
+  .ph-jp{font-size:15px;color:var(--ink);font-weight:500;font-family:var(--serif);}
+  .ph-rom{font-size:11.5px;color:var(--ink-faint);font-weight:300;font-style:italic;margin:2px 0;}
+  .ph-zh{font-size:12.5px;color:var(--ink-soft);font-weight:300;}
+
+  /* EMERGENCY EXTRAS */
+  .emg-block{margin:0 20px;border-top:1px solid rgba(255,255,255,.13);padding:20px 0;}
+  .emg-block .eh{font-size:11.5px;letter-spacing:.14em;color:var(--gold-soft);font-weight:500;text-transform:uppercase;margin-bottom:12px;}
+  .emg-steps{list-style:none;margin:0;padding:0;counter-reset:s;}
+  .emg-steps li{position:relative;padding:9px 0 9px 30px;font-size:13px;color:#D9D2C6;font-weight:300;line-height:1.6;border-bottom:1px solid rgba(255,255,255,.07);}
+  .emg-steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:8px;width:19px;height:19px;border-radius:50%;border:1px solid var(--gold-soft);color:var(--gold-soft);font-family:var(--lat);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .emg-steps li b{color:#F4EFE6;font-weight:500;}
+  .emg-btns{display:flex;flex-wrap:wrap;gap:10px;}
+  .emg-btns a{flex:1 1 28%;text-align:center;border:1px solid rgba(199,174,131,.45);border-radius:5px;padding:11px 6px;font-size:12px;color:#F4EFE6;font-weight:400;}
+  .emg-btns a:active{background:rgba(255,255,255,.06);}
+  .emg-call{display:flex;align-items:center;gap:10px;padding:10px 0;text-decoration:none;}
+  .emg-call .lab{flex:1;font-size:12px;color:#A89F90;font-weight:300;line-height:1.4;}
+  .emg-call .tel2{font-family:var(--lat);font-size:19px;font-weight:600;color:#F4EFE6;letter-spacing:.04em;flex:0 0 auto;}
+  .emg-jp{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.07);}
+  .emg-jp .j{font-family:var(--serif);font-size:15px;color:#F4EFE6;font-weight:500;}
+  .emg-jp .r{font-size:11px;color:#9B9285;font-style:italic;margin:1px 0;}
+  .emg-jp .z{font-size:12px;color:#A89F90;}
+
+  /* 6-tab fit */
+  .tabbar button{font-size:10px;letter-spacing:.03em;}
+  .tabbar button svg{width:20px;height:20px;}
+
+  /* FAQ */
+  .faq-cat{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:500;margin:20px 0 4px;}
+  .faq-q{font-family:var(--serif);font-size:14px;font-weight:500;color:var(--ink);margin-top:13px;line-height:1.5;}
+  .faq-q::before{content:"Q  ";font-family:var(--lat);color:var(--gold);font-weight:600;}
+  .faq-a{font-size:12.5px;color:var(--ink-soft);font-weight:300;line-height:1.7;margin-top:4px;padding-bottom:11px;border-bottom:1px solid var(--line-soft);}
+  .faq-a::before{content:"A  ";font-family:var(--lat);color:var(--ink-faint);font-weight:600;}
+
+  /* EXPENSE */
+  .fe-input{display:flex;gap:8px;margin:14px 0 12px;}
+  .fe-input input{flex:1;min-width:0;border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--paper-2);}
+  .fe-input input#feNote{flex:1.1;}
+  .fe-input button{flex:0 0 auto;background:var(--ink);color:#F4EFE6;border:0;border-radius:4px;padding:0 16px;font-size:13px;font-weight:500;cursor:pointer;}
+  .fe-sum{display:flex;justify-content:space-between;align-items:baseline;padding:13px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .fe-sum>span:first-child{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;}
+  .fe-sum #feTotal{font-family:var(--lat);font-size:22px;font-weight:600;color:var(--ink);letter-spacing:.02em;}
+  .fe-sum #feTotal small{font-family:var(--sans);font-size:12px;color:var(--ink-soft);font-weight:300;margin-left:6px;}
+  .fe-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line-soft);}
+  .fe-note{flex:1;font-size:13.5px;color:var(--ink);font-weight:300;}
+  .fe-amt{font-family:var(--lat);font-size:15px;font-weight:600;color:var(--ink);}
+  .fe-amt small{font-family:var(--sans);font-size:11px;color:var(--ink-faint);font-weight:300;margin-left:5px;}
+  .fe-del{background:none;border:0;color:var(--ink-faint);font-size:15px;cursor:pointer;padding:4px 2px;line-height:1;}
+  .fe-empty{font-size:12.5px;color:var(--ink-faint);font-weight:300;text-align:center;padding:16px 0;}
+
+  /* ROUTE & TIME */
+  .rphead{margin:30px 0 0;padding-top:22px;border-top:1px solid var(--line);}
+  .rphead h3{font-family:var(--serif);font-weight:500;font-size:19px;letter-spacing:.04em;margin:6px 0 0;}
+  .nn{margin:14px 0 4px;background:var(--ink);color:#F4EFE6;border-radius:8px;padding:14px 16px;}
+  .nn .nl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-soft);font-weight:500;}
+  .nn .nm{font-size:14px;margin-top:6px;line-height:1.7;font-weight:300;}
+  .nn .nm b{color:#fff;font-weight:600;}
+  .nn .nx{font-family:var(--lat);font-weight:600;letter-spacing:.03em;}
+  .rp-day{margin-top:16px;border:1px solid var(--line-soft);border-radius:6px;padding:14px 16px;background:var(--paper);}
+  .rp-day.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
+  .rp-dh{display:flex;align-items:baseline;gap:10px;}
+  .rp-dh .rd{font-family:var(--lat);font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.08em;}
+  .rp-dh .rt{font-size:12.5px;color:var(--ink-soft);font-weight:300;}
+  .rp-dh .rtag{margin-left:auto;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:var(--d4);border-radius:3px;padding:2px 7px;white-space:nowrap;}
+  .rp-dh .rtag.free{background:var(--gold);}
+  .rp-list{margin-top:12px;}
+  .rp-stop{position:relative;padding:0 0 15px 64px;}
+  .rp-stop:last-child{padding-bottom:0;}
+  .rp-stop::before{content:"";position:absolute;left:51px;top:7px;bottom:-4px;width:1px;background:var(--line);}
+  .rp-stop:last-child::before{display:none;}
+  .rp-stop .rtime{position:absolute;left:0;top:1px;width:44px;text-align:right;font-family:var(--lat);font-size:13px;font-weight:600;color:var(--ink);}
+  .rp-stop .rdot{position:absolute;left:47px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px var(--paper),0 0 0 3px var(--gold-soft);}
+  .rp-stop .rvia{font-size:11px;color:var(--ink-faint);font-weight:300;margin-bottom:3px;}
+  .rp-stop .rname{font-size:13.5px;color:var(--ink);font-weight:400;line-height:1.5;}
+  .rp-stop .rstay{font-size:11px;color:var(--ink-soft);font-weight:300;margin-top:2px;}
+
+  /* TODAY DASHBOARD */
+  .clockcard{margin:8px 0 16px;background:linear-gradient(135deg,#2B2724,#3A352F);color:#F4EFE6;border-radius:12px;padding:18px 18px 16px;}
+  .cc-top{display:flex;align-items:center;gap:9px;}
+  .cc-top .cc-date{font-size:13px;letter-spacing:.08em;color:#E6DDCD;font-weight:300;}
+  .cc-time{font-family:var(--lat);font-size:46px;font-weight:600;letter-spacing:.04em;line-height:1.05;margin:6px 0 2px;color:#fff;font-variant-numeric:tabular-nums;}
+  .cc-cd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:10px;padding-top:12px;border-top:1px solid rgba(244,239,230,.18);}
+  .cc-cd .cd-l{font-size:11px;letter-spacing:.08em;color:var(--gold-soft);font-weight:500;}
+  .cc-cd .cd-t{font-family:var(--lat);font-size:23px;font-weight:600;color:#fff;letter-spacing:.06em;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .dnext{margin:0 0 14px;background:var(--paper-2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.7;color:var(--ink);font-weight:300;}
+  .dnext .dn-l{display:inline-block;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-right:8px;}
+  .wx-now{font-size:18px;color:var(--ink);margin-top:2px;}
+  .wx-now b{font-weight:600;}
+  .wx-tip{font-size:12.5px;color:var(--ink-soft);font-weight:300;margin-top:4px;line-height:1.6;}
+  .wx-link{display:inline-block;margin-top:9px;color:var(--gold);border-bottom:1px solid var(--gold-soft);font-size:12px;}
+  .rmd{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line-soft);}
+  .rmd:last-child{border-bottom:none;}
+  .rmd-b{flex:0 0 auto;width:26px;height:26px;border-radius:50%;color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;font-family:var(--serif);}
+  .rmd-t{font-size:13px;color:var(--ink);font-weight:300;line-height:1.65;padding-top:3px;}
+
+  /* STEP LOG */
+  .stepchart{display:flex;align-items:flex-end;gap:8px;height:96px;margin:16px 0 12px;padding:0 2px;}
+  .stepchart .sb{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end;}
+  .stepchart .sb .bar{width:70%;max-width:30px;background:var(--gold);border-radius:3px 3px 0 0;min-height:3px;}
+  .stepchart .sb.today .bar{background:var(--shu);}
+  .stepchart .sb .bl{font-size:9px;color:var(--ink-faint);font-family:var(--lat);font-weight:600;}
+  .steprow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-soft);}
+  .steprow .sd{flex:0 0 auto;width:84px;font-size:12px;color:var(--ink-soft);font-weight:300;}
+  .steprow .sd b{font-family:var(--lat);color:var(--gold);margin-right:5px;font-weight:600;}
+  .steprow input{flex:1;min-width:0;border:1px solid var(--line);border-radius:4px;padding:8px 10px;font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--paper-2);text-align:right;}
+  .steprow .skm{flex:0 0 auto;width:60px;text-align:right;font-size:11px;color:var(--ink-faint);font-weight:300;}
+  .fe-sum #stepTotal{font-family:var(--lat);font-size:20px;font-weight:600;color:var(--ink);}
+  .fe-sum #stepTotal small{font-family:var(--sans);font-size:12px;color:var(--ink-soft);font-weight:300;margin-left:6px;}
+
+  /* SUITABILITY RADAR */
+  .radar-card{margin-bottom:18px;border:1px solid var(--line-soft);border-radius:8px;padding:16px 16px 14px;background:var(--paper);}
+  .radar-card .rc-h{margin-bottom:6px;}
+  .radar-card .rc-h h4{font-family:var(--serif);font-weight:500;font-size:17px;margin:5px 0 0;}
+  .radar-wrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;}
+  .radar-wrap svg{flex:0 0 auto;}
+  .radar-stars{flex:1;min-width:148px;}
+  .rs-row{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:12.5px;}
+  .rs-row .rs-l{width:42px;color:var(--ink-soft);flex:0 0 auto;}
+  .rs-row .rs-v{color:var(--gold);letter-spacing:2px;font-size:13px;flex:0 0 auto;}
+  .rs-row .rs-n{color:var(--ink-faint);font-size:11px;}
+  /* BUDGET & TAX */
+  .bg-set,.tax-row{display:flex;gap:8px;margin:14px 0 10px;}
+  .bg-set input,.tax-row input{flex:1;min-width:0;border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--paper-2);}
+  .bg-set button{flex:0 0 auto;background:var(--ink);color:#F4EFE6;border:0;border-radius:4px;padding:0 16px;font-size:13px;font-weight:500;cursor:pointer;}
+  .bg-bar{height:9px;background:var(--line-soft);border-radius:5px;overflow:hidden;margin:12px 0 8px;}
+  .bg-bar i{display:block;height:100%;background:var(--gold);width:0;transition:width .3s;}
+  .bg-bar i.over{background:var(--shu);}
+  .bg-stat{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-soft);font-weight:300;}
+  .bg-stat b{font-family:var(--lat);color:var(--ink);font-size:14px;font-weight:600;}
+  .bg-stat .over{color:var(--shu);}
+  .tax-out{font-size:12.5px;color:var(--ink-soft);font-weight:300;line-height:1.75;margin-top:4px;}
+  .tax-out b{color:var(--gold);font-weight:600;}
+  .sub-h{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:500;margin:20px 0 0;}
+  /* BIG-TEXT TOGGLE */
+  .appbar .ab-r{display:flex;align-items:center;gap:12px;}
+  .bigtog{border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:6px;min-width:36px;height:30px;font-size:14px;font-weight:600;font-family:var(--serif);cursor:pointer;line-height:1;padding:0 8px;}
+  .bigtog.on{background:var(--ink);color:#F4EFE6;border-color:var(--ink);}
+  body.bigtext .c-msg,body.bigtext .guide{font-size:15.5px;}
+  body.bigtext .feat,body.bigtext .rname,body.bigtext .kv,body.bigtext .ac-body p{font-size:15px;}
+  body.bigtext .rec .rr,body.bigtext .tip,body.bigtext .rmd-t,body.bigtext .faq-a,body.bigtext .ei-d,body.bigtext .nm,body.bigtext .rstay,body.bigtext .rs-row,body.bigtext .tax-out,body.bigtext .bg-stat,body.bigtext .num .tel{font-size:14.5px;}
+  body.bigtext .faq-q{font-size:16px;}
+  body.bigtext .kv small,body.bigtext .hint,body.bigtext .rp-stop .rname{font-size:13px;}
+  body.bigtext .rp-stop .rname{font-size:15px;}
+
+  /* GROUP ROLL-CALL */
+  .rc-status{font-size:14px;color:var(--ink);font-weight:300;margin:14px 0 4px;padding:13px 14px;background:var(--paper-2);border:1px solid var(--line);border-radius:8px;text-align:center;}
+  .rc-status b{font-family:var(--lat);font-size:20px;color:var(--ink);font-weight:600;}
+  .rc-status small{font-family:var(--lat);color:var(--ink-soft);font-size:15px;margin-left:5px;}
+  .rc-status.done{background:#EAF0EA;border-color:#A9C0A9;color:var(--d4);font-weight:500;}
+  .rc-groups{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;}
+  .rc-chip{font-size:11px;color:var(--ink-soft);border:1px solid var(--line);border-radius:20px;padding:4px 11px;background:var(--paper);}
+  .rc-chip.full{background:var(--d4);color:#fff;border-color:var(--d4);}
+  .rc-add{display:flex;gap:8px;margin:12px 0;}
+  .rc-add input{flex:1;min-width:0;border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--paper-2);}
+  .rc-add select{flex:0 0 auto;border:1px solid var(--line);border-radius:4px;padding:0 8px;font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--paper-2);}
+  .rc-add button{flex:0 0 auto;background:var(--ink);color:#F4EFE6;border:0;border-radius:4px;padding:0 15px;font-size:13px;font-weight:500;cursor:pointer;}
+  .rc-gh{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600;margin:14px 0 5px;display:flex;justify-content:space-between;}
+  .rc-gh span{font-family:var(--lat);color:var(--ink-soft);}
+  .rc-row{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line-soft);border-radius:6px;margin-bottom:6px;cursor:pointer;background:var(--paper);}
+  .rc-row.on{background:#EAF0EA;border-color:#BCD0BC;}
+  .rc-ck{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;}
+  .rc-row.on .rc-ck{background:var(--d4);border-color:var(--d4);}
+  .rc-nm{flex:1;font-size:14px;color:var(--ink);}
+  .rc-row.on .rc-nm{color:var(--d4);}
+  .rc-del{background:none;border:0;color:var(--ink-faint);font-size:14px;cursor:pointer;padding:4px;}
+  .rc-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .rc-btn{flex:1;min-width:90px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:5px;padding:9px;font-size:12px;cursor:pointer;}
+
+  /* ROSTER CLOUD SYNC */
+  .rc-cloud{display:flex;flex-direction:column;gap:8px;margin:12px 0 8px;}
+  .rc-cloud input{border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--paper-2);}
+  .rc-cloud button{background:var(--ink);color:#F4EFE6;border:0;border-radius:4px;padding:11px;font-size:13px;font-weight:500;cursor:pointer;}
+  .rc-cloud-st{font-size:11.5px;color:var(--ink-faint);font-weight:300;line-height:1.6;margin-top:2px;}
+
+  /* GPS WALK + LOCATE */
+  .gps-stat{display:flex;gap:10px;margin:14px 0 10px;}
+  .gps-stat>div{flex:1;text-align:center;background:var(--paper-2);border:1px solid var(--line);border-radius:8px;padding:10px 4px;}
+  .gps-stat span{display:block;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;}
+  .gps-stat b{font-family:var(--lat);font-size:21px;font-weight:600;color:var(--ink);}
+  .gps-stat i{font-style:normal;font-size:11px;color:var(--ink-faint);margin-left:2px;}
+  .gps-btns{display:flex;gap:8px;margin-bottom:8px;}
+  .gps-btns #gpsToggle{flex:1;background:var(--ink);color:#F4EFE6;border:0;border-radius:5px;padding:11px;font-size:13px;font-weight:500;cursor:pointer;}
+  .gps-btns #gpsToggle.rec{background:var(--shu);}
+  .gps-msg{font-size:11px;color:var(--ink-faint);font-weight:300;line-height:1.6;}
+  .geo-card{margin:18px 0 0;padding-top:16px;border-top:1px solid var(--line);}
+  .geo-card #geoBtn{width:100%;background:var(--ink);color:#F4EFE6;border:0;border-radius:6px;padding:12px;font-size:13px;font-weight:500;cursor:pointer;}
+  .geo-out{font-size:12px;color:var(--ink-soft);font-weight:300;margin-top:10px;line-height:1.6;}
+  .geo-me{font-size:11px;color:var(--gold);font-weight:500;margin-bottom:6px;}
+  .geo-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);}
+  .geo-n{flex:1;font-size:13px;color:var(--ink);}
+  .geo-d{font-family:var(--lat);font-size:13px;color:var(--ink-soft);font-weight:600;white-space:nowrap;}
+  .geo-go{flex:0 0 auto;border:1px solid var(--ink);border-radius:4px;padding:5px 11px;font-size:11.5px;color:var(--ink);text-decoration:none;}
+
+  @media (prefers-reduced-motion:reduce){.view,.day-panel{animation:none;}.live::after{animation:none;}}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="ab-title">大阪 ＋ 奈良 <span>五日</span></div>
+  <div class="ab-r"><button class="bigtog" id="bigTog" aria-label="字級切換" title="大字模式">Aa</button><div class="ab-date">06.19–23</div></div>
+</header>
+
+<main>
+
+  <!-- TODAY -->
+  <section class="view active" id="v-today">
+    <div class="clockcard">
+      <div class="cc-top"><span class="live"></span><span class="cc-date" id="dashDate">—</span></div>
+      <div class="cc-time" id="dashTime">--:--:--</div>
+      <div class="cc-cd"><span class="cd-l" id="cdLabel">集合倒數</span><span class="cd-t" id="cdTime">--:--:--</span></div>
+    </div>
+    <div class="concierge" id="concierge"></div>
+    <div class="dnext" id="dashNext" style="display:none;"></div>
+    <div class="weather" id="dashWx"></div>
+    <div id="dashRmd"></div>
+    <div class="pad" style="padding-bottom:0;"><span class="eyebrow">At a Glance · 行程要點</span></div>
+    <div class="keygrid">
+      <div class="ki"><div class="kk">集合</div><div class="kv">6/19 <b>13:10</b><br><small>桃園第一航廈 · 亞航 2 號櫃檯後方中間（領隊穿背心、持紅色鯉魚旗）</small></div></div>
+      <div class="ki"><div class="kk">去程</div><div class="kv">D7378 桃園 15:40 <small>→ 關西 19:30</small></div></div>
+      <div class="ki"><div class="kk">回程</div><div class="kv">D7379 關西 20:55 <small>→ 桃園 23:05</small></div></div>
+      <div class="ki"><div class="kk">住宿</div><div class="kv">Rita Hotel 難波 <small>· 連住四晚</small><br><small>大阪市西成区中開 1-3-12</small></div></div>
+      <div class="ki"><div class="kk">領隊</div><div class="kv"><a href="tel:+886910401458"><span class="tel">0910-401-458</span></a> <small>趙又葳 BONNIE</small></div></div>
+      <div class="ki"><div class="kk">團號</div><div class="kv">KIX6D70619A5</div></div>
+    </div>
+    <p class="hint">日期時間即時更新 · 完整景點吃喝玩買看「行程」、路線時間看「地圖」</p>
+  </section>
+
+  <!-- DAYS -->
+  <section class="view" id="v-days">
+    <div class="daypills" id="daypills"></div>
+    <div id="daypanels"></div>
+  </section>
+
+  <!-- EXPLORE -->
+  <section class="view" id="v-explore">
+    <div class="vhead"><span class="eyebrow">Free Time · 自由活動</span><h2>探索附近</h2><p class="s">自由活動或臨時改計畫時看這裡；逐日景點與名店請點「行程」。</p></div>
+
+    <div class="radar-card">
+      <div class="rc-h"><span class="eyebrow">Fit · 適合度分析</span><h4>這團適合誰</h4></div>
+      <div class="radar-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 205" width="200" height="171"><polygon points="120.0,50.0 177.2,83.0 177.2,149.0 120.0,182.0 62.8,149.0 62.8,83.0" fill="none" stroke="#E3DBCD" stroke-width="1"/><polygon points="120.0,76.4 154.3,96.2 154.3,135.8 120.0,155.6 85.7,135.8 85.7,96.2" fill="none" stroke="#ECE5D9" stroke-width="1"/><line x1="120" y1="116" x2="120.0" y2="50.0" stroke="#ECE5D9" stroke-width="1"/><line x1="120" y1="116" x2="177.2" y2="83.0" stroke="#ECE5D9" stroke-width="1"/><line x1="120" y1="116" x2="177.2" y2="149.0" stroke="#ECE5D9" stroke-width="1"/><line x1="120" y1="116" x2="120.0" y2="182.0" stroke="#ECE5D9" stroke-width="1"/><line x1="120" y1="116" x2="62.8" y2="149.0" stroke="#ECE5D9" stroke-width="1"/><line x1="120" y1="116" x2="62.8" y2="83.0" stroke="#ECE5D9" stroke-width="1"/><polygon points="120.0,63.2 165.7,89.6 165.7,142.4 120.0,155.6 74.3,142.4 85.7,96.2" fill="rgba(169,133,79,0.18)" stroke="#A9854F" stroke-width="2" stroke-linejoin="round"/><circle cx="120.0" cy="63.2" r="2.6" fill="#A9854F"/><circle cx="165.7" cy="89.6" r="2.6" fill="#A9854F"/><circle cx="165.7" cy="142.4" r="2.6" fill="#A9854F"/><circle cx="120.0" cy="155.6" r="2.6" fill="#A9854F"/><circle cx="74.3" cy="142.4" r="2.6" fill="#A9854F"/><circle cx="85.7" cy="96.2" r="2.6" fill="#A9854F"/><text x="120.0" y="38.0" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#6E665C">長輩</text><text x="185.2" y="85.0" text-anchor="start" font-family="sans-serif" font-size="11" fill="#6E665C">親子</text><text x="185.2" y="155.0" text-anchor="start" font-family="sans-serif" font-size="11" fill="#6E665C">購物</text><text x="120.0" y="198.0" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#6E665C">步行</text><text x="54.8" y="155.0" text-anchor="end" font-family="sans-serif" font-size="11" fill="#6E665C">自由</text><text x="54.8" y="85.0" text-anchor="end" font-family="sans-serif" font-size="11" fill="#6E665C">預算</text></svg><div class="radar-stars"><div class="rs-row"><span class="rs-l">長輩</span><span class="rs-v">★★★★☆</span></div><div class="rs-row"><span class="rs-l">親子</span><span class="rs-v">★★★★☆</span></div><div class="rs-row"><span class="rs-l">購物</span><span class="rs-v">★★★★☆</span></div><div class="rs-row"><span class="rs-l">步行</span><span class="rs-v">★★★☆☆</span></div><div class="rs-row"><span class="rs-l">自由</span><span class="rs-v">★★★★☆</span></div><div class="rs-row"><span class="rs-l">預算</span><span class="rs-v">★★★☆☆</span></div></div></div>
+      <p class="hint" style="margin-top:10px;">遊覽車為主、可自由活動；步行中等（USJ、春日大社參道較多），購物機會多。星級為參考。</p>
+    </div>
+
+    <div class="exp-card">
+      <div class="eh"><span class="en">A</span><h4>雨天備案</h4><span class="tagn">本團降雨 40–90%</span></div>
+      <div class="exp-item"><div class="ei-d"><b>室內景點</b>：大阪海遊館（世界級水族館）、NIFREL 互動水族館、大阪市立科學館、各大美術館。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>商場避雨</b>：心齋橋筋有頂商店街、梅田地下街與百貨、阿倍野 HARUKAS／Q's Mall、難波 City、門真三井 OUTLET（多為室內）。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>美食</b>：各百貨美食街、黑門市場（有頂棚）、道頓堀室內店家。</div></div>
+    </div>
+
+    <div class="exp-card">
+      <div class="eh"><span class="en">B</span><h4>夜景</h4></div>
+      <div class="exp-item"><div class="ei-d">梅田藍天大廈空中庭園展望台、阿倍野 HARUKAS 300、通天閣點燈、道頓堀霓虹與固力果招牌（可搭水上觀光船）、大阪城夜間打燈外觀。</div></div>
+    </div>
+
+    <div class="exp-card">
+      <div class="eh"><span class="en">C</span><h4>親子同遊</h4></div>
+      <div class="exp-item"><div class="ei-d">環球影城 USJ、大阪海遊館、NIFREL、奈良公園餵鹿、天王寺動物園＋てんしば草地、KIDS PLAZA 大阪兒童樂園。</div></div>
+    </div>
+
+    <div class="exp-card">
+      <div class="eh"><span class="en">D</span><h4>交通 · 電車搭乘</h4></div>
+      <div class="exp-item"><div class="ei-d"><b>IC 卡最方便</b>：買 ICOCA 或用手機 Suica／PASMO，嗶進嗶出免買票；也可投現金買單程券。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>最常用路線</b>：大阪地下鐵御堂筋線（紅色 M），貫穿 梅田—心齋橋—難波—天王寺。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>從難波出發</b>：梅田約 8 分、心齋橋 1 站、天王寺直達；新世界＝動物園前／惠美須町；大阪城＝谷町四丁目／森ノ宮。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>到奈良</b>：近鐵奈良線從大阪難波直達近鐵奈良（快速急行約 40 分）。<b>到 USJ</b>：JR 環狀線於西九条換夢咲線到環球城站。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>查車</b>：用 Google Maps 輸入目的地即給車次與月台。電車費本團自理，約每人 1,000 日幣／天。</div></div>
+    </div>
+
+    <div class="exp-card">
+      <div class="eh"><span class="en">E</span><h4>飯店周邊 · 宵夜</h4><span class="tagn">Rita Hotel · 4 晚基地</span></div>
+      <div class="exp-item"><div class="ei-d"><b>深夜拉麵（步行 5–8 分）</b>：燕ちゃん花園店（蒜頭、★4.5、到 24:00）、満風麺（豚骨、★4.4、到 01:00）、赤龍（大份量、★4.7、到 01:00）、天龍八仙樓（傳統平價、到 00:30）。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>多走幾步（往通天閣 10–12 分）</b>：無限拉麵 新今宮駅前（牛雞白湯、★4.8、到 00:30）。</div></div>
+      <div class="exp-item"><div class="ei-d"><b>提醒</b>：小店多吧台座、常只收現金，深夜留意最後點餐；便利商店（全家／7-11）就在飯店周邊，宵夜、早餐、補給最方便。營業時間以現場為準。</div></div>
+    </div>
+  </section>
+
+  <!-- MAP -->
+  <section class="view" id="v-map">
+    <div class="vhead"><span class="eyebrow">Route Map · 行程地圖</span><h2>五日路線</h2></div>
+    <div class="svgmap-wrap" style="margin-top:14px;">
+      <svg id="routeSvg" viewBox="0 0 360 400" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="map-detail placeholder" id="mapDetail">點地圖上的標記，查看景點與重點提醒</div>
+    <p class="hint" style="margin-top:12px;">點日期看單日路線 · 點標記看重點 · 導航請用景點內按鈕（此圖為關西範圍示意）</p>
+
+    <div class="geo-card">
+      <span class="eyebrow" style="display:block;margin-bottom:8px;">Live · 我的位置</span>
+      <button id="geoBtn">定位我的位置</button>
+      <div class="geo-out" id="geoOut">點上面取得目前位置，列出最近景點與「從我這裡導航」。需在已上線網址（https）使用。</div>
+      <a href="map.html" target="_blank" rel="noopener" style="display:inline-block;margin-top:12px;color:var(--gold);border-bottom:1px solid var(--gold-soft);font-size:12.5px;">🗺 開啟完整地圖（真實地圖＋GPS 藍點）→</a>
+    </div>
+
+    <div class="rphead"><span class="eyebrow">Schedule · 路程與時間</span><h3>每日動線</h3></div>
+    <div id="nextNow"></div>
+    <div id="routePlan"></div>
+    <p class="hint" style="margin-top:10px;">交通方式與時間為參考估計（遊覽車段由旅行社安排），實際以領隊現場為準；自由活動日交通自理。</p>
+  </section>
+
+  <!-- INFO -->
+  <section class="view" id="v-info">
+    <div class="vhead"><span class="eyebrow">Essentials · 旅遊須知</span><h2>福利・金錢・行李</h2></div>
+
+    <details class="acc" open>
+      <summary><span class="an">01</span><h4>你的福利</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div class="sub-h">已包含</div>
+        <ul class="ilist">
+          <li>機票（亞航 D7 團體票，含稅）</li>
+          <li>行李：手提 7kg ＋ 託運 20kg（一件，&lt; 158cm）</li>
+          <li>旅遊責任險 NT$250 萬</li>
+          <li>意外醫療險 NT$20 萬（不含法定傳染病就醫費用）</li>
+          <li>領隊全程隨行，導遊帶領電車之旅（自由參加）</li>
+        </ul>
+        <div class="hl-box"><p><b>退費權益：</b>若卡到門票景點無法走，導遊將於現場退費給貴賓。</p></div>
+        <div class="sub-h">自費・不含</div>
+        <ul class="ilist cross">
+          <li>電車費用 約每人 1000 日幣／天（自由參加）</li>
+          <li>環球影城 USJ 門票（自費）</li>
+          <li>個人餐食、購物、鹿仙貝（約 200 日幣）</li>
+          <li>建議自行加保「海外突發疾病保險」</li>
+        </ul>
+        <div class="sub-h">免稅</div>
+        <ul class="ilist"><li>持護照、單店消費滿額（一般 5000 日圓以上）可辦退稅，結帳前先出示護照。</li></ul>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">02</span><h4>金錢與匯率</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div class="fx">
+          <div class="big">0.196<small> TWD/JPY</small></div>
+          <div class="note">日圓現約 <b>0.196</b> TWD（2026/6 參考）。匯率每日波動，消費或結匯前可再確認當日牌價。</div>
+        </div>
+        <div class="calc">速算：<code>日幣 × 0.196 ≈ 台幣</code>　·　粗估 <code>日幣 ÷ 5</code><br>1,000 日幣 ≈ NT$196　·　10,000 日幣 ≈ NT$1,960</div>
+        <div style="margin-top:6px;">
+          <div class="krow"><span class="kk">攜帶現金</span><span class="kv">現金 ≤ 美金 1 萬等值；<b>新台幣 ≤ 6 萬整</b>；旅支、匯票不限。</span></div>
+          <div class="krow"><span class="kk">付款建議</span><span class="kv">黑門市場、串炸小店<b>現金方便</b>；大商場可刷卡、行動支付。</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">03</span><h4>行李與入境</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div style="margin-top:6px;">
+          <div class="krow"><span class="kk">必須隨身</span><span class="kv">手機、筆電、<b>行動電源／鋰電池</b>（須放手提）。<b>防風打火機禁帶</b>。</span></div>
+          <div class="krow"><span class="kk">必須託運</span><span class="kv">噴霧罐、自拍棒、雨傘、刀具；液體膏狀 &gt; 100ml。（機上用液體裝 100ml 內、夾鏈袋、總量 &lt; 1000ml）</span></div>
+          <div class="krow"><span class="kk">禁帶入境</span><span class="kv"><b>任何肉類、肉製品、生鮮</b>不得帶入日本。</span></div>
+          <div class="krow"><span class="kk">禁帶上機</span><span class="kv">捲髮器（含充電式電池，自燃風險）。</span></div>
+          <div class="krow"><span class="kk">入境手續</span><span class="kv">建議 <b>Visit Japan Web</b> 登錄並截圖入境卡、海關 QR；紙本可向空服員索取。</span></div>
+          <div class="krow"><span class="kk">特殊餐食</span><span class="kv">素食／不吃牛／不吃生食<b>須開票前告知旅行社</b>，當天無法更改。</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">04</span><h4>行李檢查清單</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div class="ckl-prog"><div class="bar"><span id="cklBar"></span></div><span class="pct" id="cklPct">0/0</span></div>
+        <p style="font-size:11px;color:var(--ink-faint);font-weight:300;margin:0 0 4px;">點項目打勾，進度會記在這支裝置裡。</p>
+        <div id="cklRoot"></div>
+        <button class="ckl-reset" id="cklReset">清除全部勾選</button>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">05</span><h4>常用日文短句</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div class="ph-grp"><div class="gh">點餐 · 餐廳</div>
+          <div class="ph-row"><div class="ph-jp">これをください</div><div class="ph-rom">kore o kudasai</div><div class="ph-zh">我要這個</div></div>
+          <div class="ph-row"><div class="ph-jp">メニューをください</div><div class="ph-rom">menyū o kudasai</div><div class="ph-zh">請給我菜單</div></div>
+          <div class="ph-row"><div class="ph-jp">お会計お願いします</div><div class="ph-rom">okaikei onegai shimasu</div><div class="ph-zh">麻煩結帳</div></div>
+          <div class="ph-row"><div class="ph-jp">とても美味しいです</div><div class="ph-rom">totemo oishii desu</div><div class="ph-zh">非常好吃</div></div>
+          <div class="ph-row"><div class="ph-jp">おすすめは何ですか？</div><div class="ph-rom">osusume wa nan desu ka?</div><div class="ph-zh">有什麼推薦的？</div></div>
+        </div>
+        <div class="ph-grp"><div class="gh">購物 · 免稅</div>
+          <div class="ph-row"><div class="ph-jp">免税できますか？</div><div class="ph-rom">menzei dekimasu ka?</div><div class="ph-zh">可以免稅嗎？</div></div>
+          <div class="ph-row"><div class="ph-jp">いくらですか？</div><div class="ph-rom">ikura desu ka?</div><div class="ph-zh">多少錢？</div></div>
+          <div class="ph-row"><div class="ph-jp">カードで払えますか？</div><div class="ph-rom">kādo de haraemasu ka?</div><div class="ph-zh">可以刷卡嗎？</div></div>
+          <div class="ph-row"><div class="ph-jp">袋をください</div><div class="ph-rom">fukuro o kudasai</div><div class="ph-zh">請給我袋子</div></div>
+          <div class="ph-row"><div class="ph-jp">試着してもいいですか？</div><div class="ph-rom">shichaku shite mo ii desu ka?</div><div class="ph-zh">可以試穿嗎？</div></div>
+        </div>
+        <div class="ph-grp"><div class="gh">問路 · 溝通</div>
+          <div class="ph-row"><div class="ph-jp">すみません</div><div class="ph-rom">sumimasen</div><div class="ph-zh">不好意思／抱歉</div></div>
+          <div class="ph-row"><div class="ph-jp">トイレはどこですか？</div><div class="ph-rom">toire wa doko desu ka?</div><div class="ph-zh">廁所在哪裡？</div></div>
+          <div class="ph-row"><div class="ph-jp">駅はどこですか？</div><div class="ph-rom">eki wa doko desu ka?</div><div class="ph-zh">車站在哪裡？</div></div>
+          <div class="ph-row"><div class="ph-jp">中国語か英語わかりますか？</div><div class="ph-rom">chūgokugo ka eigo wakarimasu ka?</div><div class="ph-zh">您會中文或英文嗎？</div></div>
+        </div>
+        <div class="ph-grp"><div class="gh">交通 · 其他</div>
+          <div class="ph-row"><div class="ph-jp">ここに行きたいです</div><div class="ph-rom">koko ni ikitai desu</div><div class="ph-zh">我想去這裡（出示地圖）</div></div>
+          <div class="ph-row"><div class="ph-jp">写真を撮ってもらえますか？</div><div class="ph-rom">shashin o totte moraemasu ka?</div><div class="ph-zh">可以幫我拍張照嗎？</div></div>
+          <div class="ph-row"><div class="ph-jp">Wi-Fiはありますか？</div><div class="ph-rom">waifai wa arimasu ka?</div><div class="ph-zh">有 Wi-Fi 嗎？</div></div>
+          <div class="ph-row"><div class="ph-jp">両替できますか？</div><div class="ph-rom">ryōgae dekimasu ka?</div><div class="ph-zh">可以換錢嗎？</div></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">06</span><h4>常見問題 FAQ</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div class="faq-cat">天氣 · 穿著</div>
+        <div class="faq-q">六月大阪要穿什麼？</div>
+        <div class="faq-a">23–29°C 偏熱、早晚有溫差，白天短袖＋薄外套；降雨機率高，務必帶折傘、穿防滑好走鞋。</div>
+        <div class="faq-q">去環球影城穿什麼？</div>
+        <div class="faq-a">好走鞋＋薄外套走整天，帶防曬、帽子、水；排隊可能曬太陽。</div>
+        <div class="faq-cat">金錢 · 支付</div>
+        <div class="faq-q">帶多少日幣夠？</div>
+        <div class="faq-a">餐食、電車、零食抓每天約 5,000–8,000 日幣；大筆購物可刷卡。團規現金上限美金 1 萬等值、新台幣 6 萬。</div>
+        <div class="faq-q">可以刷卡嗎？</div>
+        <div class="faq-a">百貨、連鎖、大店可刷卡與行動支付；黑門市場、串炸小店、攤販建議用現金。</div>
+        <div class="faq-q">退稅怎麼辦？</div>
+        <div class="faq-a">同一店家當日滿 5,000 日圓，結帳前出示護照辦免稅；退稅品會封袋，離境前別拆封使用。</div>
+        <div class="faq-cat">網路 · 電器</div>
+        <div class="faq-q">網路怎麼解決？</div>
+        <div class="faq-a">出發前買日本 eSIM 或網卡最方便，落地開通即用。</div>
+        <div class="faq-q">插頭、電壓要轉接嗎？</div>
+        <div class="faq-a">日本與台灣同為 A 型雙平腳插頭、電壓 100V，台灣電器大多可直接用（高功率電器留意）。</div>
+        <div class="faq-cat">飲食</div>
+        <div class="faq-q">飛機上有餐嗎？</div>
+        <div class="faq-a">亞航 D7 全程不含餐，先吃飽或自費預訂；特殊餐須開票前說明。</div>
+        <div class="faq-q">串炸可以沾兩次嗎？</div>
+        <div class="faq-a">不行！串炸醬汁「二度漬け禁止」，只能沾一次。</div>
+        <div class="faq-cat">禮儀 · 生活</div>
+        <div class="faq-q">要給小費嗎？</div>
+        <div class="faq-a">日本沒有小費文化，不用給。</div>
+        <div class="faq-q">街上垃圾桶很少？</div>
+        <div class="faq-a">是的，垃圾多隨身帶回飯店或便利商店旁丟；邊走邊吃請在攤位旁吃完再走。</div>
+        <div class="faq-cat">入境 · 行李</div>
+        <div class="faq-q">Visit Japan Web 一定要嗎？</div>
+        <div class="faq-a">強烈建議先登錄並截圖入境＋海關 QR，過關最快；沒用紙本也可，機上向空服員索取。</div>
+        <div class="faq-q">行李超重怎麼辦？</div>
+        <div class="faq-a">免費託運 20kg、手提 7kg，超重現場依航空公司規定加收。</div>
+        <div class="faq-q">哪些東西不能帶？</div>
+        <div class="faq-a">肉類／肉製品／生鮮禁帶入境日本；行動電源、鋰電池須放手提；防風打火機、含電池捲髮器禁帶上機。</div>
+        <div class="faq-cat">景點</div>
+        <div class="faq-q">鹿仙貝哪裡買？</div>
+        <div class="faq-a">奈良公園內小販即有，約 200 日幣一份；拿出來要快餵，別讓鹿咬到塑膠袋。</div>
+        <div class="faq-q">USJ 要買快速通關嗎？</div>
+        <div class="faq-a">旺季人多可考慮；不買也行，一早入園先抽超級任天堂世界整理券。</div>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">07</span><h4>花費記錄</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <p style="font-size:11px;color:var(--ink-faint);font-weight:300;margin:14px 0 0;">記錄旅途花費，自動換算台幣（×0.196），存在這支手機。</p>
+        <div class="fe-input">
+          <input id="feAmt" type="number" inputmode="numeric" placeholder="日幣金額" />
+          <input id="feNote" type="text" placeholder="項目（選填）" />
+          <button id="feAdd">新增</button>
+        </div>
+        <div class="fe-sum"><span>總計</span><span id="feTotal">¥0</span></div>
+        <div id="feList"></div>
+        <button class="ckl-reset" id="feClear">清除全部</button>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">08</span><h4>步數記錄</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <p style="font-size:11px;color:var(--ink-faint);font-weight:300;margin:14px 0 0;">每天從手機的健康／計步 App 看一下步數填進來，自動換算距離，存在這支手機。</p>
+        <div class="stepchart" id="stepChart"></div>
+        <div id="stepRows"></div>
+        <div class="fe-sum"><span>合計</span><span id="stepTotal">0 步</span></div>
+        <div class="sub-h">GPS 即時行走（選用）</div>
+        <div class="gps-stat">
+          <div><span>距離</span><b id="gpsKm">0.00</b><i>km</i></div>
+          <div><span>估計步數</span><b id="gpsSteps">0</b></div>
+          <div><span>時間</span><b id="gpsTime">00:00</b></div>
+        </div>
+        <div class="gps-btns"><button id="gpsToggle">開始記錄</button><button class="rc-btn" id="gpsAddBtn" disabled>加入今日</button></div>
+        <div class="gps-msg" id="gpsMsg">需在已上線網址（https）、螢幕開啟前景使用；步數為以行走距離換算的估計值。</div>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">09</span><h4>預算 · 退稅試算</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <div class="sub-h">旅費預算</div>
+        <div class="bg-set">
+          <input id="budgetIn" type="number" inputmode="numeric" placeholder="總預算（新台幣）">
+          <button id="budgetSet">設定</button>
+        </div>
+        <div class="bg-bar"><i id="bgFill"></i></div>
+        <div class="bg-stat"><span>已花費 <b id="bgSpent">NT$0</b></span><span>剩餘 <b id="bgLeft">—</b></span></div>
+        <p style="font-size:11px;color:var(--ink-faint);font-weight:300;margin:8px 0 0;">已花費＝「花費記錄」的日幣加總 ×0.196 自動換算。</p>
+        <div class="sub-h">退稅試算</div>
+        <div class="tax-row">
+          <input id="taxIn" type="number" inputmode="numeric" placeholder="同一店家含稅金額（日幣）">
+        </div>
+        <div class="tax-out" id="taxOut">輸入金額，試算可省的消費稅（免稅門檻 5,000 日圓）。</div>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><span class="an">10</span><h4>分組點名</h4><span class="chev"></span></summary>
+      <div class="ac-body">
+        <p style="font-size:11px;color:var(--ink-faint);font-weight:300;margin:14px 0 0;">帶團／領隊用：分組、點名、清點人數，存在這支手機。</p>
+        <div class="rc-status" id="rcStatus">已到 0 / 共 0</div>
+        <div class="rc-groups" id="rcGroups"></div>
+        <div class="rc-add">
+          <input id="rcName" placeholder="團員姓名">
+          <select id="rcGroup"><option value="1">第1組</option><option value="2">第2組</option><option value="3">第3組</option><option value="4">第4組</option><option value="5">第5組</option><option value="6">第6組</option></select>
+          <button id="rcAdd">新增</button>
+        </div>
+        <div id="rcList"></div>
+        <div class="rc-actions">
+          <button class="rc-btn" id="rcReset">重設未到</button>
+          <button class="rc-btn" id="rcAll">全部到齊</button>
+          <button class="ckl-reset" id="rcClear">清空名單</button>
+        </div>
+        <div class="sub-h">雲端同步（全團共用 · 選用）</div>
+        <div class="rc-cloud">
+          <input id="cloudUrl" placeholder="Supabase URL">
+          <input id="cloudKey" placeholder="anon public key">
+          <input id="cloudCode" placeholder="團隊代碼（自訂，全團填一樣）">
+          <button id="cloudOn">啟用同步</button>
+        </div>
+        <div class="rc-cloud-st" id="cloudSt">未啟用：名單只存在本機。填入金鑰與代碼後，全團同代碼即可即時共用。</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- SOS -->
+  <section class="view" id="v-sos">
+    <div class="vhead"><span class="eyebrow">Emergency · 緊急聯絡</span><h2>隨時找得到人</h2><p class="s">點號碼即可直接撥打</p></div>
+    <a class="call" href="tel:+886910401458">
+      <div class="who">領隊 趙又葳 BONNIE</div>
+      <div class="num"><span class="lab">台灣</span><span class="tel">0910-401-458</span><span class="ph"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C7AE83" stroke-width="1.5"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></span></div>
+      <div class="num"><span class="lab">日本</span><span class="tel">080-7141-8597</span><span class="ph"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C7AE83" stroke-width="1.5"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></span></div>
+    </a>
+    <a class="call" href="tel:+886978277997">
+      <div class="who">台北 · 找到了旅行社</div>
+      <div class="num"><span class="lab">吳小姐</span><span class="tel">0978-277-997</span><span class="ph"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C7AE83" stroke-width="1.5"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></span></div>
+    </a>
+    <div class="emg-block">
+      <div class="eh">護照遺失處理流程</div>
+      <ul class="emg-steps">
+        <li>立即聯絡領隊 <b>BONNIE</b> 協助處理。</li>
+        <li>就近到當地<b>警察局報案</b>，取得「遺失報案證明（紛失届受理証明書）」。</li>
+        <li>聯絡<b>台北駐大阪辦事處</b>，補辦入國證明書／臨時文件（電話見下）。</li>
+        <li>備妥<b>護照大頭照 2 張</b>、身分證明、報案證明與證件影本。</li>
+      </ul>
+      <a class="emg-call" href="tel:+819087944568"><span class="lab">駐大阪辦事處 · 急難救助專線（緊急專用）</span><span class="tel2">090-8794-4568</span></a>
+      <a class="emg-call" href="tel:+81662278623"><span class="lab">辦事處領務（護照／簽證，上班時間）</span><span class="tel2">06-6227-8623</span></a>
+      <div class="emg-call"><span class="lab">外交部旅外急難救助：在日本撥 001-010-800-0885-0885</span></div>
+    </div>
+
+    <div class="emg-block">
+      <div class="eh">最近的 醫院 · 警局 · 藥局</div>
+      <div class="emg-btns">
+        <a href="https://www.google.com/maps/search/?api=1&query=%E7%97%85%E9%99%A2%20hospital" target="_blank" rel="noopener">醫院 Hospital</a>
+        <a href="https://www.google.com/maps/search/?api=1&query=%E8%AD%A6%E5%AF%9F%20police" target="_blank" rel="noopener">警局 Police</a>
+        <a href="https://www.google.com/maps/search/?api=1&query=%E3%83%89%E3%83%A9%E3%83%83%E3%82%B0%E3%82%B9%E3%83%88%E3%82%A2%20pharmacy" target="_blank" rel="noopener">藥局 Pharmacy</a>
+      </div>
+      <div class="emg-call"><span class="lab">日本報警 110　·　火災／救護車 119</span></div>
+    </div>
+
+    <div class="emg-block">
+      <div class="eh">緊急日文短句</div>
+      <div class="emg-jp"><div class="j">助けて！</div><div class="r">tasukete!</div><div class="z">救命！</div></div>
+      <div class="emg-jp"><div class="j">救急車を呼んでください</div><div class="r">kyūkyūsha o yonde kudasai</div><div class="z">請叫救護車</div></div>
+      <div class="emg-jp"><div class="j">警察を呼んでください</div><div class="r">keisatsu o yonde kudasai</div><div class="z">請叫警察</div></div>
+      <div class="emg-jp"><div class="j">気分が悪いです</div><div class="r">kibun ga warui desu</div><div class="z">我不太舒服</div></div>
+      <div class="emg-jp"><div class="j">病院へ連れて行ってください</div><div class="r">byōin e tsurete itte kudasai</div><div class="z">請帶我去醫院</div></div>
+      <div class="emg-jp"><div class="j">パスポートをなくしました</div><div class="r">pasupōto o nakushimashita</div><div class="z">我的護照不見了</div></div>
+    </div>
+
+    <div class="sos-foot">
+      <div class="tno">團體編號 · KIX6D70619A5</div>
+      <div class="disc">行程、住宿與景點以原行程為準；因日本觀光旺季與交通、人潮狀況，導遊得就先後順序、休館或不可抗力做現場調整。本頁為個人行前整理，正式內容依旅行社文件為準。</div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabbar" id="tabbar">
+  <button data-view="v-today" class="active">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>今日
+  </button>
+  <button data-view="v-days">
+    <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>行程
+  </button>
+  <button data-view="v-explore">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1z" stroke-linejoin="round"/></svg>探索
+  </button>
+  <button data-view="v-map">
+    <svg viewBox="0 0 24 24"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>地圖
+  </button>
+  <button data-view="v-info">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v5"/><circle cx="12" cy="7.6" r="1" fill="currentColor" stroke="none"/></svg>須知
+  </button>
+  <button data-view="v-sos">
+    <svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>聯絡
+  </button>
+</nav>
+
+<script>
+const DAY_COLOR = ["#6E665C","#BC4630","#A9854F","#5F7367","#8A5A6B"];
+const FX = 0.196; // JPY→TWD 匯率：單一來源，要更新匯率只改這一行
+const TRIP = [
+  { d:1, iso:"2026-06-19", wd:"週五", theme:"抵達 · 啟程",
+    guide:"歡迎啟程。今天最重要的是準時集合：13:10 在桃園機場第一航廈亞航 2 號櫃檯後方中間位置找領隊（穿雙向旅行社背心、持紅色鯉魚旗），先報到、分組。班機 15:40 起飛，飛行約 3 小時，晚間入住難波 Rita Hotel。",
+    quick:[["集合時間","<b>13:10</b> 桃一航廈"],["別忘了","行動電源放手提"]],
+    spots:[
+      { n:"桃園國際機場 第一航廈", t:"交通", c:[25.0797,121.2342],
+        f:"亞航 D7378 15:40 起飛。集合點：正門進入直走到底，後排橫向櫃台前、2 號櫃檯後方中間。",
+        tip:"13:10 準時集合先找領隊報到。免費託運 20kg ＋ 手提 7kg；鋰電池、行動電源務必放手提。",
+        vids:[{label:"亞航打包",q:"亞航 行李 規定 打包"}] },
+      { n:"關西國際機場 KIX", t:"交通", c:[34.4320,135.2304],
+        f:"19:30 抵達。入境前備妥護照（效期需逾 6 個月）與 Visit Japan Web 入境、海關 QR 碼截圖。",
+        tip:"全程無機上餐食，可先在台灣用餐或自費預訂機餐。海關禁帶肉類、生鮮入境。",
+        vids:[{label:"入境攻略",q:"關西機場 入境 Visit Japan Web 教學"}] },
+      { n:"Rita Hotel 難波", t:"住宿", c:[34.6470,135.4955],
+        f:"大阪市西成区中開 1-3-12。連住四晚的據點，鄰近難波與大國町，生活機能便利。",
+        info:"🍜 周邊宵夜拉麵（步行 5–8 分、多開到深夜）：燕ちゃん花園店（蒜頭・★4.5・到24:00）、満風麺（豚骨・★4.4・到01:00）、赤龍（大份量・★4.7・到01:00）。完整名單見『探索 → 飯店周邊』。",
+        eat:"鄰近難波／新今宮，便利商店宵夜、平價拉麵，隔天可早起覓食。",
+        tip:"晚間抵達，附近便利商店、藥妝可先補給。飯店電話 06-6537-7032。",
+        vids:[{label:"難波周邊",q:"大阪 難波 美食 周邊"}] }
+    ]},
+  { d:2, iso:"2026-06-20", wd:"週六", theme:"奈良 · 世界遺產",
+    guide:"今日前進奈良，世界文化遺產之旅。鹿仙貝拿出來要快餵，鹿群會圍上來討食，有些鹿還會鞠躬！春日大社參道偏長，請穿好走的鞋。午後到門真三井 OUTLET & LaLaPORT 採買，記得帶護照享免稅。",
+    quick:[["重點","餵鹿動作要快"],["購物","帶護照辦免稅"]],
+    spots:[
+      { n:"奈良公園（鹿公園）", t:"景點", c:[34.6851,135.8430],
+        f:"1200 多頭野生鹿自由漫步，被視為神的使者，是日本最具代表性的療癒風景。",
+        info:"🦌 鹿群終日漫步、餵食免費（鹿仙貝約 ¥200）。可順遊 <b>東大寺大仏殿</b>：6 月 7:30–17:30、大人 ¥800、小學生 ¥300。",
+        eat:"<b>中谷堂</b>高速搗艾草麻糬（午後現搗最熱、食べログ百名店）、<b>大佛布丁</b>、麵鬪庵福袋烏龍麵。",
+        play:"餵鹿（鹿仙貝約 200 日幣，鹿會鞠躬討食）、順遊東大寺大佛、二月堂遠眺。",
+        buy:"柿の葉壽司（平宗／中谷本舖）、奈良漬、鹿造型紀念品。",
+        tip:"鹿仙貝拿出來要快餵；別讓鹿咬到塑膠袋。",
+        vids:[{label:"奈良美食",q:"奈良 必吃美食 中谷堂"},{label:"一日遊",q:"奈良 一日遊 攻略"}] },
+      { n:"春日大社", t:"世界遺產", c:[34.6818,135.8483],
+        f:"世界文化遺產。朱紅社殿搭配約 3000 座銅燈籠與石燈籠，藤浪之屋的萬燈籠夢幻必看。",
+        info:"🕐 本殿參拜免費（開門約 6:30–17:00、依季節）。<b>御本殿特別參拜 ¥700</b>（9:00–16:00）、國寶殿 ¥500（10:00–16:30）。",
+        play:"朱紅迴廊、萬燈籠、夫婦大國社求姻緣。",
+        tip:"參道從入口到本殿頗長，穿好走鞋。",
+        vids:[{label:"春日大社",q:"春日大社 奈良 導覽"}] },
+      { n:"平城宮跡歷史公園", t:"景點", c:[34.6911,135.7956],
+        f:"奈良時代皇宮遺址。復原的朱雀門與第一次大極殿氣勢恢宏，腹地廣闊、免費參觀。",
+        info:"🎫 公園腹地免費。主要復原建築（第一次大極殿、朱雀門、いざない館等）約 <b>9:00–16:30</b>、週一多休館。",
+        play:"朱雀門、第一次大極殿、遣唐使船（免費）。",
+        tip:"遮蔽少，做好防曬、補水。",
+        vids:[{label:"平城宮跡",q:"平城宮跡 朱雀門"}] },
+      { n:"三井 OUTLET & LaLaPORT 門真", t:"購物", c:[34.7370,135.5860],
+        f:"2023 年底開幕的關西最大級複合商場，OUTLET 加大型購物中心一次逛足。",
+        buy:"服飾鞋包特價、UNIQLO／GU、運動品牌；<b>滿 5000 日圓持護照可退稅</b>。",
+        eat:"LaLaPORT 美食街、超市熟食。",
+        tip:"結帳前先出示護照辦免稅。",
+        vids:[{label:"門真Outlet",q:"三井 OUTLET 門真 LaLaPORT"},{label:"必買",q:"日本 OUTLET 必買 戰利品"}] }
+    ]},
+  { d:3, iso:"2026-06-21", wd:"週日", theme:"自由 · 環球影城",
+    guide:"今日自由活動，兩種玩法二選一。想衝環球影城（自費）建議搭電車一早入園，先抽超級任天堂世界整理券；不去 USJ 也可跟著導遊的電車之旅逛梅田、心齋橋（電車費自理約 1000 日幣），不參加亦可自行活動。",
+    quick:[["二選一","USJ 或 電車逛街"],["USJ 撇步","一早抽任天堂整理券"]],
+    spots:[
+      { n:"日本環球影城 USJ", t:"自費景點", c:[34.6654,135.4323],
+        f:"哈利波特魔法世界、超級任天堂世界（瑪利歐＋咚奇剛）、小小兵樂園，2026 邁入 25 週年。",
+        info:"🎫 1 日券（1デイ・スタジオ・パス）依日期浮動：大人約 <b>¥8,600–11,900</b>、兒童（4–11）約 ¥5,600–7,400。常提早開園，當日營業時間請查官網。",
+        play:"<b>超級任天堂世界</b>（咚奇剛瘋狂礦車最新、瑪利歐賽車、耀西）、哈利波特禁忌之旅、飛天翼龍、小小兵乘車遊、好萊塢美夢。",
+        eat:"奇諾比奧咖啡（蘑菇造型）、活米村奶油啤酒。",
+        buy:"任天堂世界限定商品、能量手環、小小兵周邊。",
+        tip:"一早入園先抽<b>超級任天堂世界整理券</b>或加購快速通關；能量手環可收集印章。",
+        vids:[{label:"USJ攻略",q:"環球影城 USJ 攻略"},{label:"任天堂世界",q:"超級任天堂世界 咚奇剛 攻略"},{label:"必買必吃",q:"環球影城 必買 美食"}] },
+      { n:"梅田 · GRAND FRONT 大阪", t:"購物", c:[34.7048,135.4946],
+        f:"大阪站直結的複合商業區，百貨、餐飲、空中庭園展望台一帶熱鬧繁華。",
+        play:"梅田藍天大廈空中庭園展望台、瀧見小路昭和食街。",
+        buy:"阪急百貨、LUCUA、GRAND FRONT、阪急三番街、Yodobashi 梅田。",
+        eat:"阪急百貨 B1 甜點、梅田美食街。",
+        tip:"梅田地下街錯綜（被戲稱迷宮），記好出口編號。",
+        vids:[{label:"梅田攻略",q:"大阪 梅田 攻略 逛街"},{label:"梅田美食",q:"梅田 美食 推薦"}] },
+      { n:"心齋橋筋 · 道頓堀", t:"購物·美食", c:[34.6723,135.5010],
+        f:"大阪最熱鬧的拱廊商店街，串連道頓堀；固力果跑跑人看板、章魚燒、藥妝一次滿足。",
+        eat:"章魚燒（<b>くくる／道樂WANAKA／十八番</b>）、<b>金龍拉麵</b>（免費泡菜蒜泥）、神座拉麵、一蘭、蟹道樂、大起水產迴轉壽司、美津の大阪燒、HARBS 草莓塔。",
+        buy:"藥妝（<b>松本清</b>試用最齊、<b>SUGI</b> 開到 24 點、大國便宜但結帳要逐項核對）、唐吉訶德。",
+        play:"固力果跑跑人、戎橋打卡、道頓堀水上觀光船、法善寺橫丁。",
+        tip:"大國藥妝走道擠、結帳偶有掉包多刷爭議，刷卡務必核對清點。",
+        vids:[{label:"道頓堀美食",q:"道頓堀 必吃 美食"},{label:"藥妝必買",q:"大阪 心齋橋 藥妝 必買"},{label:"必買清單",q:"大阪 必買 2026"}] }
+    ]},
+  { d:4, iso:"2026-06-22", wd:"週一", theme:"天王寺 · 新世界",
+    guide:"今日跟著導遊搭電車（費用自理約 1000 日幣）玩天王寺、新世界一帶，亦可自由活動。新世界的串炸（串カツ）醬汁「禁止二次沾」，這是大阪規矩！阿倍野 HARUKAS 是日本最高樓，可上展望台俯瞰大阪。",
+    quick:[["大阪規矩","串炸只能沾一次"],["最高樓","HARUKAS 300 展望台"]],
+    spots:[
+      { n:"難波八阪神社", t:"景點", c:[34.6601,135.4970],
+        f:"巨大獅子頭舞台（高約 12 公尺）震撼吸睛，傳說大獅子吞食厄運、招來好運。",
+        play:"獅子殿正面拍照（免費參拜）。",
+        vids:[{label:"八阪神社",q:"難波八阪神社 獅子殿"}] },
+      { n:"阿倍野 HARUKAS 近鐵百貨", t:"購物·景點", c:[34.6457,135.5135],
+        f:"高 300 公尺的日本最高摩天大樓，近鐵百貨本店加 HARUKAS 300 展望台。",
+        info:"🕐 HARUKAS 300 展望台 <b>9:00–22:00</b>（最後入場 21:30）、大人 <b>¥2,000</b>（2026/7/23 起調漲）。",
+        play:"HARUKAS 300 展望台、あべのハルカス美術館。",
+        buy:"近鐵百貨本店、Q's Mall，退稅櫃台集中辦理。",
+        eat:"百貨美食樓層、天王寺周邊。",
+        tip:"登展望台需另購票；天氣好可遠眺大阪灣與生駒山。",
+        vids:[{label:"HARUKAS",q:"阿倍野 HARUKAS 300 展望台"},{label:"天王寺逛街",q:"天王寺 阿倍野 逛街 美食"}] },
+      { n:"天王寺公園", t:"景點", c:[34.6491,135.5145],
+        f:"市區綠洲，內有天王寺動物園與日本庭園慶澤園，緊鄰 HARUKAS。",
+        play:"てんしば草地、天王寺動物園、慶澤園。",
+        eat:"てんしば園區內咖啡餐廳。",
+        vids:[{label:"天王寺公園",q:"天王寺公園 てんしば"}] },
+      { n:"新世界 · 通天閣", t:"景點·美食", c:[34.6524,135.5063],
+        f:"昭和懷舊風情街，通天閣地標與幸運之神 Biliken，串炸（串カツ）發源地。",
+        info:"🕐 通天閣一般展望台 <b>10:00–20:00</b>（最後入場 19:30）、大人 <b>¥1,200</b>；特別屋外展望台另加 ¥300。",
+        eat:"<b>串炸達摩 だるま</b>（發源店，醬汁禁二次沾）、どて燒、各式串炸名店。",
+        play:"通天閣展望台、摸 Biliken 腳底許願、ジャンジャン横丁懷舊。",
+        buy:"Biliken 周邊、昭和懷舊紀念品。",
+        tip:"串炸醬汁「二度漬け禁止」只能沾一次！",
+        vids:[{label:"新世界串炸",q:"新世界 串炸 達摩 通天閣"},{label:"通天閣",q:"通天閣 新世界 攻略"}] }
+    ]},
+  { d:5, iso:"2026-06-23", wd:"週二", theme:"大阪城 · 黑門 · 回程",
+    guide:"行程最後一天，搭電車玩大阪城公園（不上天守閣，外觀拍照）與「大阪的廚房」黑門市場，邊走邊吃海膽、和牛串、河豚。晚間 20:55 班機回桃園；午後可慢慢逛，離開前再次確認隨身物品。",
+    quick:[["回程班機","<b>20:55</b> 起飛"],["離開前","再次清點隨身物"]],
+    spots:[
+      { n:"大阪城公園", t:"景點", c:[34.6873,135.5259],
+        f:"豐臣秀吉建造的名城，護城河、石垣與西之丸庭園壯觀。本行程於外觀拍照（不上天守閣）。",
+        info:"🎫 城公園免費；本行程僅外觀拍照、不上天守閣。（若自行入館：天守閣 9:00–18:00、最後入館 17:30、大人 ¥1,200、含豐臣石垣館。）",
+        play:"天守閣外觀＋護城河經典構圖、西之丸庭園、極樂橋、御座船。",
+        eat:"JO-TERRACE OSAKA 餐廳、公園內咖啡。",
+        tip:"公園腹地大，留意集合時間。",
+        vids:[{label:"大阪城",q:"大阪城公園 導覽"}] },
+      { n:"黑門市場", t:"美食", c:[34.6652,135.5061],
+        f:"有「大阪廚房」之稱的傳統市場，生鮮、海膽、和牛串、河豚、現烤海鮮應有盡有。",
+        info:"🕐 約 150 家店、整條有頂棚（雨天 OK）。多數 <b>9:00–18:00</b>，生鮮店早上最熱鬧、各店營業時間不一。",
+        eat:"<b>海膽、和牛串、現烤干貝牡蠣</b>、河豚、黑門三平、鮪魚、現切水果（草莓／哈密瓜）、玉子燒。",
+        buy:"海鮮、當季水果、漬物伴手禮。",
+        tip:"8 點開市、現買現吃、現金方便；別吃太撐，留意班機時間。",
+        vids:[{label:"黑門市場",q:"黑門市場 必吃 美食"},{label:"必吃海鮮",q:"黑門市場 推薦 海鮮"}] },
+      { n:"關西國際機場 → 桃園", t:"交通", c:[34.4320,135.2304],
+        f:"亞航 D7379 20:55 起飛，23:05 抵達桃園。",
+        buy:"關西機場免稅店、最後採購伴手禮。",
+        tip:"提早辦理 check-in 與退稅；離開前再次確認護照與隨身物品。",
+        vids:[{label:"退稅攻略",q:"關西機場 退稅 流程"}] }
+    ]}
+];
+
+const mapsURL = q => "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
+const ytTop   = q => "https://www.youtube.com/results?search_query="+encodeURIComponent(q)+"&sp=CAMSAhAB";
+const pinSVG  = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+const vplaySVG= '<svg width="11" height="11" viewBox="0 0 24 24" fill="#BC4630"><path d="M8 5v14l11-7z"/></svg>';
+
+function todayISO(){const n=new Date();const p=x=>String(x).padStart(2,"0");return n.getFullYear()+"-"+p(n.getMonth()+1)+"-"+p(n.getDate());}
+function curDay(){const ti=todayISO();return TRIP.find(t=>t.iso===ti)||null;}
+
+/* concierge */
+function buildConcierge(){
+  const el=document.getElementById("concierge");const ti=todayISO();const cur=TRIP.find(t=>t.iso===ti);
+  let tag,dn,title,msg,quick;
+  if(cur){tag="進行中 · 今天";dn="DAY 0"+cur.d+" / 05";title="Day "+cur.d+"　"+cur.theme;msg=cur.guide;quick=cur.quick;}
+  else{
+    const first=new Date(TRIP[0].iso),now=new Date(ti);
+    if(now<first){const days=Math.ceil((first-now)/86400000);
+      tag="出發倒數";dn="DEPART IN "+days+"D";title="還有 "+days+" 天出發";
+      msg="距離大阪還有 "+days+" 天。出發前先完成 Visit Japan Web 登錄並截圖、確認護照效期逾 6 個月、把行動電源與鋰電池放進手提行李。當天 6/19 請於 13:10 在桃園第一航廈亞航 2 號櫃檯後方中間集合。";
+      quick=[["出發日","6/19 13:10"],["先做","Visit Japan Web"]];
+    }else{tag="行程已圓滿";dn="JOURNEY COMPLETE";title="旅途愉快，平安到家";
+      msg="這趟大阪 ＋ 奈良五日行程已結束。希望旅程一切順心——若有後續事宜，仍可透過下方「聯絡」找到領隊與旅行社。";
+      quick=[["行程","已完成"],["回程","6/23 抵桃園"]];}
+  }
+  el.innerHTML=`<div class="c-row"><span class="live"></span><span class="c-tag">${tag}</span><span class="c-dn">${dn}</span></div>
+    <h3>${title}</h3><p class="c-msg">${msg}</p>
+    <div class="c-strip">${quick.map(q=>`<div class="cell"><div class="cl">${q[0]}</div><div class="cv">${q[1]}</div></div>`).join("")}</div>`;
+}
+
+/* days */
+function relBadge(iso){const ti=todayISO();if(iso===ti)return '<span class="badge">今天</span>';if(iso<ti)return '<span class="badge past">已結束</span>';return '';}
+function recBlock(s){
+  let rows="";
+  if(s.eat) rows+=`<div class="rr"><span class="rl">美食</span><span class="rv">${s.eat}</span></div>`;
+  if(s.play) rows+=`<div class="rr"><span class="rl play">玩樂</span><span class="rv">${s.play}</span></div>`;
+  if(s.buy) rows+=`<div class="rr"><span class="rl buy">購物</span><span class="rv">${s.buy}</span></div>`;
+  return rows?`<div class="rec">${rows}</div>`:"";
+}
+function infoBlock(s){ return s.info?`<p class="sinfo">${s.info}</p>`:""; }
+function vidBlock(vids){
+  if(!vids||!vids.length) return "";
+  const chips=vids.map(v=>`<a class="vchip" href="${ytTop(v.q)}" target="_blank" rel="noopener">${vplaySVG}${v.label}</a>`).join("");
+  return `<div class="vids"><span class="vlabel">熱門影片 · 依觀看排序</span>${chips}</div>`;
+}
+function renderDays(){
+  const pills=document.getElementById("daypills");const panels=document.getElementById("daypanels");
+  const cd=curDay();const def=cd?cd.d:1;
+  pills.innerHTML=TRIP.map(t=>`<button class="pill${t.d===def?' active':''}" data-day="${t.d}"><span class="pn">0${t.d}</span>${t.theme.split(" ")[0]}</button>`).join("");
+  panels.innerHTML=TRIP.map(t=>{
+    const spots=t.spots.map((s,i)=>`<div class="spot"><div class="idx">${i+1}</div><div class="body">
+      <div><span class="sname">${s.n}</span><span class="stype">${s.t}</span></div>
+      <p class="feat">${s.f}</p>
+      ${recBlock(s)}
+      ${infoBlock(s)}
+      <p class="tip"><b>玩家提醒</b>${s.tip||""}</p>
+      <a class="navbtn" href="${mapsURL(s.n)}" target="_blank" rel="noopener">${pinSVG} Google 地圖導航</a>
+      ${vidBlock(s.vids)}
+    </div></div>`).join("");
+    return `<div class="day-panel${t.d===def?' active':''}" data-panel="${t.d}">
+      <div class="dp-head"><div class="dp-no"><span class="pre">DAY</span>0${t.d}</div>
+      <div><h3 class="dp-theme">${t.theme}</h3><div class="dp-date">2026 / 06 / ${18+t.d} · ${t.wd}${relBadge(t.iso)}</div></div></div>
+      <div class="spots">${spots}</div></div>`;
+  }).join("");
+  pills.querySelectorAll(".pill").forEach(p=>p.addEventListener("click",()=>{
+    const d=p.dataset.day;
+    pills.querySelectorAll(".pill").forEach(x=>x.classList.toggle("active",x.dataset.day===d));
+    panels.querySelectorAll(".day-panel").forEach(x=>x.classList.toggle("active",x.dataset.panel===d));
+    window.scrollTo({top:0,behavior:"auto"});
+  }));
+}
+
+/* SVG map */
+const SVGW=360, SVGH=400, PAD=36, D2R=Math.PI/180;
+const KP=[];
+TRIP.forEach(t=>t.spots.forEach((s,i)=>{ if(s.c[0]>30) KP.push({day:t.d,idx:i+1,name:s.n,type:s.t,tip:s.tip||s.f,color:DAY_COLOR[t.d-1],lat:s.c[0],lng:s.c[1]}); }));
+function project(pts){
+  if(pts.length===1){return pts.map(p=>({...p,x:SVGW/2,y:SVGH/2}));}
+  const latMid=pts.reduce((a,p)=>a+p.lat,0)/pts.length, k=Math.cos(latMid*D2R);
+  const xs=pts.map(p=>p.lng*k), ys=pts.map(p=>p.lat);
+  const xMin=Math.min(...xs),xMax=Math.max(...xs),yMin=Math.min(...ys),yMax=Math.max(...ys);
+  const wW=Math.max(xMax-xMin,1e-9), wH=Math.max(yMax-yMin,1e-9);
+  const availW=SVGW-2*PAD, availH=SVGH-2*PAD;
+  const scale=Math.min(availW/wW, availH/wH);
+  const offX=PAD+(availW-wW*scale)/2, offY=PAD+(availH-wH*scale)/2;
+  return pts.map(p=>({...p, x:offX+(p.lng*k-xMin)*scale, y:offY+(yMax-p.lat)*scale}));
+}
+function showDetail(sp){
+  const el=document.getElementById("mapDetail");if(!sp)return;
+  el.classList.remove("placeholder");
+  el.innerHTML=`<div class="md-top"><span class="md-dot" style="background:${sp.color}"></span><span class="md-day">DAY 0${sp.day}</span><span class="md-type">${sp.type}</span></div>
+    <div class="md-name">${sp.name}</div><div class="md-tip">${sp.tip}</div>
+    <a class="md-nav" href="${mapsURL(sp.name)}" target="_blank" rel="noopener">${pinSVG} 用 Google 地圖導航</a>`;
+}
+function declutter(pts, minDist){
+  const w=SVGW, h=SVGH, pad=PAD+minDist/2;
+  for(let i=0;i<pts.length;i++){ for(let j=i+1;j<pts.length;j++){
+    if(Math.abs(pts[i].x-pts[j].x)<0.01 && Math.abs(pts[i].y-pts[j].y)<0.01){
+      pts[j].x+=Math.cos(j*2.399)*0.6; pts[j].y+=Math.sin(j*2.399)*0.6;
+    }
+  }}
+  for(let it=0;it<160;it++){
+    let moved=false;
+    for(let i=0;i<pts.length;i++){ for(let j=i+1;j<pts.length;j++){
+      let dx=pts[j].x-pts[i].x, dy=pts[j].y-pts[i].y, d=Math.hypot(dx,dy);
+      if(d<minDist){
+        if(d<1e-6){dx=Math.cos(i*2.399);dy=Math.sin(i*2.399);d=1;}
+        const push=(minDist-d)/2, ux=dx/d, uy=dy/d;
+        pts[i].x-=ux*push; pts[i].y-=uy*push; pts[j].x+=ux*push; pts[j].y+=uy*push;
+        moved=true;
+      }
+    }}
+    for(const p of pts){ p.x=Math.max(pad,Math.min(w-pad,p.x)); p.y=Math.max(pad,Math.min(h-pad,p.y)); }
+    if(!moved) break;
+  }
+  if(pts.length>1){
+    const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+    const bw=Math.max(Math.max(...xs)-Math.min(...xs),1), bh=Math.max(Math.max(...ys)-Math.min(...ys),1);
+    let fit=Math.min((w-2*pad)/bw,(h-2*pad)/bh); fit=Math.max(1,Math.min(fit,1.7));
+    const cx=(Math.min(...xs)+Math.max(...xs))/2, cy=(Math.min(...ys)+Math.max(...ys))/2;
+    for(const p of pts){ p.x=w/2+(p.x-cx)*fit; p.y=h/2+(p.y-cy)*fit; p.x=Math.max(pad,Math.min(w-pad,p.x)); p.y=Math.max(pad,Math.min(h-pad,p.y)); }
+  }
+  return pts;
+}
+function renderMap(sel){
+  const pts = sel==="all" ? KP : KP.filter(p=>p.day===sel);
+  const many = pts.length>6;
+  const R = many?10:13, FS = many?11:14, lineOp = sel==="all"?0.3:0.55;
+  const placed=declutter(project(pts), R*2+8);
+  const byDay={};placed.forEach(p=>{(byDay[p.day]=byDay[p.day]||[]).push(p);});
+  let svg="";
+  Object.keys(byDay).forEach(d=>{
+    const arr=byDay[d].slice().sort((a,b)=>a.idx-b.idx);
+    if(arr.length>1){
+      const path=arr.map(p=>p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
+      svg+=`<polyline points="${path}" fill="none" stroke="${DAY_COLOR[d-1]}" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round" opacity="${lineOp}"/>`;
+    }
+  });
+  placed.forEach(p=>{
+    svg+=`<g class="mk" data-day="${p.day}" data-idx="${p.idx}" style="cursor:pointer">
+      <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${R+7}" fill="transparent"/>
+      <circle class="dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${R}" fill="${p.color}" stroke="#FBF8F3" stroke-width="2.5"/>
+      <text x="${p.x.toFixed(1)}" y="${(p.y+FS*0.33).toFixed(1)}" text-anchor="middle" font-family="'Cormorant Garamond',serif" font-size="${FS}" font-weight="600" fill="#fff">${p.idx}</text></g>`;
+  });
+  const svgEl=document.getElementById("routeSvg");
+  svgEl.innerHTML=svg;
+  svgEl.querySelectorAll(".mk").forEach(g=>g.addEventListener("click",()=>{
+    const d=+g.dataset.day, ix=+g.dataset.idx;
+    const sp=KP.find(p=>p.day===d&&p.idx===ix);
+    svgEl.querySelectorAll(".mk .dot").forEach(c=>c.setAttribute("stroke","#FBF8F3"));
+    g.querySelector(".dot").setAttribute("stroke","#2B2724");
+    showDetail(sp);
+  }));
+  const first=placed.slice().sort((a,b)=>a.day-b.day||a.idx-b.idx)[0];
+  if(first) showDetail(KP.find(p=>p.day===first.day&&p.idx===first.idx));
+}
+function buildMap(){
+  const leg=document.getElementById("legend");
+  leg.innerHTML=TRIP.map(t=>`<button data-day="${t.d}"><span class="sw" style="background:${DAY_COLOR[t.d-1]}"></span>Day ${t.d}</button>`).join("")+`<button data-day="all" style="font-weight:500">全部</button>`;
+  function setActive(btn){leg.querySelectorAll("button").forEach(x=>x.classList.toggle("off",x!==btn));}
+  leg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{setActive(b);renderMap(b.dataset.day==="all"?"all":+b.dataset.day);}));
+  const cd=curDay();const def=cd?cd.d:"all";
+  const defBtn=[...leg.querySelectorAll("button")].find(b=>(def==="all"?b.dataset.day==="all":+b.dataset.day===def));
+  setActive(defBtn);renderMap(def);
+}
+
+/* tabs */
+function initTabs(){
+  const btns=[...document.querySelectorAll("#tabbar button")];
+  const views={};document.querySelectorAll(".view").forEach(v=>views[v.id]=v);
+  btns.forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.view;
+    btns.forEach(x=>x.classList.toggle("active",x===b));
+    Object.values(views).forEach(v=>v.classList.remove("active"));
+    views[id].classList.add("active");
+    window.scrollTo({top:0,behavior:"auto"});
+  }));
+}
+
+/* checklist */
+const CHECKLIST = [
+  ["證件 · 重要", ["護照（效期逾 6 個月）","身分證","電子機票／登機證","Visit Japan Web 入境＋海關 QR 截圖","現金日幣","信用卡","旅遊／海外突發疾病保險","護照大頭照 2 張（遺失備用）"]],
+  ["3C · 電子", ["手機＋充電線","行動電源（放手提）","eSIM／網卡","相機","耳機","萬用轉接頭（日本同台灣 A 型插頭、100V）"]],
+  ["藥品", ["慢性病藥（原始藥袋＋醫師處方）","暈車藥","感冒藥","腸胃藥","OK 繃／個人常備藥"]],
+  ["衣物 · 防護", ["防滑好走鞋","折疊雨傘／雨具","薄外套（早晚溫差）","口罩","換洗衣物","襪子"]],
+  ["盥洗 · 個人", ["牙刷牙膏","保養品（>100ml 須託運）","隱形眼鏡／藥水","防曬","酒精／濕紙巾","小包面紙"]],
+  ["隨手好用", ["環保杯／水壺","購物袋","夾鏈袋","小額零錢包"]]
+];
+function cklLoad(){try{return JSON.parse(localStorage.getItem("osaka_ckl_v1")||"{}");}catch(e){return {};}}
+function cklSave(st){try{localStorage.setItem("osaka_ckl_v1",JSON.stringify(st));}catch(e){}}
+let CKL_STATE={};
+function cklUpdateProg(){
+  let total=0,done=0;
+  CHECKLIST.forEach((g,gi)=>g[1].forEach((_,ii)=>{total++;if(CKL_STATE[gi+"_"+ii])done++;}));
+  const pct=total?Math.round(done/total*100):0;
+  const bar=document.getElementById("cklBar"),lab=document.getElementById("cklPct");
+  if(bar)bar.style.width=pct+"%"; if(lab)lab.textContent=done+" / "+total;
+}
+function buildChecklist(){
+  CKL_STATE=cklLoad();
+  const root=document.getElementById("cklRoot"); if(!root)return;
+  root.innerHTML=CHECKLIST.map((g,gi)=>`<div class="ckl-grp"><div class="gh">${g[0]}</div>`+
+    g[1].map((it,ii)=>`<div class="ckl-item${CKL_STATE[gi+"_"+ii]?" done":""}" data-k="${gi}_${ii}"><span class="ckl-box"></span><span class="ckl-lab">${it}</span></div>`).join("")+`</div>`).join("");
+  root.querySelectorAll(".ckl-item").forEach(el=>el.addEventListener("click",()=>{
+    const k=el.dataset.k;CKL_STATE[k]=!CKL_STATE[k];el.classList.toggle("done",CKL_STATE[k]);cklSave(CKL_STATE);cklUpdateProg();
+  }));
+  const rb=document.getElementById("cklReset");
+  if(rb)rb.addEventListener("click",()=>{CKL_STATE={};cklSave(CKL_STATE);buildChecklist();});
+  cklUpdateProg();
+}
+
+/* expense tracker */
+let FE=[];
+function feLoad(){try{return JSON.parse(localStorage.getItem("osaka_fe_v1")||"[]");}catch(e){return [];}}
+function feSave(){try{localStorage.setItem("osaka_fe_v1",JSON.stringify(FE));}catch(e){}}
+function feRenderList(){
+  const list=document.getElementById("feList");if(!list)return;
+  if(FE.length===0){list.innerHTML='<div class="fe-empty">尚無紀錄，新增第一筆花費吧。</div>';}
+  else{list.innerHTML=FE.map((e,i)=>`<div class="fe-row"><span class="fe-note">${(e.n||"花費").replace(/</g,"&lt;")}</span><span class="fe-amt">¥${(+e.a).toLocaleString()}<small>≈NT$${Math.round(e.a*FX).toLocaleString()}</small></span><button class="fe-del" data-i="${i}" aria-label="刪除">✕</button></div>`).join("");}
+  const t=FE.reduce((s,e)=>s+(+e.a||0),0);
+  document.getElementById("feTotal").innerHTML=`¥${t.toLocaleString()} <small>≈ NT$${Math.round(t*FX).toLocaleString()}</small>`;
+  list.querySelectorAll(".fe-del").forEach(b=>b.addEventListener("click",()=>{FE.splice(+b.dataset.i,1);feSave();feRenderList();}));
+  if(typeof budgetRefresh==="function") budgetRefresh();
+}
+function buildExpense(){
+  const addBtn=document.getElementById("feAdd");if(!addBtn)return;
+  FE=feLoad();
+  addBtn.addEventListener("click",()=>{
+    const amtEl=document.getElementById("feAmt"),noteEl=document.getElementById("feNote");
+    const a=parseFloat(amtEl.value);if(!a||a<=0){amtEl.focus();return;}
+    FE.unshift({a:a,n:noteEl.value.trim()});feSave();amtEl.value="";noteEl.value="";feRenderList();
+  });
+  const cl=document.getElementById("feClear");
+  if(cl)cl.addEventListener("click",()=>{if(FE.length&&!confirm("確定清除全部花費紀錄？"))return;FE=[];feSave();feRenderList();});
+  feRenderList();
+}
+
+/* route & time */
+const ROUTE=[
+ {d:1, iso:"2026-06-19", free:false, label:"抵達日 · 機場 → 飯店", stops:[
+   {t:"13:10", name:"桃園機場 第一航廈 集合", via:null, stay:"報到 · 託運行李"},
+   {t:"15:40", name:"班機起飛 D7378", via:"亞航 約 3 小時", stay:null},
+   {t:"19:30", name:"關西機場 抵達", via:null, stay:"入境 · 領隊接機"},
+   {t:"21:30", name:"Rita Hotel 難波 入住", via:"遊覽車 約 50 分", stay:"休息"},
+ ]},
+ {d:2, iso:"2026-06-20", free:false, label:"奈良世界遺產 · 遊覽車", stops:[
+   {t:"08:00", name:"飯店出發", via:null, stay:null},
+   {t:"09:30", name:"奈良公園（餵鹿 · 東大寺）", via:"遊覽車 約 60 分", stay:"約 90 分"},
+   {t:"11:15", name:"春日大社", via:"步行 約 10 分", stay:"約 45 分"},
+   {t:"12:30", name:"午餐（奈良）", via:"步行", stay:"約 60 分"},
+   {t:"14:00", name:"平城宮跡 歷史公園", via:"遊覽車 約 25 分", stay:"約 45 分"},
+   {t:"15:30", name:"三井 OUTLET & LaLaPORT 門真", via:"遊覽車 約 40 分", stay:"約 150 分"},
+   {t:"18:30", name:"返回難波 · 晚餐自理", via:"遊覽車 約 40 分", stay:null},
+ ]},
+ {d:3, iso:"2026-06-21", free:true, label:"自由活動 · 環球影城（自費）", stops:[
+   {t:"08:30", name:"建議：USJ 開園前抵達", via:"電車 約 25 分（自理）", stay:"整天"},
+   {t:"—", name:"或自由安排：梅田 ↔ 心齋橋", via:"御堂筋線 約 8 分", stay:"自由"},
+ ]},
+ {d:4, iso:"2026-06-22", free:false, label:"天王寺 · 新世界（市區步行為主）", stops:[
+   {t:"09:30", name:"難波八阪神社", via:"飯店步行／電車 約 15 分", stay:"約 20 分"},
+   {t:"10:30", name:"阿倍野 HARUKAS（展望台）", via:"電車 約 10 分", stay:"約 90 分"},
+   {t:"12:15", name:"午餐", via:"步行", stay:"約 60 分"},
+   {t:"13:30", name:"天王寺公園", via:"步行 約 5 分", stay:"約 45 分"},
+   {t:"14:30", name:"新世界 · 通天閣 · 串炸", via:"步行 約 10 分", stay:"約 120 分"},
+ ]},
+ {d:5, iso:"2026-06-23", free:false, label:"大阪城 · 黑門 · 回程", stops:[
+   {t:"09:00", name:"大阪城公園（外觀拍照）", via:"飯店遊覽車 約 30 分", stay:"約 75 分"},
+   {t:"10:45", name:"黑門市場（邊走邊吃）", via:"遊覽車 約 15 分", stay:"約 90 分"},
+   {t:"12:30", name:"午餐／自由採買", via:"步行", stay:"約 60 分"},
+   {t:"17:00", name:"關西機場 · 退稅報到", via:"遊覽車 約 50 分", stay:"check-in"},
+   {t:"20:55", name:"班機起飛 D7379 → 桃園", via:null, stay:null},
+ ]},
+];
+function buildRoute(){
+  const wrap=document.getElementById("routePlan"); if(!wrap) return;
+  const today=todayISO();
+  const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
+  const parse=t=>{const m=/^(\d{1,2}):(\d{2})$/.exec(t);return m?(+m[1]*60+ +m[2]):null;};
+  const todayDay=ROUTE.find(r=>r.iso===today);
+  const nn=document.getElementById("nextNow");
+  if(nn){
+    let nl="Now · 目前", msg="";
+    if(!todayDay){
+      const first=ROUTE[0], last=ROUTE[ROUTE.length-1];
+      if(today<first.iso) msg='行程將於 <b class="nx">6/19</b> 開始，以下為五日動線參考。';
+      else if(today>last.iso) msg='行程已結束，旅途愉快！以下保留五日動線。';
+      else msg='今日無排定，以下為五日動線參考。';
+    } else if(todayDay.free){
+      nl="Now · 今日 Day "+todayDay.d;
+      msg='今天是<b>自由活動日</b>（'+todayDay.label+'），沒有固定團體時程，可參考下方建議自由安排。';
+    } else {
+      nl="Now · 今日 Day "+todayDay.d;
+      const stops=todayDay.stops.map(s=>({...s,min:parse(s.t)})).filter(s=>s.min!=null);
+      const next=stops.find(s=>s.min>nowMin);
+      const fmt=m=>{ if(m<60) return m+' 分鐘'; const h=Math.floor(m/60),mm=m%60; return mm?h+' 小時 '+mm+' 分':h+' 小時'; };
+      if(!stops.length){ msg="今日 "+todayDay.label+"。"; }
+      else if(!next){ msg='今日行程已大致結束（最後：<b>'+stops[stops.length-1].name+'</b>）。'; }
+      else{
+        const diff=next.min-nowMin;
+        const cd=diff<=20 ? '<b class="nx" style="color:#F7C9A8">⚠ 還有 '+fmt(diff)+'，請準備</b>' : '還有 '+fmt(diff);
+        if(next===stops[0]){ msg='今日 <b class="nx">'+next.t+'</b> 出發，首站 <b>'+next.name+'</b>（'+cd+'）。'; }
+        else{
+          const prev=stops[stops.indexOf(next)-1];
+          msg='現在約在 <b>'+prev.name+'</b>。下一站 <b>'+next.name+'</b>'+(next.via?'（'+next.via+'）':'')+'，預計 <b class="nx">'+next.t+'</b>（'+cd+'）。';
+        }
+      }
+    }
+    nn.innerHTML='<div class="nl">'+nl+'</div><div class="nm">'+msg+'</div>';
+  }
+  wrap.innerHTML=ROUTE.map(r=>{
+    const on=r.iso===today?" on":"";
+    const tag=r.free?'<span class="rtag free">自由</span>':'<span class="rtag">'+(/遊覽車/.test(JSON.stringify(r.stops))?"遊覽車":"市區")+'</span>';
+    const stops=r.stops.map(s=>
+      '<div class="rp-stop"><span class="rtime">'+s.t+'</span><span class="rdot"></span>'+
+      (s.via?'<div class="rvia">↑ '+s.via+'</div>':'')+
+      '<div class="rname">'+s.name+'</div>'+
+      (s.stay?'<div class="rstay">停留 '+s.stay+'</div>':'')+'</div>'
+    ).join("");
+    return '<div class="rp-day'+on+'"><div class="rp-dh"><span class="rd">DAY '+String(r.d).padStart(2,"0")+'</span><span class="rt">'+r.label+'</span>'+tag+'</div><div class="rp-list">'+stops+'</div></div>';
+  }).join("");
+}
+
+/* today dashboard */
+const DAY_INFO={
+ 1:{w:"23–28°C · 降雨 40%",wtip:"機艙與機場冷氣強，薄外套上機",
+    eat:"機上不含餐，登機前先吃飽；抵達後便利商店解決宵夜",
+    wear:"輕便好走、薄外套；防滑好走鞋",
+    stay:"今晚入住 Rita Hotel 難波（連住 4 晚），行李不必每天打包",
+    move:"關西機場 → 飯店搭遊覽車約 50 分；行動電源、鋰電池放手提",
+    shop:"機場／便利商店先補水、網卡；藥妝明天再逛"},
+ 2:{w:"24–29°C · 降雨 50%",wtip:"奈良戶外多，防曬＋補水＋折傘",
+    eat:"中谷堂搗麻糬、柿葉壽司、大佛布丁；門真商場美食街",
+    wear:"好走鞋（春日大社參道長）、帽子防曬",
+    stay:"回難波同一飯店，輕裝出門即可",
+    move:"全天遊覽車；餵鹿時把塑膠袋與手機收好",
+    shop:"三井 OUTLET & LaLaPORT 門真：服飾鞋包，滿 5000 日圓持護照退稅"},
+ 3:{w:"25–29°C · 降雨 60%",wtip:"USJ 排隊會曬，防曬帽子水壺",
+    eat:"USJ 園內奶油啤酒、蘑菇咖啡；或梅田／心齋橋美食",
+    wear:"整天步行，穿最好走的鞋；薄雨衣備用",
+    stay:"自由活動日，回難波飯店",
+    move:"電車自理（約 1000 日幣／天）；ICOCA／手機 Suica 嗶進嗶出",
+    shop:"心齋橋藥妝（松本清、SUGI 開到 24 點）、唐吉訶德；任天堂世界限定品"},
+ 4:{w:"24–29°C · 降雨 50%",wtip:"市區步行為主，薄外套＋折傘",
+    eat:"新世界串炸（醬汁只能沾一次！）、HARUKAS 美食樓層",
+    wear:"好走鞋；展望台風大帶薄外套",
+    stay:"回難波飯店",
+    move:"市區電車／步行；御堂筋線最常用",
+    shop:"阿倍野 HARUKAS 近鐵百貨、Q's Mall，退稅櫃台集中"},
+ 5:{w:"24–29°C · 降雨 50%",wtip:"回程日，行李輕便好整理",
+    eat:"黑門市場海膽／和牛串／河豚，現買現吃（現金方便）",
+    wear:"舒適好走，方便機場走動",
+    stay:"今日退房，護照與貴重物品隨身",
+    move:"遊覽車 → 關西機場約 50 分；提早辦 check-in 與退稅",
+    shop:"黑門市場伴手禮、機場免稅最後採買；退稅品別拆封"}
+};
+const MEETS=[
+ {iso:"2026-06-19",t:"13:10",label:"桃園機場集合"},
+ {iso:"2026-06-20",t:"08:00",label:"飯店出發（奈良）"},
+ {iso:"2026-06-22",t:"09:30",label:"出發（天王寺）"},
+ {iso:"2026-06-23",t:"09:00",label:"出發（大阪城）"},
+];
+function pad2(n){return String(n).padStart(2,"0");}
+function meetTarget(now){
+  for(const m of MEETS){const dt=new Date(+m.iso.slice(0,4),+m.iso.slice(5,7)-1,+m.iso.slice(8,10),+m.t.slice(0,2),+m.t.slice(3,5));if(dt>now)return {dt,label:m.label};}
+  return null;
+}
+function fmtCD(ms){let s=Math.floor(ms/1000);const d=Math.floor(s/86400);s-=d*86400;const h=Math.floor(s/3600);s-=h*3600;const m=Math.floor(s/60);s-=m*60;return (d>0?d+" 天 ":"")+pad2(h)+":"+pad2(m)+":"+pad2(s);}
+function nowNextLine(){
+  const today=todayISO(); const day=ROUTE.find(r=>r.iso===today); if(!day) return null;
+  if(day.free) return "今天是自由活動日，沒有固定團體時程。";
+  const now=new Date(); const nm=now.getHours()*60+now.getMinutes();
+  const parse=t=>{const m=/^(\d{1,2}):(\d{2})$/.exec(t);return m?+m[1]*60+ +m[2]:null;};
+  const stops=day.stops.map(s=>({...s,min:parse(s.t)})).filter(s=>s.min!=null);
+  if(!stops.length) return null;
+  const nx=stops.find(s=>s.min>nm);
+  if(!nx) return "今日行程已大致結束。";
+  if(nx===stops[0]) return "今日 "+nx.t+" 出發，首站 "+nx.name+"。";
+  const prev=stops[stops.indexOf(nx)-1];
+  return "現在約在 "+prev.name+"，下一站 "+nx.name+(nx.via?"（"+nx.via+"）":"")+"，預計 "+nx.t+"。";
+}
+function tick(){
+  const now=new Date();
+  const wk=["日","一","二","三","四","五","六"][now.getDay()];
+  const de=document.getElementById("dashDate"); if(de) de.textContent=now.getFullYear()+"年"+(now.getMonth()+1)+"月"+now.getDate()+"日　週"+wk;
+  const te=document.getElementById("dashTime"); if(te) te.textContent=pad2(now.getHours())+":"+pad2(now.getMinutes())+":"+pad2(now.getSeconds());
+  const tg=meetTarget(now); const cl=document.getElementById("cdLabel"), ct=document.getElementById("cdTime");
+  if(cl&&ct){ if(tg){cl.textContent="距離「"+tg.label+"」還有"; ct.textContent=fmtCD(tg.dt-now);} else {cl.textContent="集合提醒"; ct.textContent="行程已結束";} }
+  const nn=document.getElementById("dashNext"); if(nn){const l=nowNextLine(); nn.style.display=l?"block":"none"; if(l) nn.innerHTML='<span class="dn-l">Now · 動態</span>'+l;}
+}
+function buildDash(){
+  const di=DAY_INFO[(ROUTE.find(r=>r.iso===todayISO())||{}).d];
+  const wxLink='<a class="wx-link" href="https://www.google.com/search?q=%E5%A4%A7%E9%98%AA%20%E5%A4%A9%E6%B0%A3" target="_blank" rel="noopener">查即時預報 →</a>';
+  const wx=document.getElementById("dashWx");
+  if(wx){
+    if(di) wx.innerHTML='<span class="eyebrow" style="margin-bottom:6px;">Weather · 今日天氣</span><div class="wx-now"><b>'+di.w+'</b></div><div class="wx-tip">'+di.wtip+'</div>'+wxLink;
+    else wx.innerHTML='<span class="eyebrow" style="margin-bottom:6px;">Weather · 天氣</span>6/19–6/23 大阪 <b>23–29°C</b>、降雨 40–90%。帶折傘、穿防滑好走鞋。'+wxLink;
+  }
+  const rmd=document.getElementById("dashRmd");
+  if(rmd){
+    const g={eat:"道頓堀章魚燒、金龍拉麵、黑門市場海鮮；串炸醬汁只能沾一次",wear:"23–29°C 早晚溫差，薄外套＋折傘、防滑好走鞋",stay:"Rita Hotel 難波連住四晚，輕裝出門",move:"遊覽車段由旅行社安排；自由日電車約 1000 日幣／天",shop:"滿 5000 日圓持護照退稅；退稅品離境前別拆封"};
+    const d=di||g;
+    const rows=[["食","eat","#BC4630"],["衣","wear","#5F7367"],["住","stay","#A9854F"],["行","move","#6E665C"],["購","shop","#8A5A6B"]];
+    rmd.innerHTML='<div class="pad" style="padding-bottom:0;"><span class="eyebrow">Reminders · 食衣住行購</span></div>'+rows.map(r=>'<div class="rmd"><span class="rmd-b" style="background:'+r[2]+'">'+r[0]+'</span><span class="rmd-t">'+(d[r[1]]||g[r[1]])+'</span></div>').join("");
+  }
+  tick();
+}
+
+/* step log */
+const STEP_DAYS=["2026-06-19","2026-06-20","2026-06-21","2026-06-22","2026-06-23"];
+let STEPS={};
+function stepLoad(){try{return JSON.parse(localStorage.getItem("osaka_steps_v1")||"{}");}catch(e){return {};}}
+function stepSave(){try{localStorage.setItem("osaka_steps_v1",JSON.stringify(STEPS));}catch(e){}}
+function stepKm(s){return s*0.71/1000;}
+function stepRender(){
+  const today=todayISO();
+  const vals=STEP_DAYS.map(iso=>+STEPS[iso]||0);
+  const max=Math.max(1,...vals);
+  const chart=document.getElementById("stepChart");
+  if(chart) chart.innerHTML=STEP_DAYS.map((iso,i)=>{
+    const h=Math.round(vals[i]/max*100);
+    const md=(+iso.slice(5,7))+"/"+(+iso.slice(8,10));
+    return '<div class="sb'+(iso===today?' today':'')+'"><div class="bar" style="height:'+h+'%"></div><div class="bl">'+md+'</div></div>';
+  }).join("");
+  const total=vals.reduce((a,b)=>a+b,0);
+  const tt=document.getElementById("stepTotal");
+  if(tt) tt.innerHTML=total.toLocaleString()+' 步 <small>≈ '+stepKm(total).toFixed(1)+' km</small>';
+}
+function buildSteps(){
+  const rows=document.getElementById("stepRows"); if(!rows) return;
+  STEPS=stepLoad();
+  const today=todayISO();
+  rows.innerHTML=STEP_DAYS.map((iso,i)=>{
+    const md=(+iso.slice(5,7))+"/"+(+iso.slice(8,10));
+    return '<div class="steprow"><span class="sd"><b>D'+(i+1)+'</b>'+md+(iso===today?' ·今天':'')+'</span><input type="number" inputmode="numeric" data-iso="'+iso+'" placeholder="步數" value="'+(STEPS[iso]||"")+'"><span class="skm" data-km="'+iso+'">'+stepKm(+STEPS[iso]||0).toFixed(1)+' km</span></div>';
+  }).join("");
+  rows.querySelectorAll("input").forEach(inp=>inp.addEventListener("input",()=>{
+    const iso=inp.dataset.iso, v=parseInt(inp.value)||0;
+    if(v>0) STEPS[iso]=v; else delete STEPS[iso];
+    stepSave();
+    const km=rows.querySelector('.skm[data-km="'+iso+'"]'); if(km) km.textContent=stepKm(v).toFixed(1)+' km';
+    stepRender();
+  }));
+  stepRender();
+}
+
+/* big-text mode */
+function initBigText(){
+  const b=document.getElementById("bigTog"); if(!b) return;
+  let on=false; try{on=localStorage.getItem("osaka_big_v1")==="1";}catch(e){}
+  const apply=()=>{document.body.classList.toggle("bigtext",on);b.classList.toggle("on",on);};
+  apply();
+  b.addEventListener("click",()=>{on=!on;try{localStorage.setItem("osaka_big_v1",on?"1":"0");}catch(e){}apply();});
+}
+
+/* budget & tax refund */
+function bgLoad(){try{return +localStorage.getItem("osaka_budget_v1")||0;}catch(e){return 0;}}
+function budgetRefresh(){
+  const fill=document.getElementById("bgFill"); if(!fill) return;
+  const budget=bgLoad();
+  const spentJPY=(typeof FE!=="undefined"?FE:[]).reduce((s,e)=>s+(+e.a||0),0);
+  const spent=Math.round(spentJPY*FX);
+  const sp=document.getElementById("bgSpent"); if(sp) sp.textContent="NT$"+spent.toLocaleString();
+  const lf=document.getElementById("bgLeft");
+  if(budget>0){
+    const left=budget-spent, pct=Math.min(100,Math.round(spent/budget*100));
+    fill.style.width=pct+"%"; fill.classList.toggle("over",spent>budget);
+    if(lf){ lf.textContent="NT$"+left.toLocaleString(); lf.classList.toggle("over",left<0); }
+  } else { fill.style.width="0%"; if(lf){ lf.textContent="未設定"; lf.classList.remove("over"); } }
+}
+function buildBudget(){
+  const set=document.getElementById("budgetSet");
+  if(set){
+    const inp=document.getElementById("budgetIn"); const b=bgLoad(); if(b>0) inp.value=b;
+    set.addEventListener("click",()=>{const v=parseInt(inp.value)||0;try{localStorage.setItem("osaka_budget_v1",String(v));}catch(e){}budgetRefresh();});
+  }
+  const tax=document.getElementById("taxIn");
+  if(tax) tax.addEventListener("input",()=>{
+    const out=document.getElementById("taxOut"); const a=parseInt(tax.value)||0;
+    if(a<=0){out.innerHTML="輸入金額，試算可省的消費稅（免稅門檻 5,000 日圓）。";return;}
+    if(a<5000){out.innerHTML="未達 <b>5,000 日圓</b> 免稅門檻，還差 ¥"+(5000-a).toLocaleString()+"。";return;}
+    const save=Math.round(a*10/110);
+    out.innerHTML="達免稅門檻 ✓ 約可省消費稅 <b>¥"+save.toLocaleString()+"</b>（≈ NT$"+Math.round(save*FX).toLocaleString()+"）。結帳前出示護照辦免稅。";
+  });
+  budgetRefresh();
+}
+
+/* group roster & roll-call */
+let ROSTER=[];
+function rcLoad(){try{return JSON.parse(localStorage.getItem("osaka_roster_v1")||"[]");}catch(e){return [];}}
+function rcSave(){try{localStorage.setItem("osaka_roster_v1",JSON.stringify(ROSTER));}catch(e){} if(typeof CLOUD!=="undefined"&&CLOUD.on&&cloudClient)cloudPush();}
+function rcRender(){
+  const list=document.getElementById("rcList"); if(!list) return;
+  const groups={}; ROSTER.forEach((m,i)=>{(groups[m.g]=groups[m.g]||[]).push(Object.assign({},m,{i}));});
+  const gkeys=Object.keys(groups).sort((a,b)=>a-b);
+  list.innerHTML=ROSTER.length? gkeys.map(g=>{
+    const arr=groups[g], present=arr.filter(m=>m.p).length;
+    return '<div class="rc-gh">第'+g+'組 <span>'+present+'/'+arr.length+'</span></div>'+arr.map(m=>'<div class="rc-row'+(m.p?' on':'')+'" data-i="'+m.i+'"><span class="rc-ck">'+(m.p?'✓':'')+'</span><span class="rc-nm">'+m.n.replace(/</g,"&lt;")+'</span><button class="rc-del" data-del="'+m.i+'">✕</button></div>').join("");
+  }).join("") : '<div class="fe-empty">尚無名單，新增第一位團員。</div>';
+  const total=ROSTER.length, here=ROSTER.filter(m=>m.p).length;
+  const st=document.getElementById("rcStatus");
+  if(st){ st.innerHTML=(total&&here===total)?'全員到齊 ✓ <small>'+here+'/'+total+'</small>':'已到 <b>'+here+'</b> / 共 '+total+(total?'　還缺 '+(total-here)+' 位':''); st.classList.toggle("done",total>0&&here===total); }
+  const gc=document.getElementById("rcGroups");
+  if(gc) gc.innerHTML=gkeys.map(g=>{const arr=groups[g],p=arr.filter(m=>m.p).length;return '<span class="rc-chip'+(p===arr.length?' full':'')+'">第'+g+'組 '+p+'/'+arr.length+'</span>';}).join("");
+  list.querySelectorAll(".rc-row").forEach(r=>r.addEventListener("click",e=>{if(e.target.classList.contains("rc-del"))return;const i=+r.dataset.i;ROSTER[i].p=!ROSTER[i].p;rcSave();rcRender();}));
+  list.querySelectorAll(".rc-del").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();ROSTER.splice(+b.dataset.del,1);rcSave();rcRender();}));
+}
+function buildRoster(){
+  const add=document.getElementById("rcAdd"); if(!add) return;
+  ROSTER=rcLoad();
+  const nm=document.getElementById("rcName"), g=document.getElementById("rcGroup");
+  add.addEventListener("click",()=>{const v=nm.value.trim();if(!v)return;ROSTER.push({n:v,g:+g.value||1,p:false});rcSave();nm.value="";rcRender();nm.focus();});
+  nm.addEventListener("keydown",e=>{if(e.key==="Enter")add.click();});
+  const rs=document.getElementById("rcReset"); if(rs)rs.addEventListener("click",()=>{ROSTER.forEach(m=>m.p=false);rcSave();rcRender();});
+  const al=document.getElementById("rcAll"); if(al)al.addEventListener("click",()=>{ROSTER.forEach(m=>m.p=true);rcSave();rcRender();});
+  const cl=document.getElementById("rcClear"); if(cl)cl.addEventListener("click",()=>{if(ROSTER.length&&!confirm("確定清空整份名單？"))return;ROSTER=[];rcSave();rcRender();});
+  rcRender();
+}
+
+/* roster cloud sync (optional) */
+let CLOUD={on:false,url:"",key:"",code:""}, cloudClient=null, cloudTimer=null, cloudBusy=false;
+function cloudCfgLoad(){try{return Object.assign({on:false,url:"",key:"",code:""},JSON.parse(localStorage.getItem("osaka_cloud_v1")||"{}"));}catch(e){return {on:false,url:"",key:"",code:""};}}
+function cloudCfgSave(){try{localStorage.setItem("osaka_cloud_v1",JSON.stringify(CLOUD));}catch(e){}}
+function cloudStatus(m){const el=document.getElementById("cloudSt");if(el)el.textContent=m;}
+function cloudLib(){return new Promise((res,rej)=>{if(window.supabase&&window.supabase.createClient)return res();const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";s.onload=()=>res();s.onerror=()=>rej(new Error("lib"));document.head.appendChild(s);});}
+async function cloudStart(){
+  if(!CLOUD.url||!CLOUD.key||!CLOUD.code){cloudStatus("請填寫 URL、anon key 與團隊代碼。");return;}
+  try{
+    cloudStatus("連線中…");
+    await cloudLib();
+    cloudClient=window.supabase.createClient(CLOUD.url,CLOUD.key);
+    await cloudPull(true);
+    if(cloudTimer)clearInterval(cloudTimer);
+    cloudTimer=setInterval(()=>cloudPull(false),6000);
+    cloudStatus("已同步 ✓ 團隊代碼「"+CLOUD.code+"」全團共用（每 6 秒更新）");
+  }catch(e){cloudStatus("連線失敗，先用本機。請確認 URL／key／網路與 rosters 資料表。");CLOUD.on=false;cloudCfgSave();}
+}
+async function cloudPull(first){
+  if(!cloudClient||cloudBusy)return; cloudBusy=true;
+  try{
+    const r=await cloudClient.from("rosters").select("data").eq("code",CLOUD.code).maybeSingle();
+    if(!r.error&&r.data&&Array.isArray(r.data.data)){ROSTER=r.data.data;try{localStorage.setItem("osaka_roster_v1",JSON.stringify(ROSTER));}catch(e){}rcRender();}
+    else if(first){await cloudPush();}
+  }catch(e){}
+  cloudBusy=false;
+}
+async function cloudPush(){ if(!cloudClient)return; try{await cloudClient.from("rosters").upsert({code:CLOUD.code,data:ROSTER,updated_at:new Date().toISOString()},{onConflict:"code"});}catch(e){} }
+function buildCloud(){
+  CLOUD=cloudCfgLoad();
+  const u=document.getElementById("cloudUrl"),k=document.getElementById("cloudKey"),c=document.getElementById("cloudCode"),btn=document.getElementById("cloudOn");
+  if(!btn)return;
+  if(CLOUD.url)u.value=CLOUD.url; if(CLOUD.key)k.value=CLOUD.key; if(CLOUD.code)c.value=CLOUD.code;
+  if(CLOUD.on){cloudStatus("啟用中，連線…");cloudStart();}
+  btn.addEventListener("click",()=>{CLOUD={on:true,url:u.value.trim(),key:k.value.trim(),code:c.value.trim()};cloudCfgSave();cloudStart();});
+}
+
+/* GPS: walk session + locate on map */
+let myLoc=null, gps={watch:null,meters:0,last:null,t0:0,timer:null,steps:0};
+function secureGeo(){return ("geolocation" in navigator)&&(location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1");}
+function hav(a,b){const R=6371000,r=Math.PI/180,dLa=(b.lat-a.lat)*r,dLo=(b.lng-a.lng)*r,la1=a.lat*r,la2=b.lat*r;const x=Math.sin(dLa/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));}
+function geoErr(e){return (e&&e.code===1)?"未授權定位（請允許位置權限）":(e&&e.code===3)?"定位逾時，請重試":"無法取得定位";}
+function gpsT(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
+function gpsUpd(){gps.steps=Math.round(gps.meters/0.71);const k=document.getElementById("gpsKm"),st=document.getElementById("gpsSteps");if(k)k.textContent=(gps.meters/1000).toFixed(2);if(st)st.textContent=gps.steps.toLocaleString();}
+function gpsStop(){if(gps.watch!=null){try{navigator.geolocation.clearWatch(gps.watch);}catch(e){}}gps.watch=null;if(gps.timer){clearInterval(gps.timer);gps.timer=null;}const t=document.getElementById("gpsToggle");if(t){t.textContent="開始記錄";t.classList.remove("rec");}const a=document.getElementById("gpsAddBtn");if(a&&gps.steps>0)a.disabled=false;}
+function gpsStart(){
+  const msg=document.getElementById("gpsMsg");
+  if(!secureGeo()){if(msg)msg.textContent="定位需在已上線的 https 網址使用（部署到 Vercel／GitHub Pages 後開啟）。";return;}
+  gps.meters=0;gps.last=null;gps.t0=Date.now();gps.steps=0;gpsUpd();
+  const a=document.getElementById("gpsAddBtn");if(a)a.disabled=true;
+  const t=document.getElementById("gpsToggle");if(t){t.textContent="停止記錄";t.classList.add("rec");}
+  if(msg)msg.textContent="記錄中…請保持螢幕開啟、App 在前景。";
+  gps.timer=setInterval(()=>{const e=document.getElementById("gpsTime");if(e)e.textContent=gpsT(Math.floor((Date.now()-gps.t0)/1000));},1000);
+  gps.watch=navigator.geolocation.watchPosition(p=>{
+    if(p.coords.accuracy>35)return;
+    const c={lat:p.coords.latitude,lng:p.coords.longitude,t:p.timestamp};
+    if(gps.last){const d=hav(gps.last,c),dt=(c.t-gps.last.t)/1000;if(d>=4&&(dt<=0||d<=dt*12)){gps.meters+=d;gps.last=c;gpsUpd();}}
+    else gps.last=c;
+  },e=>{if(msg)msg.textContent=geoErr(e);gpsStop();},{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+}
+function gpsAddToday(){
+  if(gps.steps<=0)return;
+  const today=todayISO();
+  const msg=document.getElementById("gpsMsg");
+  if(STEP_DAYS.indexOf(today)<0){if(msg)msg.textContent="今天不在行程日期內，未加入。";return;}
+  STEPS=stepLoad();STEPS[today]=(+STEPS[today]||0)+gps.steps;stepSave();buildSteps();
+  if(msg)msg.textContent="已加入今日步數 +"+gps.steps.toLocaleString()+" 步。";
+  const a=document.getElementById("gpsAddBtn");if(a)a.disabled=true;gps.steps=0;
+}
+function geoLocate(){
+  const out=document.getElementById("geoOut");
+  if(!secureGeo()){if(out)out.textContent="定位需在已上線的 https 網址使用（部署後開啟）。";return;}
+  if(out)out.textContent="定位中…";
+  navigator.geolocation.getCurrentPosition(p=>{
+    myLoc={lat:p.coords.latitude,lng:p.coords.longitude};
+    const acc=Math.round(p.coords.accuracy);
+    const list=KP.map(s=>({name:s.name,d:hav(myLoc,{lat:s.lat,lng:s.lng})})).sort((a,b)=>a.d-b.d).slice(0,4);
+    const dir=n=>"https://www.google.com/maps/dir/?api=1&origin="+myLoc.lat+","+myLoc.lng+"&destination="+encodeURIComponent(n);
+    out.innerHTML='<div class="geo-me">目前位置已取得（精度 ±'+acc+'m）</div>'+list.map(s=>'<div class="geo-row"><span class="geo-n">'+s.name+'</span><span class="geo-d">'+(s.d<1000?(s.d/1000).toFixed(2):(s.d/1000).toFixed(1))+' km</span><a class="geo-go" href="'+dir(s.name)+'" target="_blank" rel="noopener">導航</a></div>').join("");
+  },e=>{if(out)out.textContent=geoErr(e)+"。";},{enableHighAccuracy:true,maximumAge:5000,timeout:15000});
+}
+function buildGPS(){
+  const t=document.getElementById("gpsToggle");if(t)t.addEventListener("click",()=>{if(gps.watch!=null)gpsStop();else gpsStart();});
+  const a=document.getElementById("gpsAddBtn");if(a)a.addEventListener("click",gpsAddToday);
+  const g=document.getElementById("geoBtn");if(g)g.addEventListener("click",geoLocate);
+}
+
+document.addEventListener("DOMContentLoaded",()=>{initBigText();buildConcierge();buildDash();renderDays();buildMap();buildChecklist();buildExpense();buildBudget();buildSteps();buildRoster();buildCloud();buildGPS();buildRoute();initTabs();setInterval(buildRoute,60000);setInterval(tick,1000);if("serviceWorker" in navigator && location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{});}});
+</script>
+</body>
+</html>

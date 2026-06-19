@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#2B2724" />
+<title>五日地圖 · 大阪奈良</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<style>
+  :root{--ink:#2B2724;--bone:#F3EEE6;--gold:#A9854F;--line:#E3DBCD;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bone);font-family:"Noto Sans TC",-apple-system,system-ui,sans-serif;}
+  #top{position:relative;z-index:1000;background:#FBF8F3;border-bottom:1px solid var(--line);padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;display:flex;align-items:center;gap:10px;}
+  #top a.back{color:var(--ink);text-decoration:none;font-size:13px;font-weight:500;white-space:nowrap;}
+  #top h1{font-family:"Noto Serif TC",serif;font-weight:500;font-size:16px;margin:0;flex:1;text-align:center;letter-spacing:.04em;}
+  #locBtn{border:1px solid var(--ink);background:var(--ink);color:#F4EFE6;border-radius:6px;padding:7px 11px;font-size:12px;cursor:pointer;white-space:nowrap;}
+  #chips{position:relative;z-index:1000;background:#FBF8F3;border-bottom:1px solid var(--line);padding:8px 12px;display:flex;gap:7px;overflow-x:auto;}
+  .chip{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 13px;font-size:12px;color:#6E665C;cursor:pointer;}
+  .chip .sw{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+  .chip.on{background:var(--ink);color:#F4EFE6;border-color:var(--ink);}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;}
+  #wrap{display:flex;flex-direction:column;height:100%;}
+  #mapbox{flex:1;position:relative;}
+  .pin{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;color:#fff;font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;font-size:14px;border:2.5px solid #FBF8F3;box-shadow:0 1px 4px rgba(0,0,0,.3);}
+  .lpop{font-family:"Noto Sans TC",sans-serif;}
+  .lpop b{font-size:14px;color:var(--ink);}
+  .lpop .ty{font-size:11px;color:#9B9389;}
+  .lpop a{display:inline-block;margin-top:6px;color:var(--gold);font-size:12px;}
+  #note{position:absolute;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom,0px) + 10px);z-index:1000;background:rgba(43,39,36,.9);color:#F4EFE6;font-size:11px;border-radius:8px;padding:9px 12px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="top">
+    <a class="back" href="index.html">← 行程</a>
+    <h1>五日地圖</h1>
+    <button id="locBtn">回我的位置</button>
+  </div>
+  <div id="chips"></div>
+  <div id="mapbox"><div id="map"></div></div>
+</div>
+<div id="note">真實地圖＋GPS 藍點。允許定位權限後顯示你的位置；需在 https 網址下使用。</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const SPOTS=[{"d": 1, "i": 2, "n": "關西國際機場 KIX", "t": "交通", "lat": 34.432, "lng": 135.2304, "c": "#6E665C"}, {"d": 1, "i": 3, "n": "Rita Hotel 難波", "t": "住宿", "lat": 34.647, "lng": 135.4955, "c": "#6E665C"}, {"d": 2, "i": 1, "n": "奈良公園（鹿公園）", "t": "景點", "lat": 34.6851, "lng": 135.843, "c": "#BC4630"}, {"d": 2, "i": 2, "n": "春日大社", "t": "世界遺產", "lat": 34.6818, "lng": 135.8483, "c": "#BC4630"}, {"d": 2, "i": 3, "n": "平城宮跡歷史公園", "t": "景點", "lat": 34.6911, "lng": 135.7956, "c": "#BC4630"}, {"d": 2, "i": 4, "n": "三井 OUTLET & LaLaPORT 門真", "t": "購物", "lat": 34.737, "lng": 135.586, "c": "#BC4630"}, {"d": 3, "i": 1, "n": "日本環球影城 USJ", "t": "自費景點", "lat": 34.6654, "lng": 135.4323, "c": "#A9854F"}, {"d": 3, "i": 2, "n": "梅田 · GRAND FRONT 大阪", "t": "購物", "lat": 34.7048, "lng": 135.4946, "c": "#A9854F"}, {"d": 3, "i": 3, "n": "心齋橋筋 · 道頓堀", "t": "購物·美食", "lat": 34.6723, "lng": 135.501, "c": "#A9854F"}, {"d": 4, "i": 1, "n": "難波八阪神社", "t": "景點", "lat": 34.6601, "lng": 135.497, "c": "#5F7367"}, {"d": 4, "i": 2, "n": "阿倍野 HARUKAS 近鐵百貨", "t": "購物·景點", "lat": 34.6457, "lng": 135.5135, "c": "#5F7367"}, {"d": 4, "i": 3, "n": "天王寺公園", "t": "景點", "lat": 34.6491, "lng": 135.5145, "c": "#5F7367"}, {"d": 4, "i": 4, "n": "新世界 · 通天閣", "t": "景點·美食", "lat": 34.6524, "lng": 135.5063, "c": "#5F7367"}, {"d": 5, "i": 1, "n": "大阪城公園", "t": "景點", "lat": 34.6873, "lng": 135.5259, "c": "#8A5A6B"}, {"d": 5, "i": 2, "n": "黑門市場", "t": "美食", "lat": 34.6652, "lng": 135.5061, "c": "#8A5A6B"}, {"d": 5, "i": 3, "n": "關西國際機場 → 桃園", "t": "交通", "lat": 34.432, "lng": 135.2304, "c": "#8A5A6B"}];
+const DAY_COLOR=["#6E665C", "#BC4630", "#A9854F", "#5F7367", "#8A5A6B"];
+const map=L.map("map",{zoomControl:true}).setView([34.67,135.50],11);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+const layers={}, lines={};
+let curFilter="all";
+function pinIcon(color,label){return L.divIcon({className:"",html:'<div class="pin" style="background:'+color+'">'+label+'</div>',iconSize:[26,26],iconAnchor:[13,13]});}
+const byDay={};
+SPOTS.forEach(s=>{(byDay[s.d]=byDay[s.d]||[]).push(s);});
+Object.keys(byDay).forEach(d=>{
+  const grp=L.layerGroup();
+  const arr=byDay[d].slice().sort((a,b)=>a.i-b.i);
+  arr.forEach(s=>{
+    const mk=L.marker([s.lat,s.lng],{icon:pinIcon(s.c,s.i)});
+    mk.bindPopup('<div class="lpop"><b>'+s.n+'</b><br><span class="ty">Day '+s.d+' · '+s.t+'</span><br><a href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(s.n)+'" target="_blank" rel="noopener">在 Google 地圖開啟 →</a></div>');
+    mk.addTo(grp);
+  });
+  if(arr.length>1){const pl=L.polyline(arr.map(s=>[s.lat,s.lng]),{color:DAY_COLOR[d-1],weight:3,dashArray:"6 7",opacity:.6});lines[d]=pl;}
+  layers[d]=grp;
+});
+function showFilter(f){
+  curFilter=f;
+  Object.keys(layers).forEach(d=>{map.removeLayer(layers[d]);if(lines[d])map.removeLayer(lines[d]);});
+  const days=f==="all"?Object.keys(layers):[String(f)];
+  days.forEach(d=>{layers[d].addTo(map);if(lines[d])lines[d].addTo(map);});
+  const pts=[];days.forEach(d=>byDay[d].forEach(s=>pts.push([s.lat,s.lng])));
+  if(pts.length)map.fitBounds(pts,{padding:[50,50],maxZoom:14});
+  document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c.dataset.f===String(f)));
+}
+const chips=document.getElementById("chips");
+chips.innerHTML='<div class="chip" data-f="all">全部</div>'+Object.keys(byDay).sort().map(d=>'<div class="chip" data-f="'+d+'"><span class="sw" style="background:'+DAY_COLOR[d-1]+'"></span>Day '+d+'</div>').join("");
+chips.querySelectorAll(".chip").forEach(c=>c.addEventListener("click",()=>showFilter(c.dataset.f==="all"?"all":+c.dataset.f)));
+showFilter("all");
+
+/* GPS blue dot */
+let blue=null, accCircle=null, located=false;
+if("geolocation" in navigator){
+  navigator.geolocation.watchPosition(p=>{
+    const ll=[p.coords.latitude,p.coords.longitude];
+    if(!blue){blue=L.circleMarker(ll,{radius:8,color:"#fff",weight:3,fillColor:"#2A7DE1",fillOpacity:1}).addTo(map);}
+    else blue.setLatLng(ll);
+    if(accCircle)map.removeLayer(accCircle);
+    accCircle=L.circle(ll,{radius:p.coords.accuracy,color:"#2A7DE1",weight:1,fillColor:"#2A7DE1",fillOpacity:.08}).addTo(map);
+    if(!located){located=true;map.setView(ll,14);}
+  },err=>{document.getElementById("note").textContent=(err.code===1?"未授權定位（請允許位置權限）":"無法取得定位")+"；地圖仍可瀏覽。";},{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+}else{document.getElementById("note").textContent="此裝置不支援定位；地圖仍可瀏覽。";}
+document.getElementById("locBtn").addEventListener("click",()=>{if(blue)map.setView(blue.getLatLng(),15);else document.getElementById("note").textContent="尚未取得定位，請允許權限並稍候。";});
+setTimeout(()=>{const n=document.getElementById("note");if(n)n.style.display="none";},9000);
+</script>
+</body>
+</html>

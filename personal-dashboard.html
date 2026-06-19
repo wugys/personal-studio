@@ -6803,6 +6803,24 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
   let TRIPS = [];          // 動態於 loadTrips() 初始化
   let activeTripId = null; // 當前進入的 trip
 
+  // ===== 外部旅遊模組（獨立 HTML，不走內部 itinerary view）=====
+  // 點擊時開啟外部頁面（新分頁），而非內部 travelView。
+  // 縮圖用 localCover（放在與本檔同層的相對路徑），抓不到自動退回佔位圖。
+  const EXTERNAL_TRIPS = [
+    {
+      id: 'osaka_2026',
+      external: true,
+      url: 'osaka/index.html',
+      title: '超值大阪 ＋ 奈良 · 5 天',
+      destination: '大阪 · 奈良 · 環球影城',
+      startDate: '2026-06-19',
+      endDate: '2026-06-23',
+      days: 5,
+      spotCount: 16,
+      localCover: 'osaka/cover.jpg'
+    }
+  ];
+
   // ===== 多趟行程資料庫 =====
   const ITINERARIES = {};
   let ITINERARY = null; // 當前作用中的 itinerary
@@ -7500,6 +7518,8 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       spotCount: it.days.reduce((n, d) => n + d.spots.filter(s => s.type === '景點').length, 0),
       itinerary: it
     }));
+    // 併入外部模組（osaka 等獨立 HTML）
+    TRIPS = TRIPS.concat(EXTERNAL_TRIPS.map(e => ({ ...e })));
     // 按出發日期排序（近的在前）
     TRIPS.sort((a, b) => a.startDate.localeCompare(b.startDate));
   }
@@ -7523,16 +7543,21 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       const startD = new Date(t.startDate + 'T00:00:00');
       const endD = new Date(t.endDate + 'T00:00:00');
       const cached = wikiCache[t.coverImageWiki];
-      const cover = cached
+      const cover = t.localCover
+        ? `<img src="${escape(t.localCover)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
+        : cached
         ? `<img src="${cached}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
         : `<div class="trip-cover-placeholder" data-trip-cover="${escape(t.id)}"></div>`;
       const dateRange = `${startD.getMonth()+1}/${startD.getDate()} – ${endD.getMonth()+1}/${endD.getDate()}`;
       const fullDate = `${startD.getFullYear()}.${String(startD.getMonth()+1).padStart(2,'0')}.${String(startD.getDate()).padStart(2,'0')} → ${String(endD.getMonth()+1).padStart(2,'0')}.${String(endD.getDate()).padStart(2,'0')}`;
-      const userBadge = t.itinerary._userCreated
+      const userBadge = (t.itinerary && t.itinerary._userCreated)
         ? `<div style="position:absolute; top:14px; left:14px; z-index:2; background:rgba(212,165,116,0.85); color:var(--bg-base); font-family:var(--mono); font-size:9px; padding:3px 8px; border-radius:2px; letter-spacing:0.15em; text-transform:uppercase; font-weight:600;">MY · DRAFT</div>`
         : '';
+      const clickHandler = t.external
+        ? `openExternalModule('${escape(t.url)}')`
+        : `openTrip('${escape(t.id)}')`;
       return `
-        <div class="trip-card ${st.state}" onclick="openTrip('${escape(t.id)}')">
+        <div class="trip-card ${st.state}" onclick="${clickHandler}">
           <div class="trip-cover">
             ${cover}
             <div class="trip-cover-overlay"></div>
@@ -7596,6 +7621,13 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     activeTripId = tripId;
     ITINERARY = ITINERARIES[tripId];
     showView('travelView');
+  }
+
+  // 開啟外部旅遊模組（獨立 HTML，新分頁；被擋則同視窗導航）
+  function openExternalModule(url) {
+    if (!url) { showToast('找不到該模組'); return; }
+    const w = window.open(url, '_blank');
+    if (!w) window.location.href = url;
   }
 
   // ===== 新增旅遊 Wizard =====
