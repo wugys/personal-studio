@@ -5762,14 +5762,12 @@ ${userQuery}`;
     txns: 'tw_transactions_v1',
     realized: 'tw_realized_v1',  // 已實現損益（賣出時累積）
     news: 'tw_news_v1',          // { lastFetch: 'YYYY-MM-DD', perStock: { symbol: { fetchedAt, items: [...] } } }
-    analysis: 'tw_analysis_v1',  // { perStock: { symbol: { fetchedAt, scoreBuy, scoreSell, summary, reasoning } } }
     newsWorker: 'tw_news_worker_url_v1',  // Cloudflare Worker URL（A 方案：RSS 代理）
     sync: 'tw_sync_v1'  // { enabled, supabaseUrl, supabaseKey, userId, lastPullAt }
   };
 
-  // News / Analysis state
+  // News state
   let twNewsState = { lastFetch: '', perStock: {} };
-  let twAnalysisState = { perStock: {} };
 
   // ===== 台股常見股票/ETF 內建清單（約 250 檔） =====
   const TW_STOCKS = [
@@ -9141,7 +9139,6 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       catch (e) { throw new Error('Worker URL 格式錯誤：' + workerUrl); }
       url.searchParams.set('q', q);
       const finalUrl = url.toString();
-      console.log('[news.fetch]', finalUrl);
       const resp = await fetch(finalUrl, { cache: 'no-store' });
       let body;
       try { body = await resp.json(); } catch (e) { body = null; }
@@ -9209,19 +9206,14 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
 最後提醒：以上分析僅為資訊整理，不構成投資建議。`;
   }
 
-  // 載入儲存的新聞 / 分析
+  // 載入儲存的新聞
   async function loadTwNewsAnalysis() {
     try {
       const n = await readKey(TW_STORAGE.news);
       twNewsState = n ? JSON.parse(n) : { lastFetch: '', perStock: {} };
     } catch (e) { twNewsState = { lastFetch: '', perStock: {} }; }
-    try {
-      const a = await readKey(TW_STORAGE.analysis);
-      twAnalysisState = a ? JSON.parse(a) : { perStock: {} };
-    } catch (e) { twAnalysisState = { perStock: {} }; }
   }
   async function saveTwNewsState() { await writeKey(TW_STORAGE.news, JSON.stringify(twNewsState)); }
-  async function saveTwAnalysisState() { await writeKey(TW_STORAGE.analysis, JSON.stringify(twAnalysisState)); }
 
   // 抓所有持股的新聞（依序，避免並發太多）
   async function refreshAllTwNews() {
@@ -9302,7 +9294,6 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       catch (e) { throw new Error('URL 格式錯誤 · ' + v); }
       url.searchParams.set('q', '台積電');
       const finalUrl = url.toString();
-      console.log('[news.test]', finalUrl);
       const resp = await fetch(finalUrl, { cache: 'no-store' });
       let data;
       try { data = await resp.json(); } catch (e) { data = null; }
