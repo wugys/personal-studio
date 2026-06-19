@@ -3245,6 +3245,250 @@
     </div>
   </div>
 
+  <!-- ============ 加密貨幣 VIEW ============ -->
+  <div id="cryptoView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">◆ CRYPTO · ASSETS</div>
+        <h1>加密 <em>貨幣</em></h1>
+        <p>持倉管理、平均成本、未實現/已實現損益、交易記錄（美元計價）。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="openCryptoTxnModal()">+ 新交易</button>
+        <button class="btn btn-primary" onclick="openCryptoHoldingModal()">+ 新增持倉</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="cryptoStats"></div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.15em;">SORT BY</span>
+      <select id="cryptoSortBy" class="form-select" onchange="renderCryptoHoldings()" style="width:auto;">
+        <option value="value">現值（高→低）</option>
+        <option value="pnl_pct">報酬率（高→低）</option>
+        <option value="pnl_abs">損益金額（高→低）</option>
+        <option value="symbol">幣別代號</option>
+        <option value="date">買入日期（新→舊）</option>
+      </select>
+      <span id="cryptoSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
+      <button class="btn btn-sm" id="cryptoSyncBtn" onclick="syncCryptoNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
+      <button class="btn btn-sm" onclick="openCryptoSyncModal()" title="跨裝置同步設定">⚙</button>
+      <button class="btn btn-sm" onclick="openCryptoBatchPriceModal()">⟳ 批次更新幣價</button>
+      <button class="btn btn-sm" onclick="exportCryptoData()" title="備份所有加密貨幣資料">↓ 匯出</button>
+      <button class="btn btn-sm" onclick="document.getElementById('cryptoImport').click()" title="從備份還原">↑ 匯入</button>
+      <input type="file" id="cryptoImport" accept=".json" style="display:none" onchange="importCryptoData(event)">
+    </div>
+
+    <div id="cryptoHoldingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ 加密貨幣持倉 Modal ============ -->
+  <div class="modal-backdrop" id="cryptoHoldingModal">
+    <div class="modal">
+      <h2 id="cryptoHoldingModalTitle">新增 <em>持倉</em></h2>
+      <form onsubmit="saveCryptoHolding(event)">
+        <input type="hidden" id="cryptoHoldingEditId">
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label">⌕ 搜尋（輸入代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="cryptoHoldingSearchBox" placeholder="例如 BTC、ETH、Solana..." autocomplete="off" oninput="onCryptoHoldingSearch(this.value)" onfocus="onCryptoHoldingSearch(this.value)" onblur="setTimeout(()=>document.getElementById('cryptoHoldingSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="cryptoHoldingSearchResults" style="display:none;"></div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:4px; letter-spacing:0.05em;">內建熱門幣別 · 找不到可手動填下方欄位</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號</label>
+            <input type="text" class="form-input" id="cryptoHoldingSymbol" required placeholder="BTC" style="font-family:var(--mono); text-transform:uppercase;">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="cryptoHoldingName" required placeholder="Bitcoin">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">持有數量</label>
+            <input type="number" step="any" min="0" class="form-input" id="cryptoHoldingShares" required placeholder="0.5">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">平均成本 (US$)</label>
+            <input type="number" step="any" class="form-input" id="cryptoHoldingAvgCost" required placeholder="42000">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">目前幣價 (US$)</label>
+            <input type="number" step="any" class="form-input" id="cryptoHoldingCurrentPrice" placeholder="68000">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">買入日期</label>
+            <input type="date" class="form-input" id="cryptoHoldingBuyDate">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">交易所 / 錢包</label>
+            <select class="form-select" id="cryptoHoldingMarket">
+              <option value="Binance">Binance</option>
+              <option value="MAX">MAX</option>
+              <option value="Coinbase">Coinbase</option>
+              <option value="Bitget">Bitget</option>
+              <option value="OKX">OKX</option>
+              <option value="冷錢包">冷錢包（Ledger 等）</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類別</label>
+            <input type="text" class="form-input" id="cryptoHoldingIndustry" placeholder="主流幣 / Layer1 / 穩定幣">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">策略筆記</label>
+          <textarea class="form-textarea" id="cryptoHoldingNotes" placeholder="買入理由、目標價、停損點..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="cryptoHoldingDeleteBtn" onclick="deleteCryptoHolding()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除持倉</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeCryptoHoldingModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 加密貨幣交易 Modal ============ -->
+  <div class="modal-backdrop" id="cryptoTxnModal">
+    <div class="modal">
+      <h2 id="cryptoTxnModalTitle">新增 <em>交易</em></h2>
+      <form onsubmit="saveCryptoTxn(event)">
+        <input type="hidden" id="cryptoTxnEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="cryptoTxnType" onchange="onCryptoTxnTypeChange()">
+              <option value="buy">買進</option>
+              <option value="sell">賣出</option>
+              <option value="dividend">質押 / 利息獎勵（USD 價值）</option>
+              <option value="stock_div">空投 / 分叉（增加數量）</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">日期</label>
+            <input type="date" class="form-input" id="cryptoTxnDate" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">⌕ 搜尋幣別（代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="cryptoTxnSearchBox" placeholder="例如 BTC、ETH、Solana..." autocomplete="off" oninput="onCryptoTxnSearch(this.value)" onfocus="onCryptoTxnSearch(this.value)" onblur="setTimeout(()=>document.getElementById('cryptoTxnSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="cryptoTxnSearchResults" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號</label>
+            <input type="text" class="form-input" id="cryptoTxnSymbol" required placeholder="BTC" style="font-family:var(--mono); text-transform:uppercase;" oninput="onCryptoTxnSymbolChange()">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="cryptoTxnSymbolName" placeholder="例如 Bitcoin">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="cryptoTxnSharesLabel">數量</label>
+            <input type="number" step="any" min="0" class="form-input" id="cryptoTxnShares" required placeholder="0.5">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="cryptoTxnPriceLabel">單價 (US$)</label>
+            <input type="number" step="any" class="form-input" id="cryptoTxnPrice" required placeholder="42000">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">手續費 (US$)</label>
+          <input type="number" step="any" class="form-input" id="cryptoTxnFee" placeholder="交易所手續費（可留空）">
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="cryptoTxnNotes" placeholder="">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="cryptoTxnDeleteBtn" onclick="deleteCryptoTxn()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeCryptoTxnModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 加密貨幣批次幣價 Modal ============ -->
+  <div class="modal-backdrop" id="cryptoBatchPriceModal">
+    <div class="modal">
+      <h2>批次 <em>更新幣價</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
+        手動填入各持倉最新幣價（US$），按「全部儲存」一次更新。
+      </div>
+      <div id="cryptoBatchPriceList" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="form-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn" onclick="closeCryptoBatchPriceModal()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="saveCryptoBatchPrices()">全部儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 加密貨幣雲端同步設定 Modal（Supabase）============ -->
+  <div class="modal-backdrop" id="cryptoSyncModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>☁ 跨裝置<em>雲端同步</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        透過你自己的 <strong>Supabase 專案</strong>同步加密貨幣持倉、交易記錄。可重用旅遊／台股／美股用的 Supabase，無需另開。
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:0.1em;">
+          <input type="checkbox" id="cryptoSyncEnabled"> 啟用雲端同步
+        </label>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="cryptoSyncSupabaseUrl" class="form-input" placeholder="https://xxx.supabase.co" style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillCryptoSyncFromTrv()" title="從台股／旅遊設定帶入">↓ 用現有的</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <input type="text" id="cryptoSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">User ID（多裝置要相同）</label>
+        <input type="text" id="cryptoSyncUserId" class="form-input" placeholder="kevin-personal（建議跟台股/美股用同一個）">
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px;">相同 ID 的裝置才會互通資料；不同 ID 等於不同帳號。</div>
+      </div>
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 建表 SQL（複製到 Supabase 跑一次）</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">到 Supabase Dashboard → 左側 <strong>SQL Editor</strong> → 點下方按鈕複製 SQL → 貼上 → Run。</div>
+        <button class="btn btn-sm" type="button" onclick="copyCryptoSyncSql()" style="margin-top:10px;">📋 複製建表 SQL</button>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.5;">💡 會建 2 張表：<code>crypto_holdings</code>、<code>crypto_transactions</code>，用 RLS Allow-All policy（適合個人用）。</div>
+      </details>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">⚠ 衝突策略：last-write-wins。後寫入雲端的版本會贏。建議短時間內不要兩台同步編輯。</div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeCryptoSyncModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveCryptoSyncSettings()">儲存 + 立即同步</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 旅遊列表 VIEW（先看到所有 trip）============ -->
   <div id="tripsView" class="view">
     <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
@@ -4410,7 +4654,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 6.1 · ζ</div>
+    <div>v 6.2 · ζ</div>
   </footer>
 </div>
 
@@ -4729,7 +4973,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     { id: 'm_bond', name: '債券 · 債券 ETF', nameEn: 'BOND · FIXED INCOME', icon: '═', desc: '公債、公司債、高收益債、債券 ETF 利息追蹤。', status: 'soon', groupId: 'g_invest', order: 9 },
 
     // === 投資中心 · 另類資產（~30%）===
-    { id: 'm_crypto', name: '加密貨幣', nameEn: 'CRYPTO · ASSETS', icon: '◆', desc: 'BTC / ETH / 穩定幣持倉、成本均價、交易所分布。', status: 'soon', groupId: 'g_invest', order: 10 },
+    { id: 'm_crypto', name: '加密貨幣', nameEn: 'CRYPTO · ASSETS', icon: '◆', desc: 'BTC / ETH / 穩定幣持倉、成本均價、交易記錄（美元計價）。', status: 'active', groupId: 'g_invest', order: 10, builtin: true, target: 'cryptoView' },
     { id: 'm_metals', name: '貴金屬', nameEn: 'PRECIOUS · METALS', icon: '☼', desc: '黃金、白銀實體與紙黃金。對沖通膨、避險配置。', status: 'soon', groupId: 'g_invest', order: 11 },
     { id: 'm_forex', name: '外幣存款', nameEn: 'FOREX · DEPOSIT', icon: '$', desc: '美元、日圓、人民幣等外幣定存。匯率損益、利息追蹤。', status: 'soon', groupId: 'g_invest', order: 12 },
 
@@ -4777,7 +5021,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '7';
+      const CURRENT_VERSION = '8';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -7769,6 +8013,739 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     renderUsHoldings();
     renderUsStockStats();
     showToast('股價已更新');
+  }
+
+  // ============================================================
+  // 加密貨幣 · Crypto（鏡像美股，美元計價、8 位小數數量、無證交稅）
+  // ============================================================
+  const CRYPTO_STORAGE = {
+    holdings: 'crypto_holdings_v1',
+    txns: 'crypto_transactions_v1',
+    realized: 'crypto_realized_v1',
+    sync: 'crypto_sync_v1'
+  };
+  const CRYPTO_COINS = [
+    { symbol: 'BTC', name: 'Bitcoin', market: 'Binance', industry: '主流幣' },
+    { symbol: 'ETH', name: 'Ethereum', market: 'Binance', industry: '主流幣 · Layer1' },
+    { symbol: 'SOL', name: 'Solana', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'BNB', name: 'BNB', market: 'Binance', industry: '交易所幣' },
+    { symbol: 'XRP', name: 'XRP (Ripple)', market: 'Binance', industry: '支付' },
+    { symbol: 'ADA', name: 'Cardano', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'DOGE', name: 'Dogecoin', market: 'Binance', industry: '迷因幣' },
+    { symbol: 'AVAX', name: 'Avalanche', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'DOT', name: 'Polkadot', market: 'Binance', industry: 'Layer0' },
+    { symbol: 'TRX', name: 'TRON', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'LINK', name: 'Chainlink', market: 'Binance', industry: 'Oracle' },
+    { symbol: 'TON', name: 'Toncoin', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'MATIC', name: 'Polygon', market: 'Binance', industry: 'Layer2' },
+    { symbol: 'SHIB', name: 'Shiba Inu', market: 'Binance', industry: '迷因幣' },
+    { symbol: 'LTC', name: 'Litecoin', market: 'Binance', industry: '支付' },
+    { symbol: 'BCH', name: 'Bitcoin Cash', market: 'Binance', industry: '支付' },
+    { symbol: 'NEAR', name: 'NEAR Protocol', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'APT', name: 'Aptos', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'SUI', name: 'Sui', market: 'Binance', industry: 'Layer1' },
+    { symbol: 'ARB', name: 'Arbitrum', market: 'Binance', industry: 'Layer2' },
+    { symbol: 'OP', name: 'Optimism', market: 'Binance', industry: 'Layer2' },
+    { symbol: 'PEPE', name: 'Pepe', market: 'Binance', industry: '迷因幣' },
+    { symbol: 'UNI', name: 'Uniswap', market: 'Binance', industry: 'DeFi' },
+    { symbol: 'AAVE', name: 'Aave', market: 'Binance', industry: 'DeFi' },
+    { symbol: 'USDT', name: 'Tether', market: 'Binance', industry: '穩定幣' },
+    { symbol: 'USDC', name: 'USD Coin', market: 'Binance', industry: '穩定幣' }
+  ];
+  (function dedupCryptoCoins() {
+    const seen = new Set();
+    for (let i = 0; i < CRYPTO_COINS.length; i++) {
+      if (seen.has(CRYPTO_COINS[i].symbol)) { CRYPTO_COINS.splice(i, 1); i--; }
+      else seen.add(CRYPTO_COINS[i].symbol);
+    }
+  })();
+  function searchCryptoCoins(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    return CRYPTO_COINS.filter(s =>
+      s.symbol.toLowerCase().includes(q) ||
+      s.name.toLowerCase().includes(q) ||
+      (s.industry && s.industry.toLowerCase().includes(q))
+    ).slice(0, 12);
+  }
+
+  let cryptoHoldings = [];
+  let cryptoTxns = [];
+  let cryptoRealizedPnL = 0;
+  let cryptoExpandedHoldingId = null;
+  let cryptoSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
+  let cryptoSyncClient = null;
+
+  const cryptoMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cryptoMoneySign = n => (n >= 0 ? '+' : '-') + '$' + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cryptoQty = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 8 });
+  const cryptoPrice = n => { n = Number(n || 0); return n >= 1 ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : n.toLocaleString('en-US', { maximumFractionDigits: 6 }); };
+
+  async function loadCrypto() {
+    try { const h = await readKey(CRYPTO_STORAGE.holdings); cryptoHoldings = h ? JSON.parse(h) : []; }
+    catch (e) { cryptoHoldings = []; }
+    try { const t = await readKey(CRYPTO_STORAGE.txns); cryptoTxns = t ? JSON.parse(t) : []; }
+    catch (e) { cryptoTxns = []; }
+    try { const r = await readKey(CRYPTO_STORAGE.realized); cryptoRealizedPnL = r ? Number(r) : 0; }
+    catch (e) { cryptoRealizedPnL = 0; }
+    await loadCryptoSyncConfig();
+    renderCryptoStats();
+    renderCryptoHoldings();
+    renderCryptoSyncBadge();
+    if (cryptoSyncConfig.enabled) {
+      pullAllCryptoFromSupabase().then(r => {
+        if (r) {
+          renderCryptoStats();
+          renderCryptoHoldings();
+          renderCryptoSyncBadge();
+          if (r.hCount > 0 || r.tCount > 0) showToast(`☁ 已從雲端同步 · ${r.hCount} 持倉 / ${r.tCount} 交易`);
+        }
+      }).catch(e => console.warn('crypto auto pull fail', e));
+    }
+  }
+  async function saveCryptoHoldings() { await writeKey(CRYPTO_STORAGE.holdings, JSON.stringify(cryptoHoldings)); }
+  async function saveCryptoTxns() { await writeKey(CRYPTO_STORAGE.txns, JSON.stringify(cryptoTxns)); }
+  async function saveCryptoRealized() { await writeKey(CRYPTO_STORAGE.realized, String(cryptoRealizedPnL)); }
+
+  // ===== Crypto Supabase 同步 =====
+  async function loadCryptoSyncConfig() {
+    try { const v = await readKey(CRYPTO_STORAGE.sync); if (v) cryptoSyncConfig = { ...cryptoSyncConfig, ...JSON.parse(v) }; } catch (e) {}
+  }
+  async function saveCryptoSyncConfig() { await writeKey(CRYPTO_STORAGE.sync, JSON.stringify(cryptoSyncConfig)); }
+  async function initCryptoSyncClient() {
+    if (!cryptoSyncConfig.enabled || !cryptoSyncConfig.supabaseUrl || !cryptoSyncConfig.supabaseKey || !cryptoSyncConfig.userId) return null;
+    if (cryptoSyncClient) return cryptoSyncClient;
+    if (!window.supabase) {
+      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js', 'sdk-supabase');
+    }
+    cryptoSyncClient = window.supabase.createClient(cryptoSyncConfig.supabaseUrl, cryptoSyncConfig.supabaseKey);
+    return cryptoSyncClient;
+  }
+  async function pushCryptoHoldingToSupabase(h, deleted = false) {
+    try {
+      const sb = await initCryptoSyncClient();
+      if (!sb) return;
+      await sb.from('crypto_holdings').upsert({ id: h.id, user_id: cryptoSyncConfig.userId, data: h, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push crypto holding fail', e); }
+  }
+  async function pushCryptoTransactionToSupabase(t, deleted = false) {
+    try {
+      const sb = await initCryptoSyncClient();
+      if (!sb) return;
+      await sb.from('crypto_transactions').upsert({ id: t.id, user_id: cryptoSyncConfig.userId, symbol: t.symbol || null, data: t, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push crypto tx fail', e); }
+  }
+  async function pullAllCryptoFromSupabase() {
+    const sb = await initCryptoSyncClient();
+    if (!sb) return null;
+    const { data: hData, error: hErr } = await sb.from('crypto_holdings').select('*').eq('user_id', cryptoSyncConfig.userId).eq('deleted', false);
+    if (hErr) throw new Error('拉持倉失敗: ' + hErr.message);
+    const { data: tData, error: tErr } = await sb.from('crypto_transactions').select('*').eq('user_id', cryptoSyncConfig.userId).eq('deleted', false);
+    if (tErr) throw new Error('拉交易失敗: ' + tErr.message);
+    const localHMap = new Map(cryptoHoldings.map(h => [h.id, h]));
+    (hData || []).forEach(row => {
+      const local = localHMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localHMap.set(row.id, row.data);
+    });
+    cryptoHoldings = Array.from(localHMap.values());
+    const localTMap = new Map(cryptoTxns.map(t => [t.id, t]));
+    (tData || []).forEach(row => {
+      const local = localTMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localTMap.set(row.id, row.data);
+    });
+    cryptoTxns = Array.from(localTMap.values());
+    await saveCryptoHoldings();
+    await saveCryptoTxns();
+    cryptoSyncConfig.lastPullAt = Date.now();
+    await saveCryptoSyncConfig();
+    return { hCount: (hData || []).length, tCount: (tData || []).length };
+  }
+  async function pushAllCryptoToSupabase() {
+    let ok = 0;
+    for (const h of cryptoHoldings) { try { await pushCryptoHoldingToSupabase(h); ok++; } catch (e) {} }
+    for (const t of cryptoTxns) { try { await pushCryptoTransactionToSupabase(t); ok++; } catch (e) {} }
+    return ok;
+  }
+  async function syncCryptoNow() {
+    if (!cryptoSyncConfig.enabled) { openCryptoSyncModal(); return; }
+    const btn = document.getElementById('cryptoSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '☁ 同步中…'; }
+    try {
+      const r = await pullAllCryptoFromSupabase();
+      if (!r) throw new Error('Client 初始化失敗 · 請檢查設定');
+      await pushAllCryptoToSupabase();
+      renderCryptoHoldings();
+      renderCryptoStats();
+      renderCryptoSyncBadge();
+      showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持倉 / ${r.tCount} 交易`);
+    } catch (e) {
+      showToast('☁ 同步失敗：' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
+    }
+  }
+  function renderCryptoSyncBadge() {
+    const el = document.getElementById('cryptoSyncBadge');
+    if (!el) return;
+    if (!cryptoSyncConfig.enabled) { el.textContent = '☁ 未啟用'; el.style.color = 'var(--ink-tertiary)'; return; }
+    const t = cryptoSyncConfig.lastPullAt;
+    el.textContent = t ? `☁ ${new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : '☁ 待同步';
+    el.style.color = 'var(--accent)';
+  }
+  async function openCryptoSyncModal() {
+    await loadCryptoSyncConfig();
+    document.getElementById('cryptoSyncEnabled').checked = !!cryptoSyncConfig.enabled;
+    document.getElementById('cryptoSyncSupabaseUrl').value = cryptoSyncConfig.supabaseUrl || '';
+    document.getElementById('cryptoSyncSupabaseKey').value = cryptoSyncConfig.supabaseKey || '';
+    document.getElementById('cryptoSyncUserId').value = cryptoSyncConfig.userId || '';
+    if (!cryptoSyncConfig.userId && typeof twSyncConfig !== 'undefined' && twSyncConfig.userId) {
+      document.getElementById('cryptoSyncUserId').placeholder = `（台股已設：${twSyncConfig.userId}，建議用同一個）`;
+    }
+    document.getElementById('cryptoSyncModal').classList.add('active');
+  }
+  function closeCryptoSyncModal() { document.getElementById('cryptoSyncModal').classList.remove('active'); }
+  function fillCryptoSyncFromTrv() {
+    const src = (typeof twSyncConfig !== 'undefined' && twSyncConfig.supabaseUrl) ? twSyncConfig : trvMultiConfig;
+    if (src?.supabaseUrl) document.getElementById('cryptoSyncSupabaseUrl').value = src.supabaseUrl;
+    if (src?.supabaseKey) document.getElementById('cryptoSyncSupabaseKey').value = src.supabaseKey;
+    if (src === twSyncConfig && twSyncConfig.userId) document.getElementById('cryptoSyncUserId').value = twSyncConfig.userId;
+    showToast(src?.supabaseUrl ? '已帶入現有設定' : '尚未在台股／旅遊設定 Supabase');
+  }
+  async function saveCryptoSyncSettings() {
+    cryptoSyncConfig.enabled = document.getElementById('cryptoSyncEnabled').checked;
+    cryptoSyncConfig.supabaseUrl = document.getElementById('cryptoSyncSupabaseUrl').value.trim();
+    cryptoSyncConfig.supabaseKey = document.getElementById('cryptoSyncSupabaseKey').value.trim();
+    cryptoSyncConfig.userId = document.getElementById('cryptoSyncUserId').value.trim();
+    if (cryptoSyncConfig.enabled) {
+      if (!cryptoSyncConfig.supabaseUrl) return showToast('請填 Supabase URL');
+      if (!cryptoSyncConfig.supabaseKey) return showToast('請填 Supabase Anon Key');
+      if (!cryptoSyncConfig.userId) return showToast('請填 User ID（自取，多裝置要相同）');
+      if (!/^https:\/\/.+\.supabase\.co$/.test(cryptoSyncConfig.supabaseUrl)) return showToast('Supabase URL 格式錯（應為 https://xxx.supabase.co）');
+    }
+    cryptoSyncClient = null;
+    await saveCryptoSyncConfig();
+    renderCryptoSyncBadge();
+    showToast('☁ 設定已儲存');
+    closeCryptoSyncModal();
+    if (cryptoSyncConfig.enabled) syncCryptoNow();
+  }
+  function copyCryptoSyncSql() {
+    const sql = `-- 在 Supabase Dashboard → SQL Editor 跑一次（建表）
+CREATE TABLE IF NOT EXISTS crypto_holdings (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_crypto_holdings_user ON crypto_holdings(user_id);
+ALTER TABLE crypto_holdings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON crypto_holdings;
+CREATE POLICY "Allow all" ON crypto_holdings FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS crypto_transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  symbol TEXT,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_crypto_transactions_user ON crypto_transactions(user_id);
+ALTER TABLE crypto_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON crypto_transactions;
+CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK (true);`;
+    navigator.clipboard.writeText(sql).then(
+      () => showToast('SQL 已複製，貼到 Supabase SQL Editor 跑一次'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+
+  // === 統計卡片（沿用通用 holdingCost/Value/PnL）===
+  function renderCryptoStats() {
+    const totalCost = cryptoHoldings.reduce((s, h) => s + holdingCost(h), 0);
+    const totalValue = cryptoHoldings.reduce((s, h) => s + holdingValue(h), 0);
+    const unrealized = totalValue - totalCost;
+    const unrealizedPct = totalCost > 0 ? (unrealized / totalCost) * 100 : 0;
+    const pnlClass = unrealized > 0 ? 'profit' : unrealized < 0 ? 'loss' : 'flat';
+    const realizedClass = cryptoRealizedPnL > 0 ? 'profit' : cryptoRealizedPnL < 0 ? 'loss' : 'flat';
+    document.getElementById('cryptoStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">總投入</div>
+        <div class="stat-value">${cryptoMoney(totalCost)}</div>
+        <div class="stat-sub">${cryptoHoldings.length} 種幣</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">現值</div>
+        <div class="stat-value">${cryptoMoney(totalValue)}</div>
+        <div class="stat-sub">CURRENT · MARKET · VALUE</div>
+      </div>
+      <div class="stat-card ${pnlClass}">
+        <div class="stat-label">未實現損益</div>
+        <div class="stat-value">${cryptoMoneySign(unrealized)}</div>
+        <div class="stat-pct">${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%</div>
+      </div>
+      <div class="stat-card ${realizedClass}">
+        <div class="stat-label">已實現損益</div>
+        <div class="stat-value">${cryptoMoneySign(cryptoRealizedPnL)}</div>
+        <div class="stat-sub">REALIZED · ALL · TIME</div>
+      </div>
+    `;
+  }
+
+  function renderCryptoHoldings() {
+    const grid = document.getElementById('cryptoHoldingsGrid');
+    if (cryptoHoldings.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">◆</span><h3>尚無持倉</h3><p>點右上「+ 新增持倉」或「+ 新交易」開始記錄</p></div>';
+      return;
+    }
+    const sortBy = document.getElementById('cryptoSortBy')?.value || 'value';
+    const sorted = cryptoHoldings.slice().sort((a, b) => {
+      if (sortBy === 'value') return holdingValue(b) - holdingValue(a);
+      if (sortBy === 'pnl_pct') return holdingPnLPct(b) - holdingPnLPct(a);
+      if (sortBy === 'pnl_abs') return holdingPnL(b) - holdingPnL(a);
+      if (sortBy === 'symbol') return (a.symbol || '').localeCompare(b.symbol || '');
+      if (sortBy === 'date') return (b.buyDate || '').localeCompare(a.buyDate || '');
+      return 0;
+    });
+    grid.innerHTML = sorted.map(h => cryptoHoldingCardHtml(h)).join('');
+  }
+
+  function cryptoHoldingCardHtml(h) {
+    const pnl = holdingPnL(h);
+    const pnlPct = holdingPnLPct(h);
+    const cls = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat';
+    const expanded = cryptoExpandedHoldingId === h.id ? 'expanded' : '';
+    const txnsForHolding = cryptoTxns.filter(t => t.symbol === h.symbol).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const txnHtml = txnsForHolding.length === 0
+      ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
+      : txnsForHolding.map(t => {
+          const typeLabel = { buy: '買', sell: '賣', dividend: '獎', stock_div: '空' }[t.type] || '?';
+          return `
+            <div class="hc-txn-row" onclick="event.stopPropagation(); openCryptoTxnModal('${escape(t.id)}')">
+              <span class="hc-txn-type ${escape(t.type)}">${typeLabel}</span>
+              <span style="flex:1; padding:0 8px;">${escape(t.date || '')}</span>
+              <span>${cryptoQty(t.shares)} × $${cryptoPrice(t.price)}</span>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div class="holding-card ${cls} ${expanded}" data-hid="${escape(h.id)}" onclick="toggleCryptoHoldingExpand('${escape(h.id)}')">
+        <div class="hc-top">
+          <div class="hc-symbol-wrap">
+            <div class="hc-symbol">${escape(h.symbol)}</div>
+            <div class="hc-name">${escape(h.name)}</div>
+            <div class="hc-meta">
+              <span>${escape(h.market || 'Binance')}</span>
+              ${h.industry ? `<span>${escape(h.industry)}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${cryptoMoneySign(pnl)}</div>
+          </div>
+        </div>
+        <div class="hc-prices">
+          <div class="hc-price-cell">
+            <div class="hc-price-label">成本</div>
+            <div class="hc-price-val">${cryptoPrice(h.avgCost || 0)}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現價</div>
+            <div class="hc-price-val ${cls}">${h.currentPrice ? cryptoPrice(h.currentPrice) : '—'}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現值</div>
+            <div class="hc-price-val">${cryptoMoney(holdingValue(h))}</div>
+          </div>
+        </div>
+        <div class="hc-shares-cost">
+          <span><strong>${cryptoQty(h.shares)}</strong> ${escape(h.symbol)}</span>
+          <span style="color:var(--ink-tertiary);">×</span>
+          <span>成本 <strong>${cryptoMoney(holdingCost(h))}</strong></span>
+          ${h.buyDate ? `<span style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(h.buyDate)}</span>` : ''}
+        </div>
+        ${h.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(h.notes)}</div>` : ''}
+        <div class="hc-actions" onclick="event.stopPropagation();">
+          <button class="hc-mini-btn" onclick="openCryptoHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
+          <button class="hc-mini-btn" onclick="openCryptoTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
+          <button class="hc-mini-btn" onclick="toggleCryptoHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
+        </div>
+        <div class="hc-txn-list">${txnHtml}</div>
+      </div>
+    `;
+  }
+  function toggleCryptoHoldingExpand(id) {
+    cryptoExpandedHoldingId = (cryptoExpandedHoldingId === id) ? null : id;
+    renderCryptoHoldings();
+  }
+
+  function onCryptoHoldingSearch(q) {
+    const box = document.getElementById('cryptoHoldingSearchResults');
+    const results = searchCryptoCoins(q);
+    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = results.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickCryptoHoldingCoin('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape(s.industry || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickCryptoHoldingCoin(symbol) {
+    const s = CRYPTO_COINS.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('cryptoHoldingSymbol').value = s.symbol;
+    document.getElementById('cryptoHoldingName').value = s.name;
+    document.getElementById('cryptoHoldingMarket').value = s.market;
+    document.getElementById('cryptoHoldingIndustry').value = s.industry || '';
+    document.getElementById('cryptoHoldingSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('cryptoHoldingSearchResults').style.display = 'none';
+    document.getElementById('cryptoHoldingShares').focus();
+  }
+  function onCryptoTxnSearch(q) {
+    const box = document.getElementById('cryptoTxnSearchResults');
+    const local = cryptoHoldings.filter(h =>
+      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
+    ).map(h => ({ symbol: h.symbol, name: h.name, market: h.market || 'Binance', industry: '我的持倉' }));
+    const builtIn = searchCryptoCoins(q);
+    const seen = new Set(local.map(x => x.symbol));
+    const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
+    if (combined.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = combined.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickCryptoTxnCoin('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape(s.industry || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickCryptoTxnCoin(symbol) {
+    const h = cryptoHoldings.find(x => x.symbol === symbol);
+    const s = h || CRYPTO_COINS.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('cryptoTxnSymbol').value = s.symbol;
+    document.getElementById('cryptoTxnSymbolName').value = s.name;
+    document.getElementById('cryptoTxnSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('cryptoTxnSearchResults').style.display = 'none';
+    document.getElementById('cryptoTxnShares').focus();
+    if (h && h.currentPrice) document.getElementById('cryptoTxnPrice').value = h.currentPrice;
+  }
+
+  // === Holding CRUD ===
+  function openCryptoHoldingModal(id) {
+    const isEdit = !!id;
+    document.getElementById('cryptoHoldingEditId').value = id || '';
+    document.getElementById('cryptoHoldingDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('cryptoHoldingModalTitle').innerHTML = isEdit ? '編輯 <em>持倉</em>' : '新增 <em>持倉</em>';
+    if (isEdit) {
+      const h = cryptoHoldings.find(x => x.id === id);
+      document.getElementById('cryptoHoldingSymbol').value = h.symbol;
+      document.getElementById('cryptoHoldingName').value = h.name;
+      document.getElementById('cryptoHoldingShares').value = h.shares;
+      document.getElementById('cryptoHoldingAvgCost').value = h.avgCost;
+      document.getElementById('cryptoHoldingCurrentPrice').value = h.currentPrice || '';
+      document.getElementById('cryptoHoldingBuyDate').value = h.buyDate || '';
+      document.getElementById('cryptoHoldingMarket').value = h.market || 'Binance';
+      document.getElementById('cryptoHoldingIndustry').value = h.industry || '';
+      document.getElementById('cryptoHoldingNotes').value = h.notes || '';
+      document.getElementById('cryptoHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
+    } else {
+      ['cryptoHoldingSymbol','cryptoHoldingName','cryptoHoldingShares','cryptoHoldingAvgCost','cryptoHoldingCurrentPrice','cryptoHoldingIndustry','cryptoHoldingNotes','cryptoHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('cryptoHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('cryptoHoldingMarket').value = 'Binance';
+    }
+    document.getElementById('cryptoHoldingSearchResults').style.display = 'none';
+    document.getElementById('cryptoHoldingModal').classList.add('active');
+  }
+  function closeCryptoHoldingModal() { document.getElementById('cryptoHoldingModal').classList.remove('active'); }
+  async function saveCryptoHolding(e) {
+    e.preventDefault();
+    const id = document.getElementById('cryptoHoldingEditId').value;
+    const data = {
+      symbol: document.getElementById('cryptoHoldingSymbol').value.trim().toUpperCase(),
+      name: document.getElementById('cryptoHoldingName').value.trim(),
+      shares: Number(document.getElementById('cryptoHoldingShares').value),
+      avgCost: Number(document.getElementById('cryptoHoldingAvgCost').value),
+      currentPrice: Number(document.getElementById('cryptoHoldingCurrentPrice').value) || null,
+      buyDate: document.getElementById('cryptoHoldingBuyDate').value,
+      market: document.getElementById('cryptoHoldingMarket').value,
+      industry: document.getElementById('cryptoHoldingIndustry').value.trim(),
+      notes: document.getElementById('cryptoHoldingNotes').value.trim()
+    };
+    let saved;
+    if (id) {
+      const i = cryptoHoldings.findIndex(h => h.id === id);
+      if (i > -1) { cryptoHoldings[i] = { ...cryptoHoldings[i], ...data, updatedAt: Date.now() }; saved = cryptoHoldings[i]; }
+    } else {
+      const exist = cryptoHoldings.find(h => h.symbol === data.symbol);
+      if (exist) { showToast(`已有持倉 ${exist.name}，請改點編輯。`); return; }
+      saved = { id: 'ch_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      cryptoHoldings.push(saved);
+    }
+    await saveCryptoHoldings();
+    closeCryptoHoldingModal();
+    renderCryptoHoldings();
+    renderCryptoStats();
+    showToast(id ? '持倉已更新' : '已新增持倉');
+    if (saved) pushCryptoHoldingToSupabase(saved);
+  }
+  async function deleteCryptoHolding() {
+    const id = document.getElementById('cryptoHoldingEditId').value;
+    if (!id) return;
+    const h = cryptoHoldings.find(x => x.id === id);
+    if (!h) return;
+    const relTxns = cryptoTxns.filter(t => t.symbol === h.symbol).length;
+    const msg = relTxns > 0
+      ? `確定刪除 ${h.name}（${h.symbol}）？此持倉有 ${relTxns} 筆交易紀錄不會被刪除（保留作為歷史）。`
+      : `確定刪除 ${h.name}（${h.symbol}）？`;
+    if (!confirm(msg)) return;
+    cryptoHoldings = cryptoHoldings.filter(x => x.id !== id);
+    await saveCryptoHoldings();
+    closeCryptoHoldingModal();
+    renderCryptoHoldings();
+    renderCryptoStats();
+    pushCryptoHoldingToSupabase(h, true);
+  }
+
+  // === Transaction CRUD ===
+  function openCryptoTxnModal(id, presetSymbol) {
+    const isEdit = !!id;
+    document.getElementById('cryptoTxnEditId').value = id || '';
+    document.getElementById('cryptoTxnDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('cryptoTxnModalTitle').innerHTML = isEdit ? '編輯 <em>交易</em>' : '新增 <em>交易</em>';
+    document.getElementById('cryptoTxnSearchResults').style.display = 'none';
+    if (isEdit) {
+      const t = cryptoTxns.find(x => x.id === id);
+      document.getElementById('cryptoTxnType').value = t.type;
+      document.getElementById('cryptoTxnDate').value = t.date || '';
+      document.getElementById('cryptoTxnSymbol').value = t.symbol;
+      document.getElementById('cryptoTxnSymbolName').value = t.symbolName || '';
+      document.getElementById('cryptoTxnShares').value = t.shares;
+      document.getElementById('cryptoTxnPrice').value = t.price;
+      document.getElementById('cryptoTxnFee').value = t.fee || '';
+      document.getElementById('cryptoTxnNotes').value = t.notes || '';
+      document.getElementById('cryptoTxnSearchBox').value = `${t.symbol} · ${t.symbolName || ''}`;
+    } else {
+      ['cryptoTxnSymbolName','cryptoTxnShares','cryptoTxnPrice','cryptoTxnFee','cryptoTxnNotes','cryptoTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('cryptoTxnType').value = 'buy';
+      document.getElementById('cryptoTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('cryptoTxnSymbol').value = presetSymbol || '';
+      if (presetSymbol) {
+        const h = cryptoHoldings.find(x => x.symbol === presetSymbol);
+        if (h) {
+          document.getElementById('cryptoTxnSymbolName').value = h.name;
+          document.getElementById('cryptoTxnSearchBox').value = `${h.symbol} · ${h.name}`;
+        }
+        onCryptoTxnSymbolChange();
+      }
+    }
+    onCryptoTxnTypeChange();
+    document.getElementById('cryptoTxnModal').classList.add('active');
+  }
+  function closeCryptoTxnModal() { document.getElementById('cryptoTxnModal').classList.remove('active'); }
+  function onCryptoTxnSymbolChange() {
+    const sym = document.getElementById('cryptoTxnSymbol').value.trim().toUpperCase();
+    const h = cryptoHoldings.find(x => x.symbol === sym);
+    if (h) document.getElementById('cryptoTxnSymbolName').value = h.name;
+  }
+  function onCryptoTxnTypeChange() {
+    const type = document.getElementById('cryptoTxnType').value;
+    const sharesLabel = document.getElementById('cryptoTxnSharesLabel');
+    const priceLabel = document.getElementById('cryptoTxnPriceLabel');
+    if (type === 'dividend') { sharesLabel.textContent = '基準數量'; priceLabel.textContent = '每單位獎勵 (US$)'; }
+    else if (type === 'stock_div') { sharesLabel.textContent = '空投/分叉數量'; priceLabel.textContent = '當時市價（可估算）'; }
+    else { sharesLabel.textContent = '數量'; priceLabel.textContent = '單價 (US$)'; }
+  }
+  async function saveCryptoTxn(e) {
+    e.preventDefault();
+    const id = document.getElementById('cryptoTxnEditId').value;
+    const type = document.getElementById('cryptoTxnType').value;
+    const symbol = document.getElementById('cryptoTxnSymbol').value.trim().toUpperCase();
+    const symbolName = document.getElementById('cryptoTxnSymbolName').value.trim();
+    const shares = Number(document.getElementById('cryptoTxnShares').value);
+    const price = Number(document.getElementById('cryptoTxnPrice').value);
+    const fee = Number(document.getElementById('cryptoTxnFee').value) || 0;
+    const data = {
+      type, date: document.getElementById('cryptoTxnDate').value,
+      symbol, symbolName, shares, price,
+      fee, tax: 0,
+      notes: document.getElementById('cryptoTxnNotes').value.trim()
+    };
+    const isEdit = !!id;
+    let savedTxn;
+    if (isEdit) {
+      const i = cryptoTxns.findIndex(t => t.id === id);
+      if (i > -1) { cryptoTxns[i] = { ...cryptoTxns[i], ...data, updatedAt: Date.now() }; savedTxn = cryptoTxns[i]; }
+    } else {
+      savedTxn = { id: 'ct_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      cryptoTxns.push(savedTxn);
+    }
+    recomputeCryptoHolding(symbol);
+    await saveCryptoTxns();
+    await saveCryptoHoldings();
+    await saveCryptoRealized();
+    closeCryptoTxnModal();
+    renderCryptoHoldings();
+    renderCryptoStats();
+    showToast(isEdit ? '交易已更新' : '已新增交易');
+    if (savedTxn) pushCryptoTransactionToSupabase(savedTxn);
+    const affected = cryptoHoldings.find(h => h.symbol === symbol);
+    if (affected) pushCryptoHoldingToSupabase(affected);
+  }
+  async function deleteCryptoTxn() {
+    const id = document.getElementById('cryptoTxnEditId').value;
+    if (!id) return;
+    const t = cryptoTxns.find(x => x.id === id);
+    if (!t || !confirm('刪除這筆交易？對應持倉的成本/數量會重新計算。')) return;
+    cryptoTxns = cryptoTxns.filter(x => x.id !== id);
+    recomputeCryptoHolding(t.symbol);
+    await saveCryptoTxns();
+    await saveCryptoHoldings();
+    await saveCryptoRealized();
+    closeCryptoTxnModal();
+    renderCryptoHoldings();
+    renderCryptoStats();
+    pushCryptoTransactionToSupabase(t, true);
+    const affected = cryptoHoldings.find(h => h.symbol === t.symbol);
+    if (affected) pushCryptoHoldingToSupabase(affected);
+  }
+
+  function recomputeCryptoHolding(symbol) {
+    const txns = cryptoTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    if (txns.length === 0) return;
+    let shares = 0, totalCost = 0, avgCost = 0;
+    txns.forEach(t => {
+      if (t.type === 'buy') {
+        const cost = t.shares * t.price + (t.fee || 0);
+        shares += t.shares; totalCost += cost;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      } else if (t.type === 'sell') {
+        if (shares === 0) return;
+        const sellQty = Math.min(t.shares, shares);
+        const sellCost = sellQty * avgCost;
+        const sellRevenue = sellQty * t.price - (t.fee || 0);
+        shares -= sellQty; totalCost -= sellCost;
+        if (shares <= 0) { shares = 0; totalCost = 0; }
+      } else if (t.type === 'stock_div') {
+        shares += t.shares;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      }
+    });
+    cryptoRealizedPnL = recomputeAllCryptoRealized();
+    let h = cryptoHoldings.find(x => x.symbol === symbol);
+    if (h) {
+      h.shares = Number(shares.toFixed(8));
+      h.avgCost = shares > 0 ? Number((totalCost / shares).toFixed(6)) : 0;
+      if (!h.name && txns[0].symbolName) h.name = txns[0].symbolName;
+      h.updatedAt = Date.now();
+    } else if (shares > 0) {
+      cryptoHoldings.push({
+        id: 'ch_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        symbol, name: txns[0].symbolName || symbol,
+        shares: Number(shares.toFixed(8)),
+        avgCost: Number((totalCost / shares).toFixed(6)),
+        currentPrice: null, buyDate: txns[0].date, market: 'Binance',
+        createdAt: Date.now(), updatedAt: Date.now()
+      });
+    }
+  }
+  function recomputeAllCryptoRealized() {
+    const symbols = [...new Set(cryptoTxns.map(t => t.symbol))];
+    let total = 0;
+    symbols.forEach(sym => {
+      const txns = cryptoTxns.filter(t => t.symbol === sym).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      let shares = 0, totalCost = 0, avgCost = 0;
+      txns.forEach(t => {
+        if (t.type === 'buy') {
+          const cost = t.shares * t.price + (t.fee || 0);
+          shares += t.shares; totalCost += cost;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'sell') {
+          if (shares === 0) return;
+          const sellQty = Math.min(t.shares, shares);
+          const sellCost = sellQty * avgCost;
+          const sellRevenue = sellQty * t.price - (t.fee || 0);
+          total += sellRevenue - sellCost;
+          shares -= sellQty; totalCost -= sellCost;
+          if (shares <= 0) { shares = 0; totalCost = 0; }
+        } else if (t.type === 'stock_div') {
+          shares += t.shares;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'dividend') {
+          total += (t.shares || 0) * (t.price || 0);
+        }
+      });
+    });
+    return Number(total.toFixed(2));
+  }
+
+  // === 匯出 / 匯入 ===
+  function exportCryptoData() {
+    const data = { holdings: cryptoHoldings, transactions: cryptoTxns, realized: cryptoRealizedPnL, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `crypto-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function importCryptoData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!confirm(`匯入備份？\n持倉 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有加密貨幣資料。`)) return;
+        if (d.holdings) cryptoHoldings = d.holdings;
+        if (d.transactions) cryptoTxns = d.transactions;
+        if (typeof d.realized === 'number') cryptoRealizedPnL = d.realized;
+        await saveCryptoHoldings();
+        await saveCryptoTxns();
+        await saveCryptoRealized();
+        renderCryptoHoldings();
+        renderCryptoStats();
+        showToast(`已匯入 ${cryptoHoldings.length} 種幣`);
+      } catch (err) {
+        alert('匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  // === 批次幣價更新 ===
+  function openCryptoBatchPriceModal() {
+    if (cryptoHoldings.length === 0) { showToast('還沒有持倉可更新'); return; }
+    const list = document.getElementById('cryptoBatchPriceList');
+    list.innerHTML = cryptoHoldings.map(h => `
+      <div style="display:flex; gap:10px; align-items:center; padding:10px 12px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px;">
+        <span style="font-family:var(--mono); color:var(--accent); font-weight:600; min-width:60px;">${escape(h.symbol)}</span>
+        <span style="flex:1; font-family:var(--serif);">${escape(h.name)}</span>
+        <input type="number" step="any" data-crypto-batch-id="${escape(h.id)}" value="${h.currentPrice || ''}" placeholder="目前幣價 US$" class="form-input" style="width:130px; font-family:var(--mono);">
+      </div>
+    `).join('');
+    document.getElementById('cryptoBatchPriceModal').classList.add('active');
+  }
+  function closeCryptoBatchPriceModal() { document.getElementById('cryptoBatchPriceModal').classList.remove('active'); }
+  async function saveCryptoBatchPrices() {
+    document.querySelectorAll('[data-crypto-batch-id]').forEach(input => {
+      const id = input.getAttribute('data-crypto-batch-id');
+      const v = Number(input.value);
+      const h = cryptoHoldings.find(x => x.id === id);
+      if (h && v > 0) { h.currentPrice = v; h.priceUpdatedAt = Date.now(); }
+    });
+    await saveCryptoHoldings();
+    closeCryptoBatchPriceModal();
+    renderCryptoHoldings();
+    renderCryptoStats();
+    showToast('幣價已更新');
   }
 
   // ============================================================
@@ -12259,6 +13236,9 @@ ${daysBrief}
       closeMoreSheet();
     } else if (id === 'usStockView') {
       loadUsStock();
+      closeMoreSheet();
+    } else if (id === 'cryptoView') {
+      loadCrypto();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
       // 回到儀表板時 reset 到群組總覽層
