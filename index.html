@@ -7542,9 +7542,9 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       const endD = new Date(t.endDate + 'T00:00:00');
       const cached = wikiCache[t.coverImageWiki];
       const cover = t.localCover
-        ? `<img src="${escape(t.localCover)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
+        ? `<img loading="lazy" decoding="async" src="${escape(t.localCover)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
         : cached
-        ? `<img src="${cached}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
+        ? `<img loading="lazy" decoding="async" src="${cached}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`
         : `<div class="trip-cover-placeholder" data-trip-cover="${escape(t.id)}"></div>`;
       const dateRange = `${startD.getMonth()+1}/${startD.getDate()} – ${endD.getMonth()+1}/${endD.getDate()}`;
       const fullDate = `${startD.getFullYear()}.${String(startD.getMonth()+1).padStart(2,'0')}.${String(startD.getDate()).padStart(2,'0')} → ${String(endD.getMonth()+1).padStart(2,'0')}.${String(endD.getDate()).padStart(2,'0')}`;
@@ -7594,7 +7594,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       const url = await fetchWikiThumbnail({ name: t.coverImageWiki, wikiTitle: t.coverImageWiki, gps: [1,1], type: '景點' });
       if (url) {
         const ph = document.querySelector(`[data-trip-cover="${t.id}"]`);
-        if (ph) ph.outerHTML = `<img src="${url}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`;
+        if (ph) ph.outerHTML = `<img loading="lazy" decoding="async" src="${url}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;trip-cover-placeholder&quot;></div>'">`;
       }
     });
   }
@@ -8189,7 +8189,7 @@ ${baseSchema}
         const hasMedia = s.gps && s.type === '景點';
         const cached = hasMedia ? wikiCache[cleanSpotName(s.name)] : null;
         const mediaInitial = cached
-          ? `<img src="${cached}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;spot-media-placeholder&quot;>${icon}</div>'">`
+          ? `<img loading="lazy" decoding="async" src="${cached}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;spot-media-placeholder&quot;>${icon}</div>'">`
           : `<div class="spot-media-placeholder">${icon}</div>`;
         return `
           <div class="spot ${isCurrentSpot ? 'current' : ''}" data-day="${d.day}" data-idx="${i}">
@@ -8698,7 +8698,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       const url = await fetchWikiThumbnail(spot);
       if (url) {
         const el = document.querySelector(`[data-spot-img="${dayNum}-${i}"]`);
-        if (el) el.innerHTML = `<img src="${url}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;spot-media-placeholder&quot;>◇</div>'">`;
+        if (el) el.innerHTML = `<img loading="lazy" decoding="async" src="${url}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;spot-media-placeholder&quot;>◇</div>'">`;
       }
     }
   }
@@ -9864,7 +9864,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const html = trvShopping.slice().sort((a,b) => b.createdAt - a.createdAt).map(x => `
       <div class="shop-card">
         ${x.photo
-          ? `<img class="shop-photo" src="${x.photo}" alt="">`
+          ? `<img class="shop-photo" loading="lazy" decoding="async" src="${x.photo}" alt="">`
           : `<div class="shop-photo-placeholder">⛬</div>`}
         <div class="shop-body">
           <div class="shop-name">${escape(x.name)}${x.qty > 1 ? ` × ${x.qty}` : ''}</div>
@@ -10483,7 +10483,7 @@ ${daysBrief}
       return `
         <div class="party-member-row ${isMe ? 'me' : ''} ${isOnline ? 'online' : ''}">
           <div class="pm-avatar">
-            ${m.picture_url ? `<img src="${escape(m.picture_url)}" alt="" onerror="this.replaceWith(document.createElement('div'));">` : `<span class="initial">${escape(initial)}</span>`}
+            ${m.picture_url ? `<img loading="lazy" decoding="async" src="${escape(m.picture_url)}" alt="" onerror="this.replaceWith(document.createElement('div'));">` : `<span class="initial">${escape(initial)}</span>`}
           </div>
           <div class="pm-body">
             <div class="pm-name">
