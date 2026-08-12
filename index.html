@@ -8586,8 +8586,14 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
   }
   function onUsAnalysisSearch(q) {
     const local = searchUsStocks(q);
-    renderUsSearchBox('usAnalysisSearchResults', local, 'pickUsAnalysisStock');
-    augmentUsSearchRemote(q, 'usAnalysisSearchResults', 'usAnalysisSearchBox', 'pickUsAnalysisStock', local);
+    // 內建清單找不到、又沒設 Finnhub 金鑰時：允許直接用打進去的代號分析（圖表+技術訊號免金鑰）
+    const tq = (q || '').trim().toUpperCase();
+    const list = local.slice();
+    if (/^[A-Z][A-Z.]{0,6}$/.test(tq) && !list.some(x => x.symbol === tq)) {
+      list.push({ symbol: tq, name: '＋ 直接分析此代號（免金鑰）', industry: '手動輸入' });
+    }
+    renderUsSearchBox('usAnalysisSearchResults', list, 'pickUsAnalysisStock');
+    augmentUsSearchRemote(q, 'usAnalysisSearchResults', 'usAnalysisSearchBox', 'pickUsAnalysisStock', list);
   }
   function pickUsAnalysisStock(symbol) {
     const s = usSearchResultCache[symbol] || US_STOCKS.find(x => x.symbol === symbol) || { symbol, name: symbol };
