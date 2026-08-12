@@ -8013,11 +8013,12 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const ex = { NASDAQ: 'NASDAQ', NYSE: 'NYSE', AMEX: 'AMEX' }[h.market] || '';
     return ex ? `${ex}:${h.symbol}` : h.symbol;
   }
-  async function loadUsTvChart(h) {
+  async function loadUsTvChart(h, seq) {
     const cont = document.getElementById('usTvChart');
     if (!cont) return;
     try {
       if (!window.TradingView) await loadScript('https://s3.tradingview.com/tv.js', 'sdk-tradingview');
+      if (typeof seq === 'number' && seq !== usAnalysisSeq) return; // 已切到別檔，別把舊圖畫進新容器
       if (!window.TradingView) throw new Error('lib');
       cont.innerHTML = '';
       new TradingView.widget({
@@ -8102,7 +8103,9 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     if (res) res.style.display = 'none';
     openUsAnalysis(symbol);
   }
+  let usAnalysisSeq = 0;
   async function openUsAnalysis(symbol) {
+    const seq = ++usAnalysisSeq; // 世代守衛：重疊載入時只有最新一次能寫入共用狀態
     const h = usHoldings.find(x => x.symbol === symbol) || US_STOCKS.find(x => x.symbol === symbol) || { symbol, name: symbol };
     document.getElementById('usAnalysisTitle').innerHTML = `${escape(h.symbol)} <em>分析</em>`;
     document.getElementById('usAnalysisModal').classList.add('active');
@@ -8110,8 +8113,9 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     body.innerHTML = `
       <div id="usTvChart" style="height:360px; margin-bottom:16px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
       <div id="usAnalysisData" style="text-align:center; padding:18px; color:var(--ink-tertiary);">載入即時資料中…</div>`;
-    loadUsTvChart(h); // 獨立載入，不擋資料區
+    loadUsTvChart(h, seq); // 獨立載入，不擋資料區
     if (!finnhubKey) await loadFinnhubKey();
+    if (seq !== usAnalysisSeq) return; // 已被更新的請求取代
     let quote = null, profile = null, metric = null, news = null;
     if (finnhubKey) {
       [quote, profile, metric] = await Promise.all([
@@ -8121,6 +8125,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       ]);
       news = await finnhubNews(h.symbol).catch(() => null);
     }
+    if (seq !== usAnalysisSeq) return; // 舊請求不得覆蓋新標的的資料與 AI 提示詞
     // 快照字串餵給 AI prompt
     let snap = '';
     if (quote && quote.c > 0) snap += `現價 $${quote.c} · 當日 ${quote.dp >= 0 ? '+' : ''}${Number(quote.dp).toFixed(2)}%`;
@@ -8231,7 +8236,6 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const isG = provider === 'gemini';
     const out = document.getElementById('usAnalysisAiResult');
     const btn = document.getElementById(isG ? 'usGeminiBtn' : 'usClaudeBtn');
-    const origLabel = isG ? '✦ 用 Gemini 分析' : '🤖 用 Claude 分析';
     if (isG) {
       const gk = await readKey(GEMINI_KEY_STORAGE);
       if (!gk) { openGeminiKeyModal(); return; }
@@ -8239,6 +8243,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       const ak = await readKey(AI_KEY_STORAGE);
       if (!ak) { showToast('尚未設定 Anthropic API Key（可到「投資翻倍」設定）'); return; }
     }
+    const origLabel = btn ? btn.textContent : ''; // 還原成按鈕實際文字（避免寫死標籤跑掉）
     if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 15-40 秒）'; }
     out.style.display = 'block';
     out.innerHTML = `<div style="color:var(--ink-tertiary);">${isG ? 'Gemini' : 'Claude'} 正在分析…</div>`;
@@ -8424,7 +8429,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     if (!s) return;
     document.getElementById('usHoldingSymbol').value = s.symbol;
     document.getElementById('usHoldingName').value = s.name || s.symbol;
-    document.getElementById('usHoldingMarket').value = s.market || 'NASDAQ';
+    document.getElementById('usHoldingMarket').value = ['NASDAQ', 'NYSE', 'AMEX', 'OTC'].includes(s.market) ? s.market : 'NASDAQ';
     document.getElementById('usHoldingIndustry').value = s.industry === 'Finnhub 搜尋' ? '' : (s.industry || '');
     document.getElementById('usHoldingSearchBox').value = `${s.symbol} · ${s.name || ''}`;
     document.getElementById('usHoldingSearchResults').style.display = 'none';
@@ -9564,11 +9569,19 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
       .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
   }
+  // 近 N 期「每股配息」加總（per-share，與現價同基準，減碼/賣出不會灌大殖利率）
+  function hdEtfPerShareDiv(symbol, sinceTs) {
+    return hdEtfTxns
+      .filter(t => t.type === 'dividend' && t.symbol === symbol)
+      .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
+      .reduce((s, t) => s + (Number(t.price) || 0), 0);
+  }
   function hdEtfYield(h) {
-    const v = holdingValue(h);
-    if (!v) return 0;
+    const px = Number(h.currentPrice) || Number(h.avgCost) || 0;
+    if (!px) return 0;
     const oneYearAgo = Date.now() - 365 * 24 * 3600 * 1000;
-    return hdEtfSymbolDividends(h.symbol, oneYearAgo) / v * 100;
+    // 年化殖利率 = 近一年每股配息 ÷ 現價（分子分母皆 per-share，基準一致）
+    return hdEtfPerShareDiv(h.symbol, oneYearAgo) / px * 100;
   }
 
   async function loadHdEtf() {
@@ -9768,7 +9781,13 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     const totalDiv = hdEtfTotalDividends();
     const oneYearAgo = Date.now() - 365 * 24 * 3600 * 1000;
     const div12m = hdEtfTotalDividends(oneYearAgo);
-    const portfolioYield = totalValue > 0 ? (div12m / totalValue) * 100 : 0;
+    // 平均年化殖利率：僅就目前持股，用「每股12月配息 × 現股數」÷ 現值加權（賣出/減碼標的不再灌大）
+    let yNum = 0, yDen = 0;
+    hdEtfHoldings.forEach(h => {
+      yNum += hdEtfPerShareDiv(h.symbol, oneYearAgo) * (Number(h.shares) || 0);
+      yDen += holdingValue(h);
+    });
+    const portfolioYield = yDen > 0 ? (yNum / yDen) * 100 : 0;
     const pnlClass = unrealized > 0 ? 'profit' : unrealized < 0 ? 'loss' : 'flat';
     document.getElementById('hdEtfStats').innerHTML = `
       <div class="stat-card">
