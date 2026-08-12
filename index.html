@@ -3033,7 +3033,9 @@
       <span id="usSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
       <button class="btn btn-sm" id="usSyncBtn" onclick="syncUsNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
       <button class="btn btn-sm" onclick="openUsSyncModal()" title="跨裝置同步設定">⚙</button>
-      <button class="btn btn-sm" onclick="openUsBatchPriceModal()">⟳ 批次更新股價</button>
+      <button class="btn btn-sm btn-primary" id="usQuoteBtn" onclick="refreshUsQuotes()" title="用 Finnhub 抓即時報價，更新所有持股現價">⚡ 即時報價</button>
+      <button class="btn btn-sm" onclick="openFinnhubKeyModal()" title="設定 Finnhub 免費 API 金鑰">🔑 金鑰</button>
+      <button class="btn btn-sm" onclick="openUsBatchPriceModal()">⟳ 手動更新股價</button>
       <button class="btn btn-sm" onclick="exportUsStockData()" title="備份所有美股資料">↓ 匯出</button>
       <button class="btn btn-sm" onclick="document.getElementById('usStockImport').click()" title="從備份還原">↑ 匯入</button>
       <input type="file" id="usStockImport" accept=".json" style="display:none" onchange="importUsStockData(event)">
@@ -3041,6 +3043,43 @@
 
     <!-- 持股列表 -->
     <div id="usHoldingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ Finnhub 即時報價金鑰 Modal ============ -->
+  <div class="modal-backdrop" id="finnhubKeyModal">
+    <div class="modal" style="max-width:560px;">
+      <h2>🔑 Finnhub <em>即時報價金鑰</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        免費申請、免信用卡；個人用免費層 <strong>60 次/分鐘</strong> 足夠。金鑰只存在你這台裝置的瀏覽器（localStorage），不會上傳。
+      </div>
+      <ol style="font-size:12.5px; color:var(--ink-secondary); line-height:1.9; margin:0 0 14px 18px;">
+        <li>到 <a href="https://finnhub.io/register" target="_blank" rel="noopener" style="color:var(--accent);">finnhub.io/register</a> 註冊（填 Email 即可）</li>
+        <li>登入後在 Dashboard 複製 <strong>API Key</strong></li>
+        <li>貼到下方 → 測試 → 儲存</li>
+      </ol>
+      <div class="form-group">
+        <label class="form-label">Finnhub API Key</label>
+        <input type="text" class="form-input" id="finnhubKeyInput" placeholder="例如 cxxxxxxxxxxxxxxxxxx" autocomplete="off" style="font-family:var(--mono);">
+      </div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" id="finnhubTestBtn" type="button" onclick="testFinnhubKey()">🔍 測試金鑰</button>
+        <div class="form-actions-right">
+          <button class="btn" type="button" onclick="closeFinnhubKeyModal()">取消</button>
+          <button class="btn btn-primary" type="button" onclick="saveFinnhubKey()">儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 美股個股分析 Modal ============ -->
+  <div class="modal-backdrop" id="usAnalysisModal">
+    <div class="modal" style="max-width:680px;">
+      <h2 id="usAnalysisTitle">個股 <em>分析</em></h2>
+      <div id="usAnalysisBody"></div>
+      <div class="form-actions" style="justify-content:flex-end; margin-top:16px;">
+        <button class="btn" type="button" onclick="closeUsAnalysisModal()">關閉</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============ 美股持股 Modal ============ -->
@@ -3485,6 +3524,268 @@
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" onclick="closeCryptoSyncModal()">取消</button>
         <button class="btn btn-primary" onclick="saveCryptoSyncSettings()">儲存 + 立即同步</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 高股息 ETF VIEW ============ -->
+  <div id="hdEtfView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">◇ DIVIDEND · ETF</div>
+        <h1>高股息 <em>ETF</em></h1>
+        <p>持股管理、平均成本、未實現損益、配息追蹤與年化殖利率（台幣計價）。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="openHdEtfTxnModal()">+ 新交易</button>
+        <button class="btn btn-primary" onclick="openHdEtfHoldingModal()">+ 新增持股</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="hdEtfStats"></div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.15em;">SORT BY</span>
+      <select id="hdEtfSortBy" class="form-select" onchange="renderHdEtfHoldings()" style="width:auto;">
+        <option value="value">現值（高→低）</option>
+        <option value="yield">年化殖利率（高→低）</option>
+        <option value="div">累計配息（高→低）</option>
+        <option value="pnl_pct">報酬率（高→低）</option>
+        <option value="pnl_abs">損益金額（高→低）</option>
+        <option value="symbol">代號</option>
+        <option value="date">買入日期（新→舊）</option>
+      </select>
+      <span id="hdEtfSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
+      <button class="btn btn-sm" id="hdEtfSyncBtn" onclick="syncHdEtfNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
+      <button class="btn btn-sm" onclick="openHdEtfSyncModal()" title="跨裝置同步設定">⚙</button>
+      <button class="btn btn-sm" onclick="openHdEtfBatchPriceModal()">⟳ 批次更新淨值</button>
+      <button class="btn btn-sm" onclick="exportHdEtfData()" title="備份所有高股息 ETF 資料">↓ 匯出</button>
+      <button class="btn btn-sm" onclick="document.getElementById('hdEtfImport').click()" title="從備份還原">↑ 匯入</button>
+      <input type="file" id="hdEtfImport" accept=".json" style="display:none" onchange="importHdEtfData(event)">
+    </div>
+
+    <div id="hdEtfHoldingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ 高股息 ETF 持股 Modal ============ -->
+  <div class="modal-backdrop" id="hdEtfHoldingModal">
+    <div class="modal">
+      <h2 id="hdEtfHoldingModalTitle">新增 <em>持股</em></h2>
+      <form onsubmit="saveHdEtfHolding(event)">
+        <input type="hidden" id="hdEtfHoldingEditId">
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label">⌕ 搜尋（輸入代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="hdEtfHoldingSearchBox" placeholder="例如 0056、00878、國泰永續高股息..." autocomplete="off" oninput="onHdEtfHoldingSearch(this.value)" onfocus="onHdEtfHoldingSearch(this.value)" onblur="setTimeout(()=>document.getElementById('hdEtfHoldingSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="hdEtfHoldingSearchResults" style="display:none;"></div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:4px; letter-spacing:0.05em;">內建熱門高股息 ETF · 找不到可手動填下方欄位</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號</label>
+            <input type="text" class="form-input" id="hdEtfHoldingSymbol" required placeholder="0056" style="font-family:var(--mono);">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="hdEtfHoldingName" required placeholder="元大高股息">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">持有股數</label>
+            <input type="number" step="any" min="0" class="form-input" id="hdEtfHoldingShares" required placeholder="5000">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">平均成本 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="hdEtfHoldingAvgCost" required placeholder="35.2">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">目前市價 / 淨值 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="hdEtfHoldingCurrentPrice" placeholder="38.6">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">買入日期</label>
+            <input type="date" class="form-input" id="hdEtfHoldingBuyDate">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">券商 / 帳戶</label>
+            <select class="form-select" id="hdEtfHoldingMarket">
+              <option value="元大">元大</option>
+              <option value="國泰">國泰</option>
+              <option value="富邦">富邦</option>
+              <option value="群益">群益</option>
+              <option value="永豐">永豐</option>
+              <option value="玉山">玉山</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類別</label>
+            <input type="text" class="form-input" id="hdEtfHoldingIndustry" placeholder="高股息 / 科技優息 / 高息低波">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">配息頻率</label>
+            <select class="form-select" id="hdEtfHoldingFreq">
+              <option value="月配">月配</option>
+              <option value="季配">季配</option>
+              <option value="半年配">半年配</option>
+              <option value="年配">年配</option>
+              <option value="不定期">不定期</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">下次除息日（選填）</label>
+            <input type="date" class="form-input" id="hdEtfHoldingNextExDate">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">策略筆記</label>
+          <textarea class="form-textarea" id="hdEtfHoldingNotes" placeholder="買入理由、殖利率目標、填息觀察..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="hdEtfHoldingDeleteBtn" onclick="deleteHdEtfHolding()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除持股</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeHdEtfHoldingModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 高股息 ETF 交易 Modal ============ -->
+  <div class="modal-backdrop" id="hdEtfTxnModal">
+    <div class="modal">
+      <h2 id="hdEtfTxnModalTitle">新增 <em>交易</em></h2>
+      <form onsubmit="saveHdEtfTxn(event)">
+        <input type="hidden" id="hdEtfTxnEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="hdEtfTxnType" onchange="onHdEtfTxnTypeChange()">
+              <option value="buy">買進</option>
+              <option value="sell">賣出</option>
+              <option value="dividend">現金配息（領息）</option>
+              <option value="stock_div">股票股利 / 再投資（增加股數）</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="hdEtfTxnDateLabel">日期</label>
+            <input type="date" class="form-input" id="hdEtfTxnDate" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">⌕ 搜尋 ETF（代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="hdEtfTxnSearchBox" placeholder="例如 0056、00878、群益台灣精選高息..." autocomplete="off" oninput="onHdEtfTxnSearch(this.value)" onfocus="onHdEtfTxnSearch(this.value)" onblur="setTimeout(()=>document.getElementById('hdEtfTxnSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="hdEtfTxnSearchResults" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號</label>
+            <input type="text" class="form-input" id="hdEtfTxnSymbol" required placeholder="0056" style="font-family:var(--mono);" oninput="onHdEtfTxnSymbolChange()">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="hdEtfTxnSymbolName" placeholder="例如 元大高股息">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="hdEtfTxnSharesLabel">股數</label>
+            <input type="number" step="any" min="0" class="form-input" id="hdEtfTxnShares" required placeholder="5000">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="hdEtfTxnPriceLabel">單價 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="hdEtfTxnPrice" required placeholder="35.2">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="hdEtfTxnFeeLabel">手續費 / 費用 (NT$)</label>
+          <input type="number" step="any" class="form-input" id="hdEtfTxnFee" placeholder="手續費、證交稅、補充保費（可留空）">
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="hdEtfTxnNotes" placeholder="">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="hdEtfTxnDeleteBtn" onclick="deleteHdEtfTxn()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeHdEtfTxnModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 高股息 ETF 批次淨值 Modal ============ -->
+  <div class="modal-backdrop" id="hdEtfBatchPriceModal">
+    <div class="modal">
+      <h2>批次 <em>更新市價</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
+        手動填入各持股最新市價 / 淨值（NT$），按「全部儲存」一次更新。
+      </div>
+      <div id="hdEtfBatchPriceList" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="form-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn" onclick="closeHdEtfBatchPriceModal()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="saveHdEtfBatchPrices()">全部儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 高股息 ETF 雲端同步設定 Modal（Supabase）============ -->
+  <div class="modal-backdrop" id="hdEtfSyncModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>☁ 跨裝置<em>雲端同步</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        透過你自己的 <strong>Supabase 專案</strong>同步高股息 ETF 持股、交易與配息記錄。可重用旅遊／台股／美股／加密貨幣用的 Supabase，無需另開。
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:0.1em;">
+          <input type="checkbox" id="hdEtfSyncEnabled"> 啟用雲端同步
+        </label>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="hdEtfSyncSupabaseUrl" class="form-input" placeholder="https://xxx.supabase.co" style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillHdEtfSyncFromTrv()" title="從台股／旅遊設定帶入">↓ 用現有的</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <input type="text" id="hdEtfSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">User ID（多裝置要相同）</label>
+        <input type="text" id="hdEtfSyncUserId" class="form-input" placeholder="kevin-personal（建議跟台股/美股用同一個）">
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px;">相同 ID 的裝置才會互通資料；不同 ID 等於不同帳號。</div>
+      </div>
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 建表 SQL（複製到 Supabase 跑一次）</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">到 Supabase Dashboard → 左側 <strong>SQL Editor</strong> → 點下方按鈕複製 SQL → 貼上 → Run。</div>
+        <button class="btn btn-sm" type="button" onclick="copyHdEtfSyncSql()" style="margin-top:10px;">📋 複製建表 SQL</button>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.5;">💡 會建 2 張表：<code>hdetf_holdings</code>、<code>hdetf_transactions</code>，用 RLS Allow-All policy（適合個人用）。</div>
+      </details>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">⚠ 衝突策略：last-write-wins。後寫入雲端的版本會贏。建議短時間內不要兩台同步編輯。</div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeHdEtfSyncModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveHdEtfSyncSettings()">儲存 + 立即同步</button>
       </div>
     </div>
   </div>
@@ -4654,7 +4955,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 6.2 · ζ</div>
+    <div>v 6.3 · ζ</div>
   </footer>
 </div>
 
@@ -4968,7 +5269,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     { id: 'm_tw_stock', name: '台股個股', nameEn: 'TW · EQUITIES', icon: 'γ', desc: '持股管理、平均成本、損益計算、交易記錄。', status: 'active', groupId: 'g_invest', order: 4, builtin: true, target: 'twStockView' },
     { id: 'm_us_stock', name: '美股個股', nameEn: 'US · EQUITIES', icon: '★', desc: '持股管理、平均成本、損益計算、交易記錄（美元計價）。', status: 'active', groupId: 'g_invest', order: 5, builtin: true, target: 'usStockView' },
     { id: 'm_etf_market', name: '市值型 ETF', nameEn: 'INDEX · ETF', icon: '▣', desc: '0050、VOO、VTI 等市值型追蹤。長期被動配置主力。', status: 'soon', groupId: 'g_invest', order: 6 },
-    { id: 'm_etf_dividend', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', icon: '◇', desc: '0056、0878 等現金流型。配息追蹤、殖利率分析。', status: 'soon', groupId: 'g_invest', order: 7 },
+    { id: 'm_etf_dividend', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', icon: '◇', desc: '0056、00878 等現金流型。持股成本、配息追蹤、年化殖利率（台幣計價）。', status: 'active', groupId: 'g_invest', order: 7, builtin: true, target: 'hdEtfView' },
     { id: 'm_active_fund', name: '主動式基金', nameEn: 'ACTIVE · FUND', icon: 'δ', desc: '個股型、主題型基金。績效比較、費用率追蹤。', status: 'soon', groupId: 'g_invest', order: 8 },
     { id: 'm_bond', name: '債券 · 債券 ETF', nameEn: 'BOND · FIXED INCOME', icon: '═', desc: '公債、公司債、高收益債、債券 ETF 利息追蹤。', status: 'soon', groupId: 'g_invest', order: 9 },
 
@@ -5021,7 +5322,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '8';
+      const CURRENT_VERSION = '9';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -7272,48 +7573,48 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
 
   // 內建熱門美股 / ETF（找不到可手動填）
   const US_STOCKS = [
-    { symbol: 'AAPL', name: 'Apple', market: 'NASDAQ', industry: '科技 · 消費電子' },
-    { symbol: 'MSFT', name: 'Microsoft', market: 'NASDAQ', industry: '科技 · 軟體' },
-    { symbol: 'NVDA', name: 'NVIDIA', market: 'NASDAQ', industry: '半導體' },
-    { symbol: 'GOOGL', name: 'Alphabet (Google)', market: 'NASDAQ', industry: '科技 · 網路' },
-    { symbol: 'AMZN', name: 'Amazon', market: 'NASDAQ', industry: '電商 · 雲端' },
-    { symbol: 'META', name: 'Meta Platforms', market: 'NASDAQ', industry: '科技 · 社群' },
-    { symbol: 'TSLA', name: 'Tesla', market: 'NASDAQ', industry: '電動車' },
-    { symbol: 'AVGO', name: 'Broadcom', market: 'NASDAQ', industry: '半導體' },
-    { symbol: 'BRK.B', name: 'Berkshire Hathaway B', market: 'NYSE', industry: '綜合控股' },
-    { symbol: 'JPM', name: 'JPMorgan Chase', market: 'NYSE', industry: '金融' },
-    { symbol: 'V', name: 'Visa', market: 'NYSE', industry: '金融 · 支付' },
-    { symbol: 'MA', name: 'Mastercard', market: 'NYSE', industry: '金融 · 支付' },
-    { symbol: 'LLY', name: 'Eli Lilly', market: 'NYSE', industry: '製藥' },
-    { symbol: 'UNH', name: 'UnitedHealth', market: 'NYSE', industry: '醫療保險' },
-    { symbol: 'JNJ', name: 'Johnson & Johnson', market: 'NYSE', industry: '醫療保健' },
-    { symbol: 'XOM', name: 'Exxon Mobil', market: 'NYSE', industry: '能源' },
-    { symbol: 'WMT', name: 'Walmart', market: 'NYSE', industry: '零售' },
-    { symbol: 'COST', name: 'Costco', market: 'NASDAQ', industry: '零售 · 量販' },
-    { symbol: 'HD', name: 'Home Depot', market: 'NYSE', industry: '零售 · 家居' },
-    { symbol: 'PG', name: 'Procter & Gamble', market: 'NYSE', industry: '消費必需品' },
-    { symbol: 'KO', name: 'Coca-Cola', market: 'NYSE', industry: '飲料' },
-    { symbol: 'PEP', name: 'PepsiCo', market: 'NASDAQ', industry: '飲料 · 食品' },
-    { symbol: 'NFLX', name: 'Netflix', market: 'NASDAQ', industry: '串流媒體' },
-    { symbol: 'AMD', name: 'Advanced Micro Devices', market: 'NASDAQ', industry: '半導體' },
-    { symbol: 'INTC', name: 'Intel', market: 'NASDAQ', industry: '半導體' },
-    { symbol: 'CRM', name: 'Salesforce', market: 'NYSE', industry: '軟體 · 雲端' },
-    { symbol: 'ORCL', name: 'Oracle', market: 'NYSE', industry: '軟體 · 資料庫' },
-    { symbol: 'ADBE', name: 'Adobe', market: 'NASDAQ', industry: '軟體' },
-    { symbol: 'DIS', name: 'Walt Disney', market: 'NYSE', industry: '媒體 · 娛樂' },
-    { symbol: 'BAC', name: 'Bank of America', market: 'NYSE', industry: '金融' },
-    { symbol: 'PLTR', name: 'Palantir', market: 'NASDAQ', industry: '軟體 · 數據' },
-    { symbol: 'TSM', name: 'TSMC ADR (台積電)', market: 'NYSE', industry: '半導體' },
-    { symbol: 'ASML', name: 'ASML ADR', market: 'NASDAQ', industry: '半導體設備' },
-    { symbol: 'SPY', name: 'SPDR S&P 500 ETF', market: 'AMEX', industry: 'ETF · 大盤' },
-    { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', market: 'AMEX', industry: 'ETF · 大盤' },
-    { symbol: 'VTI', name: 'Vanguard Total Market ETF', market: 'AMEX', industry: 'ETF · 全市場' },
-    { symbol: 'QQQ', name: 'Invesco QQQ (那斯達克100)', market: 'NASDAQ', industry: 'ETF · 科技' },
-    { symbol: 'VT', name: 'Vanguard Total World ETF', market: 'AMEX', industry: 'ETF · 全球' },
-    { symbol: 'SCHD', name: 'Schwab US Dividend ETF', market: 'AMEX', industry: 'ETF · 高股息' },
-    { symbol: 'JEPI', name: 'JPMorgan Equity Premium ETF', market: 'AMEX', industry: 'ETF · 月配息' },
-    { symbol: 'BND', name: 'Vanguard Total Bond ETF', market: 'AMEX', industry: 'ETF · 債券' },
-    { symbol: 'GLD', name: 'SPDR Gold Shares', market: 'AMEX', industry: 'ETF · 黃金' }
+    { symbol: 'AAPL', name: 'Apple', zh: '蘋果', market: 'NASDAQ', industry: '科技 · 消費電子' },
+    { symbol: 'MSFT', name: 'Microsoft', zh: '微軟', market: 'NASDAQ', industry: '科技 · 軟體' },
+    { symbol: 'NVDA', name: 'NVIDIA', zh: '輝達 · 英偉達', market: 'NASDAQ', industry: '半導體' },
+    { symbol: 'GOOGL', name: 'Alphabet (Google)', zh: '谷歌 · 字母', market: 'NASDAQ', industry: '科技 · 網路' },
+    { symbol: 'AMZN', name: 'Amazon', zh: '亞馬遜', market: 'NASDAQ', industry: '電商 · 雲端' },
+    { symbol: 'META', name: 'Meta Platforms', zh: 'Meta · 臉書', market: 'NASDAQ', industry: '科技 · 社群' },
+    { symbol: 'TSLA', name: 'Tesla', zh: '特斯拉', market: 'NASDAQ', industry: '電動車' },
+    { symbol: 'AVGO', name: 'Broadcom', zh: '博通', market: 'NASDAQ', industry: '半導體' },
+    { symbol: 'BRK.B', name: 'Berkshire Hathaway B', zh: '波克夏 B', market: 'NYSE', industry: '綜合控股' },
+    { symbol: 'JPM', name: 'JPMorgan Chase', zh: '摩根大通 · 小摩', market: 'NYSE', industry: '金融' },
+    { symbol: 'V', name: 'Visa', zh: '威士卡', market: 'NYSE', industry: '金融 · 支付' },
+    { symbol: 'MA', name: 'Mastercard', zh: '萬事達卡', market: 'NYSE', industry: '金融 · 支付' },
+    { symbol: 'LLY', name: 'Eli Lilly', zh: '禮來', market: 'NYSE', industry: '製藥' },
+    { symbol: 'UNH', name: 'UnitedHealth', zh: '聯合健康', market: 'NYSE', industry: '醫療保險' },
+    { symbol: 'JNJ', name: 'Johnson & Johnson', zh: '嬌生', market: 'NYSE', industry: '醫療保健' },
+    { symbol: 'XOM', name: 'Exxon Mobil', zh: '埃克森美孚', market: 'NYSE', industry: '能源' },
+    { symbol: 'WMT', name: 'Walmart', zh: '沃爾瑪', market: 'NYSE', industry: '零售' },
+    { symbol: 'COST', name: 'Costco', zh: '好市多', market: 'NASDAQ', industry: '零售 · 量販' },
+    { symbol: 'HD', name: 'Home Depot', zh: '家得寶', market: 'NYSE', industry: '零售 · 家居' },
+    { symbol: 'PG', name: 'Procter & Gamble', zh: '寶僑 · P&G', market: 'NYSE', industry: '消費必需品' },
+    { symbol: 'KO', name: 'Coca-Cola', zh: '可口可樂', market: 'NYSE', industry: '飲料' },
+    { symbol: 'PEP', name: 'PepsiCo', zh: '百事', market: 'NASDAQ', industry: '飲料 · 食品' },
+    { symbol: 'NFLX', name: 'Netflix', zh: '網飛 · 奈飛', market: 'NASDAQ', industry: '串流媒體' },
+    { symbol: 'AMD', name: 'Advanced Micro Devices', zh: '超微', market: 'NASDAQ', industry: '半導體' },
+    { symbol: 'INTC', name: 'Intel', zh: '英特爾', market: 'NASDAQ', industry: '半導體' },
+    { symbol: 'CRM', name: 'Salesforce', zh: '賽富時', market: 'NYSE', industry: '軟體 · 雲端' },
+    { symbol: 'ORCL', name: 'Oracle', zh: '甲骨文', market: 'NYSE', industry: '軟體 · 資料庫' },
+    { symbol: 'ADBE', name: 'Adobe', zh: '奧多比', market: 'NASDAQ', industry: '軟體' },
+    { symbol: 'DIS', name: 'Walt Disney', zh: '迪士尼', market: 'NYSE', industry: '媒體 · 娛樂' },
+    { symbol: 'BAC', name: 'Bank of America', zh: '美國銀行 · 美銀', market: 'NYSE', industry: '金融' },
+    { symbol: 'PLTR', name: 'Palantir', zh: '帕蘭泰爾', market: 'NASDAQ', industry: '軟體 · 數據' },
+    { symbol: 'TSM', name: 'TSMC ADR (台積電)', zh: '台積電 ADR', market: 'NYSE', industry: '半導體' },
+    { symbol: 'ASML', name: 'ASML ADR', zh: '艾司摩爾 · 阿斯麥', market: 'NASDAQ', industry: '半導體設備' },
+    { symbol: 'SPY', name: 'SPDR S&P 500 ETF', zh: '標普500 ETF', market: 'AMEX', industry: 'ETF · 大盤' },
+    { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', zh: '標普500 ETF', market: 'AMEX', industry: 'ETF · 大盤' },
+    { symbol: 'VTI', name: 'Vanguard Total Market ETF', zh: '美股全市場 ETF', market: 'AMEX', industry: 'ETF · 全市場' },
+    { symbol: 'QQQ', name: 'Invesco QQQ (那斯達克100)', zh: '那斯達克100 ETF', market: 'NASDAQ', industry: 'ETF · 科技' },
+    { symbol: 'VT', name: 'Vanguard Total World ETF', zh: '全世界股票 ETF', market: 'AMEX', industry: 'ETF · 全球' },
+    { symbol: 'SCHD', name: 'Schwab US Dividend ETF', zh: '美股高股息 ETF', market: 'AMEX', industry: 'ETF · 高股息' },
+    { symbol: 'JEPI', name: 'JPMorgan Equity Premium ETF', zh: '摩根月配息 ETF', market: 'AMEX', industry: 'ETF · 月配息' },
+    { symbol: 'BND', name: 'Vanguard Total Bond ETF', zh: '美國總體債券 ETF', market: 'AMEX', industry: 'ETF · 債券' },
+    { symbol: 'GLD', name: 'SPDR Gold Shares', zh: '黃金 ETF', market: 'AMEX', industry: 'ETF · 黃金' }
   ];
   (function dedupUsStocks() {
     const seen = new Set();
@@ -7328,6 +7629,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     return US_STOCKS.filter(s =>
       s.symbol.toLowerCase().includes(q) ||
       s.name.toLowerCase().includes(q) ||
+      (s.zh && s.zh.includes(q)) ||
       (s.industry && s.industry.toLowerCase().includes(q))
     ).slice(0, 12);
   }
@@ -7530,6 +7832,302 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     );
   }
 
+  // ============================================================
+  // Finnhub 即時報價 + 美股個股分析（免費 API，瀏覽器直連 · CORS 允許）
+  // ============================================================
+  const FINNHUB_KEY_STORAGE = 'studio_finnhub_key_v1';
+  let finnhubKey = '';
+  let usAnalysisPrompt = '';
+
+  async function loadFinnhubKey() {
+    try { finnhubKey = (await readKey(FINNHUB_KEY_STORAGE)) || ''; } catch (e) { finnhubKey = ''; }
+    return finnhubKey;
+  }
+  async function finnhubGet(path, params) {
+    if (!finnhubKey) await loadFinnhubKey();
+    if (!finnhubKey) throw new Error('尚未設定 Finnhub API 金鑰');
+    const url = new URL('https://finnhub.io/api/v1/' + path);
+    Object.entries(params || {}).forEach(([k, v]) => url.searchParams.set(k, v));
+    url.searchParams.set('token', finnhubKey);
+    const resp = await fetch(url.toString(), { cache: 'no-store' });
+    if (resp.status === 401) throw new Error('Finnhub 金鑰無效（401）');
+    if (resp.status === 429) throw new Error('Finnhub 額度用盡（429）· 稍後再試');
+    if (!resp.ok) throw new Error('Finnhub HTTP ' + resp.status);
+    return resp.json();
+  }
+  const finnhubQuote = symbol => finnhubGet('quote', { symbol });
+  const finnhubProfile = symbol => finnhubGet('stock/profile2', { symbol });
+  const finnhubMetrics = symbol => finnhubGet('stock/metric', { symbol, metric: 'all' });
+  function finnhubNews(symbol) {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+    return finnhubGet('company-news', { symbol, from, to });
+  }
+
+  // === Finnhub 金鑰 Modal ===
+  async function openFinnhubKeyModal() {
+    await loadFinnhubKey();
+    document.getElementById('finnhubKeyInput').value = finnhubKey || '';
+    document.getElementById('finnhubKeyModal').classList.add('active');
+  }
+  function closeFinnhubKeyModal() { document.getElementById('finnhubKeyModal').classList.remove('active'); }
+  async function saveFinnhubKey() {
+    const k = document.getElementById('finnhubKeyInput').value.trim();
+    finnhubKey = k;
+    await writeKey(FINNHUB_KEY_STORAGE, k);
+    showToast(k ? '✓ Finnhub 金鑰已儲存' : '已清除金鑰');
+    closeFinnhubKeyModal();
+  }
+  async function testFinnhubKey() {
+    const k = document.getElementById('finnhubKeyInput').value.trim();
+    if (!k) { showToast('請先貼上金鑰'); return; }
+    const btn = document.getElementById('finnhubTestBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '測試中…'; }
+    try {
+      finnhubKey = k;
+      const q = await finnhubQuote('AAPL');
+      if (q && typeof q.c === 'number' && q.c > 0) showToast('✓ 金鑰有效 · AAPL 現價 $' + q.c.toFixed(2));
+      else throw new Error('回應異常，請確認金鑰');
+    } catch (e) { showToast('☒ ' + e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = '🔍 測試金鑰'; } }
+  }
+
+  // === 一鍵抓所有持股即時報價 → 更新現價 ===
+  async function refreshUsQuotes() {
+    if (!finnhubKey) await loadFinnhubKey();
+    if (!finnhubKey) { showToast('請先設定 Finnhub 金鑰'); openFinnhubKeyModal(); return; }
+    if (usHoldings.length === 0) { showToast('尚無持股'); return; }
+    const btn = document.getElementById('usQuoteBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⚡ 更新中…'; }
+    let ok = 0, fail = 0, aborted = false;
+    for (const h of usHoldings) {
+      try {
+        const q = await finnhubQuote(h.symbol);
+        if (q && typeof q.c === 'number' && q.c > 0) {
+          h.currentPrice = q.c;
+          h.dayChange = q.d; h.dayChangePct = q.dp;
+          h.prevClose = q.pc; h.dayHigh = q.h; h.dayLow = q.l; h.dayOpen = q.o;
+          h.priceUpdatedAt = Date.now();
+          h.updatedAt = Date.now();
+          ok++;
+        } else { fail++; }
+      } catch (e) {
+        fail++;
+        console.warn('quote fail', h.symbol, e);
+        if (/401|金鑰|429/.test(String(e.message))) { showToast('☒ ' + e.message); aborted = true; break; }
+      }
+      await new Promise(r => setTimeout(r, 120)); // 保守節流，遠低於 60/min
+    }
+    await saveUsHoldings();
+    renderUsHoldings();
+    renderUsStockStats();
+    if (usSyncConfig.enabled && typeof pushUsHoldingToSupabase === 'function') {
+      usHoldings.forEach(h => { try { pushUsHoldingToSupabase(h); } catch (e) {} });
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ 即時報價'; }
+    if (!aborted) showToast(`⚡ 報價更新 · 成功 ${ok}${fail ? ` / 失敗 ${fail}` : ''}`);
+  }
+
+  // === 個股分析 Modal ===
+  function closeUsAnalysisModal() { document.getElementById('usAnalysisModal').classList.remove('active'); }
+  // TradingView 互動 K 線圖（CDN widget，免金鑰，自帶資料）
+  function usTvSymbol(h) {
+    const ex = { NASDAQ: 'NASDAQ', NYSE: 'NYSE', AMEX: 'AMEX' }[h.market] || '';
+    return ex ? `${ex}:${h.symbol}` : h.symbol;
+  }
+  async function loadUsTvChart(h) {
+    const cont = document.getElementById('usTvChart');
+    if (!cont) return;
+    try {
+      if (!window.TradingView) await loadScript('https://s3.tradingview.com/tv.js', 'sdk-tradingview');
+      if (!window.TradingView) throw new Error('lib');
+      cont.innerHTML = '';
+      new TradingView.widget({
+        container_id: 'usTvChart',
+        autosize: true,
+        symbol: usTvSymbol(h),
+        interval: 'D',
+        timezone: 'America/New_York',
+        theme: 'dark',
+        style: '1',
+        locale: 'zh_TW',
+        withdateranges: true,
+        hide_side_toolbar: true,
+        allow_symbol_change: true,
+        studies: ['MASimple@tv-basicstudies'],
+        backgroundColor: 'rgba(14,13,11,1)'
+      });
+    } catch (e) {
+      cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖需連網載入 · 目前無法顯示</div>';
+    }
+  }
+  function usAnaMini(k, v) {
+    return `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:3px; padding:6px 8px; text-align:center;"><div style="font-size:9.5px; color:var(--ink-tertiary);">${k}</div><div style="font-family:var(--mono); font-size:12px;">${v}</div></div>`;
+  }
+  function usAnaCell(k, v) {
+    return `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:3px; padding:8px 10px;"><div style="font-size:10px; color:var(--ink-tertiary);">${k}</div><div style="font-family:var(--mono); font-size:14px; color:var(--ink-primary);">${v}</div></div>`;
+  }
+  // 極簡 markdown（粗體 / 【標題】/ 換行）
+  function usMdLite(t) {
+    let s = escape(t || '');
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/【(.+?)】/g, '<strong style="color:var(--accent);">【$1】</strong>');
+    s = s.replace(/\n/g, '<br>');
+    return s;
+  }
+  function buildUsAnalysisPrompt(symbol, name, snapshot) {
+    const today = new Date().toISOString().slice(0, 10);
+    return `請對美股 ${symbol}（${name || ''}）做一份完整的個股盡職調查與分析（今天 ${today}）。
+${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字）：\n' + snapshot + '\n' : ''}
+請搜尋並整合最新資料：
+1. 最新股價、日/週/月漲跌、52 週高低
+2. 估值：本益比 P/E、預估 P/E、PEG、股價淨值比、殖利率
+3. 基本面：營收與 EPS 成長、毛利率、ROE、自由現金流、負債狀況
+4. 近期財報與重大新聞、法說會重點
+5. 分析師評級與目標價區間
+6. 同業與競爭態勢
+
+請以下列結構回答（繁體中文）：
+
+【一句話結論】當前投資態勢
+
+【買進評分】1-10（10＝強烈買進）＋理由
+【賣出評分】1-10（10＝強烈賣出）＋理由
+
+【基本面】3-5 點（成長、獲利、現金流）
+【估值判斷】偏貴 / 合理 / 偏低，並說明
+【主要催化劑】3 點
+【主要風險】3 點
+【替代標的】同產業 2-3 檔可比較標的
+
+最後提醒：以上僅為資訊整理，不構成投資建議。`;
+  }
+  async function openUsAnalysis(symbol) {
+    const h = usHoldings.find(x => x.symbol === symbol) || US_STOCKS.find(x => x.symbol === symbol) || { symbol, name: symbol };
+    document.getElementById('usAnalysisTitle').innerHTML = `${escape(h.symbol)} <em>分析</em>`;
+    document.getElementById('usAnalysisModal').classList.add('active');
+    const body = document.getElementById('usAnalysisBody');
+    body.innerHTML = `
+      <div id="usTvChart" style="height:360px; margin-bottom:16px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
+      <div id="usAnalysisData" style="text-align:center; padding:18px; color:var(--ink-tertiary);">載入即時資料中…</div>`;
+    loadUsTvChart(h); // 獨立載入，不擋資料區
+    if (!finnhubKey) await loadFinnhubKey();
+    let quote = null, profile = null, metric = null, news = null;
+    if (finnhubKey) {
+      [quote, profile, metric] = await Promise.all([
+        finnhubQuote(h.symbol).catch(() => null),
+        finnhubProfile(h.symbol).catch(() => null),
+        finnhubMetrics(h.symbol).catch(() => null)
+      ]);
+      news = await finnhubNews(h.symbol).catch(() => null);
+    }
+    // 快照字串餵給 AI prompt
+    let snap = '';
+    if (quote && quote.c > 0) snap += `現價 $${quote.c} · 當日 ${quote.dp >= 0 ? '+' : ''}${Number(quote.dp).toFixed(2)}%`;
+    const mm = (metric && metric.metric) || {};
+    if (mm.peTTM != null || mm.peBasicExclExtraTTM != null) snap += ` · P/E ${Number(mm.peTTM ?? mm.peBasicExclExtraTTM).toFixed(1)}`;
+    if (mm['52WeekHigh'] != null) snap += ` · 52W ${mm['52WeekLow']}~${mm['52WeekHigh']}`;
+    usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap);
+    const dataEl = document.getElementById('usAnalysisData');
+    if (dataEl) {
+      dataEl.style.padding = '0'; dataEl.style.textAlign = 'left'; dataEl.style.color = 'var(--ink-secondary)';
+      dataEl.innerHTML = renderUsAnalysisData(h, quote, profile, metric, news);
+    }
+  }
+  function renderUsAnalysisData(h, quote, profile, metric, news) {
+    const m = (metric && metric.metric) || {};
+    const fmt = (v, d = 2) => (v == null || isNaN(v)) ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: d });
+    const hasQuote = quote && typeof quote.c === 'number' && quote.c > 0;
+    const dc = quote ? quote.dp : null;
+    const dcCls = dc > 0 ? 'profit' : dc < 0 ? 'loss' : 'flat';
+
+    const profileBlock = (profile && profile.name) ? `
+      <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+        ${profile.logo ? `<img src="${escape(profile.logo)}" style="width:36px; height:36px; border-radius:6px; background:#fff; object-fit:contain;" onerror="this.style.display='none'">` : ''}
+        <div>
+          <div style="font-family:var(--serif); font-size:16px;">${escape(profile.name)}</div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(profile.finnhubIndustry || '')}${profile.exchange ? ` · ${escape(profile.exchange)}` : ''}</div>
+        </div>
+      </div>` : '';
+
+    const quoteBlock = hasQuote ? `
+      <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+        <div style="font-family:var(--serif); font-size:32px;">$${fmt(quote.c)}</div>
+        <div class="${dcCls}" style="font-family:var(--mono); font-size:15px;">${dc >= 0 ? '+' : ''}${fmt(quote.d)} (${dc >= 0 ? '+' : ''}${fmt(dc)}%)</div>
+        <div style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.1em;">FINNHUB · 即時</div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px;">
+        ${usAnaMini('開盤', '$' + fmt(quote.o))}${usAnaMini('最高', '$' + fmt(quote.h))}${usAnaMini('最低', '$' + fmt(quote.l))}${usAnaMini('前收', '$' + fmt(quote.pc))}
+      </div>` : `<div style="padding:12px; background:var(--bg-elevated); border:1px dashed var(--line); border-radius:4px; margin-bottom:14px; font-size:12.5px; color:var(--ink-secondary); line-height:1.6;">${finnhubKey ? '即時報價暫時取不到（可能非美股交易時段，或此代號 Finnhub 不支援）。仍可用下方 AI 分析。' : '尚未設定 Finnhub 金鑰 → 目前只能用下方 AI 分析。點工具列「🔑 金鑰」設定後即可看即時報價與估值指標。'}</div>`;
+
+    const metricRows = [
+      ['本益比 P/E', fmt(m.peTTM ?? m.peBasicExclExtraTTM)],
+      ['預估 P/E', fmt(m.forwardPE ?? m.peExclExtraAnnual)],
+      ['股價淨值比', fmt(m.pbAnnual ?? m.pbQuarterly)],
+      ['殖利率 %', fmt(m.currentDividendYieldTTM ?? m.dividendYieldIndicatedAnnual)],
+      ['52週高', m['52WeekHigh'] != null ? '$' + fmt(m['52WeekHigh']) : '—'],
+      ['52週低', m['52WeekLow'] != null ? '$' + fmt(m['52WeekLow']) : '—'],
+      ['Beta', fmt(m.beta)],
+      ['EPS(TTM)', fmt(m.epsTTM ?? m.epsBasicExclExtraItemsTTM)],
+      ['ROE %', fmt(m.roeTTM ?? m.roeRfy)],
+      ['毛利率 %', fmt(m.grossMarginTTM ?? m.grossMarginAnnual)],
+      ['營益率 %', fmt(m.operatingMarginTTM ?? m.operatingMarginAnnual)],
+      ['市值(M)', m.marketCapitalization != null ? fmt(m.marketCapitalization, 0) : '—']
+    ];
+    const metricBlock = metric ? `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:6px 0;">KEY · METRICS</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px;">
+        ${metricRows.map(([k, v]) => usAnaCell(k, v)).join('')}
+      </div>` : '';
+
+    const newsArr = Array.isArray(news) ? news : (news && news.items) ? news.items : [];
+    const newsItems = newsArr.slice(0, 6);
+    const newsBlock = newsItems.length ? `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:6px 0;">RECENT · NEWS</div>
+      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;">
+        ${newsItems.map(n => `<a href="${escape(n.url || '#')}" target="_blank" rel="noopener" style="display:block; padding:8px 10px; background:var(--bg-card); border:1px solid var(--line); border-radius:3px; text-decoration:none;"><div style="font-size:12.5px; color:var(--ink-primary); line-height:1.4;">${escape(n.headline || n.title || '')}</div><div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-top:3px;">${escape(n.source || '')}${n.datetime ? ` · ${new Date(n.datetime * 1000).toISOString().slice(0, 10)}` : ''}</div></a>`).join('')}
+      </div>` : '';
+
+    const aiBlock = `
+      <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:4px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+          <button class="btn btn-primary btn-sm" id="usAiAnalyzeBtn" onclick="runUsAiAnalysis()">🤖 用 Claude 深度分析</button>
+          <button class="btn btn-sm" onclick="copyUsAnalysisPrompt()">📋 複製提示詞</button>
+          <button class="btn btn-sm" onclick="openAiSite('claude')">🚀 Claude.ai</button>
+          <button class="btn btn-sm" onclick="openAiSite('chatgpt')">🚀 ChatGPT</button>
+          <button class="btn btn-sm" onclick="openAiSite('gemini')">🚀 Gemini</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px; line-height:1.5;">🤖 需在「投資翻倍 / 以小搏大」設過 Anthropic API Key（會用 web search）；否則用「複製提示詞」貼到 AI 網站。</div>
+        <div id="usAnalysisAiResult" style="display:none; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px; font-size:13px; line-height:1.75; color:var(--ink-secondary); max-height:42vh; overflow-y:auto;"></div>
+        <div style="margin-top:12px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">⚠ 數據來自 Finnhub，僅供參考、不構成投資建議。即時報價於美股交易時段最準。</div>
+      </div>`;
+
+    return profileBlock + quoteBlock + metricBlock + newsBlock + aiBlock;
+  }
+  function copyUsAnalysisPrompt() {
+    navigator.clipboard.writeText(usAnalysisPrompt).then(
+      () => showToast('分析提示詞已複製'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+  async function runUsAiAnalysis() {
+    const out = document.getElementById('usAnalysisAiResult');
+    const btn = document.getElementById('usAiAnalyzeBtn');
+    const apiKey = await readKey(AI_KEY_STORAGE);
+    if (!apiKey) { showToast('尚未設定 Anthropic API Key（可到「投資翻倍」設定）'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = '🤖 分析中…（約 20-40 秒）'; }
+    out.style.display = 'block';
+    out.innerHTML = '<div style="color:var(--ink-tertiary);">Claude 正在搜尋並分析…</div>';
+    try {
+      const text = await callClaudeWithWebSearch(usAnalysisPrompt);
+      out.innerHTML = usMdLite(text);
+    } catch (e) {
+      out.innerHTML = '<div style="color:var(--danger);">分析失敗：' + escape(e.message) + '</div>';
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🤖 用 Claude 深度分析'; }
+    }
+  }
+
   // === 統計卡片（沿用通用 holdingCost/Value/PnL）===
   function renderUsStockStats() {
     const totalCost = usHoldings.reduce((s, h) => s + holdingCost(h), 0);
@@ -7612,6 +8210,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
           <div style="text-align:right;">
             <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${usMoneySign(pnl)}</div>
+            ${h.dayChangePct != null ? `<div class="${h.dayChangePct > 0 ? 'profit' : h.dayChangePct < 0 ? 'loss' : 'flat'}" style="font-family:var(--mono); font-size:10px; margin-top:3px;">今日 ${h.dayChangePct >= 0 ? '+' : ''}${Number(h.dayChangePct).toFixed(2)}%</div>` : ''}
           </div>
         </div>
         <div class="hc-prices">
@@ -7638,6 +8237,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         <div class="hc-actions" onclick="event.stopPropagation();">
           <button class="hc-mini-btn" onclick="openUsHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
           <button class="hc-mini-btn" onclick="openUsTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
+          <button class="hc-mini-btn" onclick="openUsAnalysis('${escape(h.symbol)}'); event.stopPropagation();">📊 分析</button>
           <button class="hc-mini-btn" onclick="toggleUsHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
         </div>
         <div class="hc-txn-list">${txnHtml}</div>
@@ -7650,55 +8250,79 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   }
 
   // === 股票搜尋下拉 ===
-  function onUsHoldingSearch(q) {
-    const box = document.getElementById('usHoldingSearchResults');
-    const results = searchUsStocks(q);
-    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  // 搜尋結果快取（含 Finnhub 即時搜到的、不在內建清單的標的），供 pick 取用
+  let usSearchResultCache = {};
+  let usSearchSeq = 0;
+  const finnhubSearch = q => finnhubGet('search', { q });
+
+  function renderUsSearchBox(boxId, list, pickFnName) {
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    list.forEach(s => { usSearchResultCache[s.symbol] = s; });
+    if (list.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
     box.style.display = 'block';
-    box.innerHTML = results.map(s => `
-      <div class="stock-search-item" onmousedown="event.preventDefault(); pickUsHoldingStock('${escape(s.symbol)}')">
+    box.innerHTML = list.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); ${pickFnName}('${escape(s.symbol)}')">
         <span class="ss-symbol">${escape(s.symbol)}</span>
-        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-name">${escape(s.name || '')}${s.zh ? ' · ' + escape(s.zh) : ''}</span>
         <span class="ss-industry">${escape(s.industry || '')}</span>
       </div>
     `).join('');
   }
+  // 內建清單找不到時，用 Finnhub 全市場即時搜尋補上（需金鑰）
+  async function augmentUsSearchRemote(q, boxId, inputId, pickFnName, localList) {
+    q = (q || '').trim();
+    if (q.length < 2) return;
+    if (!finnhubKey) await loadFinnhubKey();
+    if (!finnhubKey) return;
+    const seq = ++usSearchSeq;
+    let data;
+    try { data = await finnhubSearch(q); } catch (e) { return; }
+    if (seq !== usSearchSeq) return; // 有更新的查詢，放棄這次舊結果
+    const input = document.getElementById(inputId);
+    if (!input || input.value.trim().toLowerCase() !== q.toLowerCase()) return; // 使用者已改字
+    const seen = new Set(localList.map(x => x.symbol));
+    const remote = (data.result || [])
+      .filter(r => r.symbol && /^[A-Z][A-Z.]{0,6}$/.test(r.symbol) && !r.symbol.includes(':') && !seen.has(r.symbol))
+      .map(r => ({ symbol: r.symbol, name: r.description || r.symbol, market: 'US', industry: 'Finnhub 搜尋' }))
+      .slice(0, 10);
+    if (remote.length === 0) return;
+    renderUsSearchBox(boxId, [...localList, ...remote].slice(0, 16), pickFnName);
+  }
+
+  function onUsHoldingSearch(q) {
+    const local = searchUsStocks(q);
+    renderUsSearchBox('usHoldingSearchResults', local, 'pickUsHoldingStock');
+    augmentUsSearchRemote(q, 'usHoldingSearchResults', 'usHoldingSearchBox', 'pickUsHoldingStock', local);
+  }
   function pickUsHoldingStock(symbol) {
-    const s = US_STOCKS.find(x => x.symbol === symbol);
+    const s = usSearchResultCache[symbol] || US_STOCKS.find(x => x.symbol === symbol);
     if (!s) return;
     document.getElementById('usHoldingSymbol').value = s.symbol;
-    document.getElementById('usHoldingName').value = s.name;
-    document.getElementById('usHoldingMarket').value = s.market;
-    document.getElementById('usHoldingIndustry').value = s.industry || '';
-    document.getElementById('usHoldingSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('usHoldingName').value = s.name || s.symbol;
+    document.getElementById('usHoldingMarket').value = s.market || 'NASDAQ';
+    document.getElementById('usHoldingIndustry').value = s.industry === 'Finnhub 搜尋' ? '' : (s.industry || '');
+    document.getElementById('usHoldingSearchBox').value = `${s.symbol} · ${s.name || ''}`;
     document.getElementById('usHoldingSearchResults').style.display = 'none';
     document.getElementById('usHoldingShares').focus();
   }
   function onUsTxnSearch(q) {
-    const box = document.getElementById('usTxnSearchResults');
     const local = usHoldings.filter(h =>
-      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
+      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || (h.name || '').toLowerCase().includes(q.toLowerCase())
     ).map(h => ({ symbol: h.symbol, name: h.name, market: h.market || 'NASDAQ', industry: '我的持股' }));
     const builtIn = searchUsStocks(q);
     const seen = new Set(local.map(x => x.symbol));
     const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
-    if (combined.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    box.style.display = 'block';
-    box.innerHTML = combined.map(s => `
-      <div class="stock-search-item" onmousedown="event.preventDefault(); pickUsTxnStock('${escape(s.symbol)}')">
-        <span class="ss-symbol">${escape(s.symbol)}</span>
-        <span class="ss-name">${escape(s.name)}</span>
-        <span class="ss-industry">${escape(s.industry || '')}</span>
-      </div>
-    `).join('');
+    renderUsSearchBox('usTxnSearchResults', combined, 'pickUsTxnStock');
+    augmentUsSearchRemote(q, 'usTxnSearchResults', 'usTxnSearchBox', 'pickUsTxnStock', combined);
   }
   function pickUsTxnStock(symbol) {
     const h = usHoldings.find(x => x.symbol === symbol);
-    const s = h || US_STOCKS.find(x => x.symbol === symbol);
+    const s = h || usSearchResultCache[symbol] || US_STOCKS.find(x => x.symbol === symbol);
     if (!s) return;
     document.getElementById('usTxnSymbol').value = s.symbol;
-    document.getElementById('usTxnSymbolName').value = s.name;
-    document.getElementById('usTxnSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('usTxnSymbolName').value = s.name || s.symbol;
+    document.getElementById('usTxnSearchBox').value = `${s.symbol} · ${s.name || ''}`;
     document.getElementById('usTxnSearchResults').style.display = 'none';
     document.getElementById('usTxnShares').focus();
     if (h && h.currentPrice) document.getElementById('usTxnPrice').value = h.currentPrice;
@@ -8746,6 +9370,787 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     renderCryptoHoldings();
     renderCryptoStats();
     showToast('幣價已更新');
+  }
+
+  // ============================================================
+  // 高股息 ETF · High-Dividend ETF Module（鏡像加密貨幣，台幣計價 + 配息追蹤）
+  // ============================================================
+  const HD_ETF_STORAGE = {
+    holdings: 'hdetf_holdings_v1',
+    txns: 'hdetf_transactions_v1',
+    realized: 'hdetf_realized_v1',
+    sync: 'hdetf_sync_v1'
+  };
+  const HD_ETF_LIST = [
+    { symbol: '0056', name: '元大高股息', market: '元大', industry: '高股息' },
+    { symbol: '00878', name: '國泰永續高股息', market: '國泰', industry: '高股息 · ESG' },
+    { symbol: '00919', name: '群益台灣精選高息', market: '群益', industry: '高股息' },
+    { symbol: '00929', name: '復華台灣科技優息', market: '復華', industry: '科技優息' },
+    { symbol: '00713', name: '元大台灣高息低波', market: '元大', industry: '高息低波' },
+    { symbol: '00940', name: '元大臺灣價值高息', market: '元大', industry: '價值高息' },
+    { symbol: '00701', name: '國泰股利精選30', market: '國泰', industry: '高股息' },
+    { symbol: '00731', name: '復華富時高息低波', market: '復華', industry: '高息低波' },
+    { symbol: '00900', name: '富邦特選高股息30', market: '富邦', industry: '高股息' },
+    { symbol: '00915', name: '凱基優選高股息30', market: '凱基', industry: '高股息' },
+    { symbol: '00918', name: '大華優利高填息30', market: '大華', industry: '高填息' },
+    { symbol: '00936', name: '台新永續高息中小', market: '台新', industry: '高股息 · 中小' },
+    { symbol: '00939', name: '統一台灣高息動能', market: '統一', industry: '高息動能' },
+    { symbol: '00943', name: '兆豐台灣電子高息', market: '兆豐', industry: '電子高息' },
+    { symbol: '0056B', name: '元大高股息（範例，可改）', market: '元大', industry: '高股息' }
+  ];
+  (function dedupHdEtfList() {
+    const seen = new Set();
+    for (let i = 0; i < HD_ETF_LIST.length; i++) {
+      if (seen.has(HD_ETF_LIST[i].symbol)) { HD_ETF_LIST.splice(i, 1); i--; }
+      else seen.add(HD_ETF_LIST[i].symbol);
+    }
+  })();
+  function searchHdEtfList(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    return HD_ETF_LIST.filter(s =>
+      s.symbol.toLowerCase().includes(q) ||
+      s.name.toLowerCase().includes(q) ||
+      (s.industry && s.industry.toLowerCase().includes(q))
+    ).slice(0, 12);
+  }
+
+  let hdEtfHoldings = [];
+  let hdEtfTxns = [];
+  let hdEtfRealizedPnL = 0;   // 資本利得（賣出）— 配息獨立計算
+  let hdEtfExpandedHoldingId = null;
+  let hdEtfSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
+  let hdEtfSyncClient = null;
+
+  const hdEtfMoney = n => 'NT$' + Math.round(Number(n || 0)).toLocaleString('en-US');
+  const hdEtfMoneySign = n => (n >= 0 ? '+' : '-') + 'NT$' + Math.round(Math.abs(Number(n || 0))).toLocaleString('en-US');
+  const hdEtfShares = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  const hdEtfPrice = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // === 配息計算（與資本利得分開）===
+  function hdEtfSymbolDividends(symbol, sinceTs) {
+    return hdEtfTxns
+      .filter(t => t.type === 'dividend' && t.symbol === symbol)
+      .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
+      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+  }
+  function hdEtfTotalDividends(sinceTs) {
+    return hdEtfTxns
+      .filter(t => t.type === 'dividend')
+      .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
+      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+  }
+  function hdEtfYield(h) {
+    const v = holdingValue(h);
+    if (!v) return 0;
+    const oneYearAgo = Date.now() - 365 * 24 * 3600 * 1000;
+    return hdEtfSymbolDividends(h.symbol, oneYearAgo) / v * 100;
+  }
+
+  async function loadHdEtf() {
+    try { const h = await readKey(HD_ETF_STORAGE.holdings); hdEtfHoldings = h ? JSON.parse(h) : []; }
+    catch (e) { hdEtfHoldings = []; }
+    try { const t = await readKey(HD_ETF_STORAGE.txns); hdEtfTxns = t ? JSON.parse(t) : []; }
+    catch (e) { hdEtfTxns = []; }
+    try { const r = await readKey(HD_ETF_STORAGE.realized); hdEtfRealizedPnL = r ? Number(r) : 0; }
+    catch (e) { hdEtfRealizedPnL = 0; }
+    await loadHdEtfSyncConfig();
+    renderHdEtfStats();
+    renderHdEtfHoldings();
+    renderHdEtfSyncBadge();
+    if (hdEtfSyncConfig.enabled) {
+      pullAllHdEtfFromSupabase().then(r => {
+        if (r) {
+          renderHdEtfStats();
+          renderHdEtfHoldings();
+          renderHdEtfSyncBadge();
+          if (r.hCount > 0 || r.tCount > 0) showToast(`☁ 已從雲端同步 · ${r.hCount} 持股 / ${r.tCount} 交易`);
+        }
+      }).catch(e => console.warn('hdEtf auto pull fail', e));
+    }
+  }
+  async function saveHdEtfHoldings() { await writeKey(HD_ETF_STORAGE.holdings, JSON.stringify(hdEtfHoldings)); }
+  async function saveHdEtfTxns() { await writeKey(HD_ETF_STORAGE.txns, JSON.stringify(hdEtfTxns)); }
+  async function saveHdEtfRealized() { await writeKey(HD_ETF_STORAGE.realized, String(hdEtfRealizedPnL)); }
+
+  // ===== HdEtf Supabase 同步 =====
+  async function loadHdEtfSyncConfig() {
+    try { const v = await readKey(HD_ETF_STORAGE.sync); if (v) hdEtfSyncConfig = { ...hdEtfSyncConfig, ...JSON.parse(v) }; } catch (e) {}
+  }
+  async function saveHdEtfSyncConfig() { await writeKey(HD_ETF_STORAGE.sync, JSON.stringify(hdEtfSyncConfig)); }
+  async function initHdEtfSyncClient() {
+    if (!hdEtfSyncConfig.enabled || !hdEtfSyncConfig.supabaseUrl || !hdEtfSyncConfig.supabaseKey || !hdEtfSyncConfig.userId) return null;
+    if (hdEtfSyncClient) return hdEtfSyncClient;
+    if (!window.supabase) {
+      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js', 'sdk-supabase');
+    }
+    hdEtfSyncClient = window.supabase.createClient(hdEtfSyncConfig.supabaseUrl, hdEtfSyncConfig.supabaseKey);
+    return hdEtfSyncClient;
+  }
+  async function pushHdEtfHoldingToSupabase(h, deleted = false) {
+    try {
+      const sb = await initHdEtfSyncClient();
+      if (!sb) return;
+      await sb.from('hdetf_holdings').upsert({ id: h.id, user_id: hdEtfSyncConfig.userId, data: h, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push hdEtf holding fail', e); }
+  }
+  async function pushHdEtfTransactionToSupabase(t, deleted = false) {
+    try {
+      const sb = await initHdEtfSyncClient();
+      if (!sb) return;
+      await sb.from('hdetf_transactions').upsert({ id: t.id, user_id: hdEtfSyncConfig.userId, symbol: t.symbol || null, data: t, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push hdEtf tx fail', e); }
+  }
+  async function pullAllHdEtfFromSupabase() {
+    const sb = await initHdEtfSyncClient();
+    if (!sb) return null;
+    const { data: hData, error: hErr } = await sb.from('hdetf_holdings').select('*').eq('user_id', hdEtfSyncConfig.userId).eq('deleted', false);
+    if (hErr) throw new Error('拉持股失敗: ' + hErr.message);
+    const { data: tData, error: tErr } = await sb.from('hdetf_transactions').select('*').eq('user_id', hdEtfSyncConfig.userId).eq('deleted', false);
+    if (tErr) throw new Error('拉交易失敗: ' + tErr.message);
+    const localHMap = new Map(hdEtfHoldings.map(h => [h.id, h]));
+    (hData || []).forEach(row => {
+      const local = localHMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localHMap.set(row.id, row.data);
+    });
+    hdEtfHoldings = Array.from(localHMap.values());
+    const localTMap = new Map(hdEtfTxns.map(t => [t.id, t]));
+    (tData || []).forEach(row => {
+      const local = localTMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localTMap.set(row.id, row.data);
+    });
+    hdEtfTxns = Array.from(localTMap.values());
+    hdEtfRealizedPnL = recomputeAllHdEtfRealized();
+    await saveHdEtfHoldings();
+    await saveHdEtfTxns();
+    await saveHdEtfRealized();
+    hdEtfSyncConfig.lastPullAt = Date.now();
+    await saveHdEtfSyncConfig();
+    return { hCount: (hData || []).length, tCount: (tData || []).length };
+  }
+  async function pushAllHdEtfToSupabase() {
+    let ok = 0;
+    for (const h of hdEtfHoldings) { try { await pushHdEtfHoldingToSupabase(h); ok++; } catch (e) {} }
+    for (const t of hdEtfTxns) { try { await pushHdEtfTransactionToSupabase(t); ok++; } catch (e) {} }
+    return ok;
+  }
+  async function syncHdEtfNow() {
+    if (!hdEtfSyncConfig.enabled) { openHdEtfSyncModal(); return; }
+    const btn = document.getElementById('hdEtfSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '☁ 同步中…'; }
+    try {
+      const r = await pullAllHdEtfFromSupabase();
+      if (!r) throw new Error('Client 初始化失敗 · 請檢查設定');
+      await pushAllHdEtfToSupabase();
+      renderHdEtfHoldings();
+      renderHdEtfStats();
+      renderHdEtfSyncBadge();
+      showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
+    } catch (e) {
+      showToast('☁ 同步失敗：' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
+    }
+  }
+  function renderHdEtfSyncBadge() {
+    const el = document.getElementById('hdEtfSyncBadge');
+    if (!el) return;
+    if (!hdEtfSyncConfig.enabled) { el.textContent = '☁ 未啟用'; el.style.color = 'var(--ink-tertiary)'; return; }
+    const t = hdEtfSyncConfig.lastPullAt;
+    el.textContent = t ? `☁ ${new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : '☁ 待同步';
+    el.style.color = 'var(--accent)';
+  }
+  async function openHdEtfSyncModal() {
+    await loadHdEtfSyncConfig();
+    document.getElementById('hdEtfSyncEnabled').checked = !!hdEtfSyncConfig.enabled;
+    document.getElementById('hdEtfSyncSupabaseUrl').value = hdEtfSyncConfig.supabaseUrl || '';
+    document.getElementById('hdEtfSyncSupabaseKey').value = hdEtfSyncConfig.supabaseKey || '';
+    document.getElementById('hdEtfSyncUserId').value = hdEtfSyncConfig.userId || '';
+    if (!hdEtfSyncConfig.userId && typeof twSyncConfig !== 'undefined' && twSyncConfig.userId) {
+      document.getElementById('hdEtfSyncUserId').placeholder = `（台股已設：${twSyncConfig.userId}，建議用同一個）`;
+    }
+    document.getElementById('hdEtfSyncModal').classList.add('active');
+  }
+  function closeHdEtfSyncModal() { document.getElementById('hdEtfSyncModal').classList.remove('active'); }
+  function fillHdEtfSyncFromTrv() {
+    const src = (typeof twSyncConfig !== 'undefined' && twSyncConfig.supabaseUrl) ? twSyncConfig
+              : (typeof cryptoSyncConfig !== 'undefined' && cryptoSyncConfig.supabaseUrl) ? cryptoSyncConfig
+              : trvMultiConfig;
+    if (src?.supabaseUrl) document.getElementById('hdEtfSyncSupabaseUrl').value = src.supabaseUrl;
+    if (src?.supabaseKey) document.getElementById('hdEtfSyncSupabaseKey').value = src.supabaseKey;
+    if (src?.userId) document.getElementById('hdEtfSyncUserId').value = src.userId;
+    showToast(src?.supabaseUrl ? '已帶入現有設定' : '尚未在台股／加密貨幣／旅遊設定 Supabase');
+  }
+  async function saveHdEtfSyncSettings() {
+    hdEtfSyncConfig.enabled = document.getElementById('hdEtfSyncEnabled').checked;
+    hdEtfSyncConfig.supabaseUrl = document.getElementById('hdEtfSyncSupabaseUrl').value.trim();
+    hdEtfSyncConfig.supabaseKey = document.getElementById('hdEtfSyncSupabaseKey').value.trim();
+    hdEtfSyncConfig.userId = document.getElementById('hdEtfSyncUserId').value.trim();
+    if (hdEtfSyncConfig.enabled) {
+      if (!hdEtfSyncConfig.supabaseUrl) return showToast('請填 Supabase URL');
+      if (!hdEtfSyncConfig.supabaseKey) return showToast('請填 Supabase Anon Key');
+      if (!hdEtfSyncConfig.userId) return showToast('請填 User ID（自取，多裝置要相同）');
+      if (!/^https:\/\/.+\.supabase\.co$/.test(hdEtfSyncConfig.supabaseUrl)) return showToast('Supabase URL 格式錯（應為 https://xxx.supabase.co）');
+    }
+    hdEtfSyncClient = null;
+    await saveHdEtfSyncConfig();
+    renderHdEtfSyncBadge();
+    showToast('☁ 設定已儲存');
+    closeHdEtfSyncModal();
+    if (hdEtfSyncConfig.enabled) syncHdEtfNow();
+  }
+  function copyHdEtfSyncSql() {
+    const sql = `-- 在 Supabase Dashboard → SQL Editor 跑一次（建表）
+CREATE TABLE IF NOT EXISTS hdetf_holdings (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_hdetf_holdings_user ON hdetf_holdings(user_id);
+ALTER TABLE hdetf_holdings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON hdetf_holdings;
+CREATE POLICY "Allow all" ON hdetf_holdings FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS hdetf_transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  symbol TEXT,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_hdetf_transactions_user ON hdetf_transactions(user_id);
+ALTER TABLE hdetf_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON hdetf_transactions;
+CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK (true);`;
+    navigator.clipboard.writeText(sql).then(
+      () => showToast('SQL 已複製，貼到 Supabase SQL Editor 跑一次'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+
+  // === 統計卡片（含配息 + 年化殖利率）===
+  function renderHdEtfStats() {
+    const totalCost = hdEtfHoldings.reduce((s, h) => s + holdingCost(h), 0);
+    const totalValue = hdEtfHoldings.reduce((s, h) => s + holdingValue(h), 0);
+    const unrealized = totalValue - totalCost;
+    const unrealizedPct = totalCost > 0 ? (unrealized / totalCost) * 100 : 0;
+    const totalDiv = hdEtfTotalDividends();
+    const oneYearAgo = Date.now() - 365 * 24 * 3600 * 1000;
+    const div12m = hdEtfTotalDividends(oneYearAgo);
+    const portfolioYield = totalValue > 0 ? (div12m / totalValue) * 100 : 0;
+    const pnlClass = unrealized > 0 ? 'profit' : unrealized < 0 ? 'loss' : 'flat';
+    document.getElementById('hdEtfStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">總投入</div>
+        <div class="stat-value">${hdEtfMoney(totalCost)}</div>
+        <div class="stat-sub">${hdEtfHoldings.length} 檔 ETF</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">現值</div>
+        <div class="stat-value">${hdEtfMoney(totalValue)}</div>
+        <div class="stat-sub">CURRENT · MARKET · VALUE</div>
+      </div>
+      <div class="stat-card ${pnlClass}">
+        <div class="stat-label">未實現損益</div>
+        <div class="stat-value">${hdEtfMoneySign(unrealized)}</div>
+        <div class="stat-pct">${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%</div>
+      </div>
+      <div class="stat-card profit">
+        <div class="stat-label">累計配息</div>
+        <div class="stat-value">${hdEtfMoney(totalDiv)}</div>
+        <div class="stat-sub">近一年 ${hdEtfMoney(div12m)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">平均年化殖利率</div>
+        <div class="stat-value">${portfolioYield.toFixed(2)}%</div>
+        <div class="stat-sub">已實現價差 ${hdEtfMoneySign(hdEtfRealizedPnL)}</div>
+      </div>
+    `;
+  }
+
+  function renderHdEtfHoldings() {
+    const grid = document.getElementById('hdEtfHoldingsGrid');
+    if (hdEtfHoldings.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">◇</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p></div>';
+      return;
+    }
+    const sortBy = document.getElementById('hdEtfSortBy')?.value || 'value';
+    const sorted = hdEtfHoldings.slice().sort((a, b) => {
+      if (sortBy === 'value') return holdingValue(b) - holdingValue(a);
+      if (sortBy === 'yield') return hdEtfYield(b) - hdEtfYield(a);
+      if (sortBy === 'div') return hdEtfSymbolDividends(b.symbol) - hdEtfSymbolDividends(a.symbol);
+      if (sortBy === 'pnl_pct') return holdingPnLPct(b) - holdingPnLPct(a);
+      if (sortBy === 'pnl_abs') return holdingPnL(b) - holdingPnL(a);
+      if (sortBy === 'symbol') return (a.symbol || '').localeCompare(b.symbol || '');
+      if (sortBy === 'date') return (b.buyDate || '').localeCompare(a.buyDate || '');
+      return 0;
+    });
+    grid.innerHTML = sorted.map(h => hdEtfHoldingCardHtml(h)).join('');
+  }
+
+  function hdEtfHoldingCardHtml(h) {
+    const pnl = holdingPnL(h);
+    const pnlPct = holdingPnLPct(h);
+    const cls = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat';
+    const expanded = hdEtfExpandedHoldingId === h.id ? 'expanded' : '';
+    const totalDiv = hdEtfSymbolDividends(h.symbol);
+    const yld = hdEtfYield(h);
+    const txnsForHolding = hdEtfTxns.filter(t => t.symbol === h.symbol).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const txnHtml = txnsForHolding.length === 0
+      ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
+      : txnsForHolding.map(t => {
+          const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '增' }[t.type] || '?';
+          const right = t.type === 'dividend'
+            ? `${hdEtfShares(t.shares)} × ${hdEtfPrice(t.price)} = ${hdEtfMoney((t.shares || 0) * (t.price || 0))}`
+            : `${hdEtfShares(t.shares)} 股 × ${hdEtfPrice(t.price)}`;
+          return `
+            <div class="hc-txn-row" onclick="event.stopPropagation(); openHdEtfTxnModal('${escape(t.id)}')">
+              <span class="hc-txn-type ${escape(t.type)}">${typeLabel}</span>
+              <span style="flex:1; padding:0 8px;">${escape(t.date || '')}</span>
+              <span>${right}</span>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div class="holding-card ${cls} ${expanded}" data-hid="${escape(h.id)}" onclick="toggleHdEtfHoldingExpand('${escape(h.id)}')">
+        <div class="hc-top">
+          <div class="hc-symbol-wrap">
+            <div class="hc-symbol">${escape(h.symbol)}</div>
+            <div class="hc-name">${escape(h.name)}</div>
+            <div class="hc-meta">
+              <span>${escape(h.market || '券商')}</span>
+              ${h.industry ? `<span>${escape(h.industry)}</span>` : ''}
+              ${h.freq ? `<span>${escape(h.freq)}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${hdEtfMoneySign(pnl)}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin:10px 0; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12px;">
+          <span style="color:var(--accent); font-family:var(--mono); letter-spacing:0.1em;">◇ 配息</span>
+          <span style="color:var(--ink-secondary);">累計 <strong style="color:var(--ink-primary);">${hdEtfMoney(totalDiv)}</strong></span>
+          <span style="margin-left:auto; color:var(--ink-secondary);">年化殖利率 <strong style="color:var(--accent);">${yld.toFixed(2)}%</strong></span>
+        </div>
+        <div class="hc-prices">
+          <div class="hc-price-cell">
+            <div class="hc-price-label">成本</div>
+            <div class="hc-price-val">${hdEtfPrice(h.avgCost || 0)}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現價</div>
+            <div class="hc-price-val ${cls}">${h.currentPrice ? hdEtfPrice(h.currentPrice) : '—'}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現值</div>
+            <div class="hc-price-val">${hdEtfMoney(holdingValue(h))}</div>
+          </div>
+        </div>
+        <div class="hc-shares-cost">
+          <span><strong>${hdEtfShares(h.shares)}</strong> 股</span>
+          <span style="color:var(--ink-tertiary);">×</span>
+          <span>成本 <strong>${hdEtfMoney(holdingCost(h))}</strong></span>
+          ${h.nextExDate ? `<span style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--accent);">除息 ${escape(h.nextExDate)}</span>` : (h.buyDate ? `<span style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(h.buyDate)}</span>` : '')}
+        </div>
+        ${h.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(h.notes)}</div>` : ''}
+        <div class="hc-actions" onclick="event.stopPropagation();">
+          <button class="hc-mini-btn" onclick="openHdEtfHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
+          <button class="hc-mini-btn" onclick="openHdEtfTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
+          <button class="hc-mini-btn" onclick="openHdEtfTxnModal(null, '${escape(h.symbol)}', 'dividend'); event.stopPropagation();">+ 配息</button>
+          <button class="hc-mini-btn" onclick="toggleHdEtfHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
+        </div>
+        <div class="hc-txn-list">${txnHtml}</div>
+      </div>
+    `;
+  }
+  function toggleHdEtfHoldingExpand(id) {
+    hdEtfExpandedHoldingId = (hdEtfExpandedHoldingId === id) ? null : id;
+    renderHdEtfHoldings();
+  }
+
+  function onHdEtfHoldingSearch(q) {
+    const box = document.getElementById('hdEtfHoldingSearchResults');
+    const results = searchHdEtfList(q);
+    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = results.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickHdEtfHoldingItem('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape(s.industry || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickHdEtfHoldingItem(symbol) {
+    const s = HD_ETF_LIST.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('hdEtfHoldingSymbol').value = s.symbol;
+    document.getElementById('hdEtfHoldingName').value = s.name;
+    document.getElementById('hdEtfHoldingMarket').value = s.market;
+    document.getElementById('hdEtfHoldingIndustry').value = s.industry || '';
+    document.getElementById('hdEtfHoldingSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('hdEtfHoldingSearchResults').style.display = 'none';
+    document.getElementById('hdEtfHoldingShares').focus();
+  }
+  function onHdEtfTxnSearch(q) {
+    const box = document.getElementById('hdEtfTxnSearchResults');
+    const local = hdEtfHoldings.filter(h =>
+      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
+    ).map(h => ({ symbol: h.symbol, name: h.name, market: h.market || '券商', industry: '我的持股' }));
+    const builtIn = searchHdEtfList(q);
+    const seen = new Set(local.map(x => x.symbol));
+    const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
+    if (combined.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = combined.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickHdEtfTxnItem('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape(s.industry || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickHdEtfTxnItem(symbol) {
+    const h = hdEtfHoldings.find(x => x.symbol === symbol);
+    const s = h || HD_ETF_LIST.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('hdEtfTxnSymbol').value = s.symbol;
+    document.getElementById('hdEtfTxnSymbolName').value = s.name;
+    document.getElementById('hdEtfTxnSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('hdEtfTxnSearchResults').style.display = 'none';
+    document.getElementById('hdEtfTxnShares').focus();
+    if (h && h.currentPrice) document.getElementById('hdEtfTxnPrice').value = h.currentPrice;
+  }
+
+  // === Holding CRUD ===
+  function openHdEtfHoldingModal(id) {
+    const isEdit = !!id;
+    document.getElementById('hdEtfHoldingEditId').value = id || '';
+    document.getElementById('hdEtfHoldingDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('hdEtfHoldingModalTitle').innerHTML = isEdit ? '編輯 <em>持股</em>' : '新增 <em>持股</em>';
+    if (isEdit) {
+      const h = hdEtfHoldings.find(x => x.id === id);
+      document.getElementById('hdEtfHoldingSymbol').value = h.symbol;
+      document.getElementById('hdEtfHoldingName').value = h.name;
+      document.getElementById('hdEtfHoldingShares').value = h.shares;
+      document.getElementById('hdEtfHoldingAvgCost').value = h.avgCost;
+      document.getElementById('hdEtfHoldingCurrentPrice').value = h.currentPrice || '';
+      document.getElementById('hdEtfHoldingBuyDate').value = h.buyDate || '';
+      document.getElementById('hdEtfHoldingMarket').value = h.market || '元大';
+      document.getElementById('hdEtfHoldingIndustry').value = h.industry || '';
+      document.getElementById('hdEtfHoldingFreq').value = h.freq || '月配';
+      document.getElementById('hdEtfHoldingNextExDate').value = h.nextExDate || '';
+      document.getElementById('hdEtfHoldingNotes').value = h.notes || '';
+      document.getElementById('hdEtfHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
+    } else {
+      ['hdEtfHoldingSymbol','hdEtfHoldingName','hdEtfHoldingShares','hdEtfHoldingAvgCost','hdEtfHoldingCurrentPrice','hdEtfHoldingIndustry','hdEtfHoldingNextExDate','hdEtfHoldingNotes','hdEtfHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('hdEtfHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('hdEtfHoldingMarket').value = '元大';
+      document.getElementById('hdEtfHoldingFreq').value = '月配';
+    }
+    document.getElementById('hdEtfHoldingSearchResults').style.display = 'none';
+    document.getElementById('hdEtfHoldingModal').classList.add('active');
+  }
+  function closeHdEtfHoldingModal() { document.getElementById('hdEtfHoldingModal').classList.remove('active'); }
+  async function saveHdEtfHolding(e) {
+    e.preventDefault();
+    const id = document.getElementById('hdEtfHoldingEditId').value;
+    const data = {
+      symbol: document.getElementById('hdEtfHoldingSymbol').value.trim().toUpperCase(),
+      name: document.getElementById('hdEtfHoldingName').value.trim(),
+      shares: Number(document.getElementById('hdEtfHoldingShares').value),
+      avgCost: Number(document.getElementById('hdEtfHoldingAvgCost').value),
+      currentPrice: Number(document.getElementById('hdEtfHoldingCurrentPrice').value) || null,
+      buyDate: document.getElementById('hdEtfHoldingBuyDate').value,
+      market: document.getElementById('hdEtfHoldingMarket').value,
+      industry: document.getElementById('hdEtfHoldingIndustry').value.trim(),
+      freq: document.getElementById('hdEtfHoldingFreq').value,
+      nextExDate: document.getElementById('hdEtfHoldingNextExDate').value,
+      notes: document.getElementById('hdEtfHoldingNotes').value.trim()
+    };
+    let saved;
+    if (id) {
+      const i = hdEtfHoldings.findIndex(h => h.id === id);
+      if (i > -1) { hdEtfHoldings[i] = { ...hdEtfHoldings[i], ...data, updatedAt: Date.now() }; saved = hdEtfHoldings[i]; }
+    } else {
+      const exist = hdEtfHoldings.find(h => h.symbol === data.symbol);
+      if (exist) { showToast(`已有持股 ${exist.name}，請改點編輯。`); return; }
+      saved = { id: 'he_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      hdEtfHoldings.push(saved);
+    }
+    await saveHdEtfHoldings();
+    closeHdEtfHoldingModal();
+    renderHdEtfHoldings();
+    renderHdEtfStats();
+    showToast(id ? '持股已更新' : '已新增持股');
+    if (saved) pushHdEtfHoldingToSupabase(saved);
+  }
+  async function deleteHdEtfHolding() {
+    const id = document.getElementById('hdEtfHoldingEditId').value;
+    if (!id) return;
+    const h = hdEtfHoldings.find(x => x.id === id);
+    if (!h) return;
+    const relTxns = hdEtfTxns.filter(t => t.symbol === h.symbol).length;
+    const msg = relTxns > 0
+      ? `確定刪除 ${h.name}（${h.symbol}）？此持股有 ${relTxns} 筆交易紀錄不會被刪除（保留作為歷史）。`
+      : `確定刪除 ${h.name}（${h.symbol}）？`;
+    if (!confirm(msg)) return;
+    hdEtfHoldings = hdEtfHoldings.filter(x => x.id !== id);
+    await saveHdEtfHoldings();
+    closeHdEtfHoldingModal();
+    renderHdEtfHoldings();
+    renderHdEtfStats();
+    pushHdEtfHoldingToSupabase(h, true);
+  }
+
+  // === Transaction CRUD ===
+  function openHdEtfTxnModal(id, presetSymbol, presetType) {
+    const isEdit = !!id;
+    document.getElementById('hdEtfTxnEditId').value = id || '';
+    document.getElementById('hdEtfTxnDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('hdEtfTxnModalTitle').innerHTML = isEdit ? '編輯 <em>交易</em>' : '新增 <em>交易</em>';
+    document.getElementById('hdEtfTxnSearchResults').style.display = 'none';
+    if (isEdit) {
+      const t = hdEtfTxns.find(x => x.id === id);
+      document.getElementById('hdEtfTxnType').value = t.type;
+      document.getElementById('hdEtfTxnDate').value = t.date || '';
+      document.getElementById('hdEtfTxnSymbol').value = t.symbol;
+      document.getElementById('hdEtfTxnSymbolName').value = t.symbolName || '';
+      document.getElementById('hdEtfTxnShares').value = t.shares;
+      document.getElementById('hdEtfTxnPrice').value = t.price;
+      document.getElementById('hdEtfTxnFee').value = t.fee || '';
+      document.getElementById('hdEtfTxnNotes').value = t.notes || '';
+      document.getElementById('hdEtfTxnSearchBox').value = `${t.symbol} · ${t.symbolName || ''}`;
+    } else {
+      ['hdEtfTxnSymbolName','hdEtfTxnShares','hdEtfTxnPrice','hdEtfTxnFee','hdEtfTxnNotes','hdEtfTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('hdEtfTxnType').value = presetType || 'buy';
+      document.getElementById('hdEtfTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('hdEtfTxnSymbol').value = presetSymbol || '';
+      if (presetSymbol) {
+        const h = hdEtfHoldings.find(x => x.symbol === presetSymbol);
+        if (h) {
+          document.getElementById('hdEtfTxnSymbolName').value = h.name;
+          document.getElementById('hdEtfTxnSearchBox').value = `${h.symbol} · ${h.name}`;
+          if (presetType === 'dividend') document.getElementById('hdEtfTxnShares').value = h.shares || '';
+        }
+      }
+    }
+    onHdEtfTxnTypeChange();
+    document.getElementById('hdEtfTxnModal').classList.add('active');
+  }
+  function closeHdEtfTxnModal() { document.getElementById('hdEtfTxnModal').classList.remove('active'); }
+  function onHdEtfTxnSymbolChange() {
+    const sym = document.getElementById('hdEtfTxnSymbol').value.trim().toUpperCase();
+    const h = hdEtfHoldings.find(x => x.symbol === sym);
+    if (h) document.getElementById('hdEtfTxnSymbolName').value = h.name;
+  }
+  function onHdEtfTxnTypeChange() {
+    const type = document.getElementById('hdEtfTxnType').value;
+    const sharesLabel = document.getElementById('hdEtfTxnSharesLabel');
+    const priceLabel = document.getElementById('hdEtfTxnPriceLabel');
+    const feeLabel = document.getElementById('hdEtfTxnFeeLabel');
+    const dateLabel = document.getElementById('hdEtfTxnDateLabel');
+    if (type === 'dividend') {
+      sharesLabel.textContent = '領息股數'; priceLabel.textContent = '每股配息 (NT$)';
+      feeLabel.textContent = '補充保費 / 費用 (NT$)'; dateLabel.textContent = '配息發放日';
+    } else if (type === 'stock_div') {
+      sharesLabel.textContent = '增加股數'; priceLabel.textContent = '每股淨值（可估）';
+      feeLabel.textContent = '費用 (NT$)'; dateLabel.textContent = '日期';
+    } else {
+      sharesLabel.textContent = '股數'; priceLabel.textContent = '單價 (NT$)';
+      feeLabel.textContent = '手續費 / 費用 (NT$)'; dateLabel.textContent = '日期';
+    }
+  }
+  async function saveHdEtfTxn(e) {
+    e.preventDefault();
+    const id = document.getElementById('hdEtfTxnEditId').value;
+    const type = document.getElementById('hdEtfTxnType').value;
+    const symbol = document.getElementById('hdEtfTxnSymbol').value.trim().toUpperCase();
+    const symbolName = document.getElementById('hdEtfTxnSymbolName').value.trim();
+    const shares = Number(document.getElementById('hdEtfTxnShares').value);
+    const price = Number(document.getElementById('hdEtfTxnPrice').value);
+    const fee = Number(document.getElementById('hdEtfTxnFee').value) || 0;
+    const data = {
+      type, date: document.getElementById('hdEtfTxnDate').value,
+      symbol, symbolName, shares, price,
+      fee, tax: 0,
+      notes: document.getElementById('hdEtfTxnNotes').value.trim()
+    };
+    const isEdit = !!id;
+    let savedTxn;
+    if (isEdit) {
+      const i = hdEtfTxns.findIndex(t => t.id === id);
+      if (i > -1) { hdEtfTxns[i] = { ...hdEtfTxns[i], ...data, updatedAt: Date.now() }; savedTxn = hdEtfTxns[i]; }
+    } else {
+      savedTxn = { id: 'ht_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      hdEtfTxns.push(savedTxn);
+    }
+    recomputeHdEtfHolding(symbol);
+    await saveHdEtfTxns();
+    await saveHdEtfHoldings();
+    await saveHdEtfRealized();
+    closeHdEtfTxnModal();
+    renderHdEtfHoldings();
+    renderHdEtfStats();
+    showToast(isEdit ? '交易已更新' : '已新增交易');
+    if (savedTxn) pushHdEtfTransactionToSupabase(savedTxn);
+    const affected = hdEtfHoldings.find(h => h.symbol === symbol);
+    if (affected) pushHdEtfHoldingToSupabase(affected);
+  }
+  async function deleteHdEtfTxn() {
+    const id = document.getElementById('hdEtfTxnEditId').value;
+    if (!id) return;
+    const t = hdEtfTxns.find(x => x.id === id);
+    if (!t || !confirm('刪除這筆交易？對應持股的成本/數量與配息統計會重新計算。')) return;
+    hdEtfTxns = hdEtfTxns.filter(x => x.id !== id);
+    recomputeHdEtfHolding(t.symbol);
+    await saveHdEtfTxns();
+    await saveHdEtfHoldings();
+    await saveHdEtfRealized();
+    closeHdEtfTxnModal();
+    renderHdEtfHoldings();
+    renderHdEtfStats();
+    pushHdEtfTransactionToSupabase(t, true);
+    const affected = hdEtfHoldings.find(h => h.symbol === t.symbol);
+    if (affected) pushHdEtfHoldingToSupabase(affected);
+  }
+
+  function recomputeHdEtfHolding(symbol) {
+    const txns = hdEtfTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    hdEtfRealizedPnL = recomputeAllHdEtfRealized();
+    if (txns.length === 0) return;
+    let shares = 0, totalCost = 0, avgCost = 0;
+    txns.forEach(t => {
+      if (t.type === 'buy') {
+        const cost = t.shares * t.price + (t.fee || 0);
+        shares += t.shares; totalCost += cost;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      } else if (t.type === 'sell') {
+        if (shares === 0) return;
+        const sellQty = Math.min(t.shares, shares);
+        const sellCost = sellQty * avgCost;
+        shares -= sellQty; totalCost -= sellCost;
+        if (shares <= 0) { shares = 0; totalCost = 0; }
+      } else if (t.type === 'stock_div') {
+        shares += t.shares;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      }
+      // dividend 不影響股數／成本，另計於配息統計
+    });
+    let h = hdEtfHoldings.find(x => x.symbol === symbol);
+    if (h) {
+      h.shares = Number(shares.toFixed(3));
+      h.avgCost = shares > 0 ? Number((totalCost / shares).toFixed(4)) : 0;
+      if (!h.name && txns[0].symbolName) h.name = txns[0].symbolName;
+      h.updatedAt = Date.now();
+    } else if (shares > 0) {
+      hdEtfHoldings.push({
+        id: 'he_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        symbol, name: txns[0].symbolName || symbol,
+        shares: Number(shares.toFixed(3)),
+        avgCost: Number((totalCost / shares).toFixed(4)),
+        currentPrice: null, buyDate: txns[0].date, market: '元大', freq: '月配',
+        createdAt: Date.now(), updatedAt: Date.now()
+      });
+    }
+  }
+  function recomputeAllHdEtfRealized() {
+    // 只算資本利得（賣出）；配息不計入此處，另由 hdEtfTotalDividends 統計
+    const symbols = [...new Set(hdEtfTxns.map(t => t.symbol))];
+    let total = 0;
+    symbols.forEach(sym => {
+      const txns = hdEtfTxns.filter(t => t.symbol === sym).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      let shares = 0, totalCost = 0, avgCost = 0;
+      txns.forEach(t => {
+        if (t.type === 'buy') {
+          const cost = t.shares * t.price + (t.fee || 0);
+          shares += t.shares; totalCost += cost;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'sell') {
+          if (shares === 0) return;
+          const sellQty = Math.min(t.shares, shares);
+          const sellCost = sellQty * avgCost;
+          const sellRevenue = sellQty * t.price - (t.fee || 0);
+          total += sellRevenue - sellCost;
+          shares -= sellQty; totalCost -= sellCost;
+          if (shares <= 0) { shares = 0; totalCost = 0; }
+        } else if (t.type === 'stock_div') {
+          shares += t.shares;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        }
+      });
+    });
+    return Number(total.toFixed(2));
+  }
+
+  // === 匯出 / 匯入 ===
+  function exportHdEtfData() {
+    const data = { holdings: hdEtfHoldings, transactions: hdEtfTxns, realized: hdEtfRealizedPnL, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `hdetf-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function importHdEtfData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有高股息 ETF 資料。`)) return;
+        if (d.holdings) hdEtfHoldings = d.holdings;
+        if (d.transactions) hdEtfTxns = d.transactions;
+        hdEtfRealizedPnL = recomputeAllHdEtfRealized();
+        await saveHdEtfHoldings();
+        await saveHdEtfTxns();
+        await saveHdEtfRealized();
+        renderHdEtfHoldings();
+        renderHdEtfStats();
+        showToast(`已匯入 ${hdEtfHoldings.length} 檔 ETF`);
+      } catch (err) {
+        alert('匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  // === 批次市價更新 ===
+  function openHdEtfBatchPriceModal() {
+    if (hdEtfHoldings.length === 0) { showToast('還沒有持股可更新'); return; }
+    const list = document.getElementById('hdEtfBatchPriceList');
+    list.innerHTML = hdEtfHoldings.map(h => `
+      <div style="display:flex; gap:10px; align-items:center; padding:10px 12px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px;">
+        <span style="font-family:var(--mono); color:var(--accent); font-weight:600; min-width:60px;">${escape(h.symbol)}</span>
+        <span style="flex:1; font-family:var(--serif);">${escape(h.name)}</span>
+        <input type="number" step="any" data-hdetf-batch-id="${escape(h.id)}" value="${h.currentPrice || ''}" placeholder="目前市價 NT$" class="form-input" style="width:130px; font-family:var(--mono);">
+      </div>
+    `).join('');
+    document.getElementById('hdEtfBatchPriceModal').classList.add('active');
+  }
+  function closeHdEtfBatchPriceModal() { document.getElementById('hdEtfBatchPriceModal').classList.remove('active'); }
+  async function saveHdEtfBatchPrices() {
+    document.querySelectorAll('[data-hdetf-batch-id]').forEach(input => {
+      const id = input.getAttribute('data-hdetf-batch-id');
+      const v = Number(input.value);
+      const h = hdEtfHoldings.find(x => x.id === id);
+      if (h && v > 0) { h.currentPrice = v; h.priceUpdatedAt = Date.now(); }
+    });
+    await saveHdEtfHoldings();
+    closeHdEtfBatchPriceModal();
+    renderHdEtfHoldings();
+    renderHdEtfStats();
+    showToast('市價已更新');
   }
 
   // ============================================================
@@ -13239,6 +14644,9 @@ ${daysBrief}
       closeMoreSheet();
     } else if (id === 'cryptoView') {
       loadCrypto();
+      closeMoreSheet();
+    } else if (id === 'hdEtfView') {
+      loadHdEtf();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
       // 回到儀表板時 reset 到群組總覽層
