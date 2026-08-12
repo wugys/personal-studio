@@ -8281,6 +8281,22 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const signal = sig[sig.length - 1];
     return { macd, signal, hist: macd - signal };
   }
+  function usMASeries(closes, p) {
+    const out = [];
+    for (let i = 0; i < closes.length; i++) out.push(i < p - 1 ? null : closes.slice(i - p + 1, i + 1).reduce((a, b) => a + b, 0) / p);
+    return out;
+  }
+  // 偵測快線最近一次上穿(黃金)/下穿(死亡)慢線
+  function usDetectCross(fast, slow, lookback, label) {
+    const n = fast.length;
+    for (let i = n - 1; i > Math.max(1, n - 1 - lookback); i--) {
+      if (fast[i] != null && slow[i] != null && fast[i - 1] != null && slow[i - 1] != null) {
+        if (fast[i - 1] <= slow[i - 1] && fast[i] > slow[i]) return { type: 'golden', daysAgo: n - 1 - i, label };
+        if (fast[i - 1] >= slow[i - 1] && fast[i] < slow[i]) return { type: 'death', daysAgo: n - 1 - i, label };
+      }
+    }
+    return null;
+  }
   function usTechSignals(closes) {
     if (!closes || closes.length < 30) return null;
     const last = closes[closes.length - 1];
@@ -8288,7 +8304,22 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const ma5 = ma(5), ma20 = ma(20), ma60 = ma(60);
     const rsi = usRSI(closes, 14);
     const macd = usMACD(closes);
+    const s5 = usMASeries(closes, 5), s20 = usMASeries(closes, 20), s60 = usMASeries(closes, 60);
+    const cross = usDetectCross(s20, s60, 15, 'MA20/60') || usDetectCross(s5, s20, 8, 'MA5/20');
+    const ma20Prev = s20[s20.length - 11]; // 10 日前的 MA20，判斜率
+    const slopeUp = ma20 != null && ma20Prev != null && ma20 > ma20Prev;
+    let trend = '區間盤整';
+    if (ma5 && ma20 && ma60) {
+      if (ma5 > ma20 && ma20 > ma60) trend = slopeUp ? '多頭排列，趨勢向上' : '多頭排列，趨勢轉強';
+      else if (ma5 < ma20 && ma20 < ma60) trend = '空頭排列，趨勢向下';
+      else trend = '均線糾結，區間盤整';
+    }
     const sig = []; let score = 0;
+    const crossWhen = c => c.daysAgo === 0 ? '今日' : c.daysAgo + ' 日前';
+    if (cross) {
+      if (cross.type === 'golden') { sig.push(['型態', `黃金交叉 ${cross.label}（${crossWhen(cross)}）`, 'bull']); score++; }
+      else { sig.push(['型態', `死亡交叉 ${cross.label}（${crossWhen(cross)}）`, 'bear']); score--; }
+    }
     if (ma5 && ma20 && ma60) {
       if (ma5 > ma20 && ma20 > ma60) { sig.push(['均線', '多頭排列 5>20>60', 'bull']); score++; }
       else if (ma5 < ma20 && ma20 < ma60) { sig.push(['均線', '空頭排列 5<20<60', 'bear']); score--; }
@@ -8298,7 +8329,14 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (rsi != null) { if (rsi >= 70) { sig.push(['RSI', rsi.toFixed(0) + '·超買', 'bear']); score--; } else if (rsi <= 30) { sig.push(['RSI', rsi.toFixed(0) + '·超賣', 'bull']); score++; } else { sig.push(['RSI', rsi.toFixed(0) + '·中性', 'flat']); } }
     if (macd) { if (macd.hist > 0) { sig.push(['MACD', '柱狀翻紅·偏多', 'bull']); score++; } else { sig.push(['MACD', '柱狀翻綠·偏空', 'bear']); score--; } }
     const overall = score >= 2 ? '偏多' : score <= -2 ? '偏空' : '中性';
-    return { last, ma5, ma20, ma60, rsi, macd, sig, score, overall };
+    // 一句話白話總結
+    let summary = '';
+    if (cross) summary += (cross.type === 'golden' ? `${cross.label} 出現黃金交叉（${crossWhen(cross)}）` : `${cross.label} 出現死亡交叉（${crossWhen(cross)}）`);
+    summary += (summary ? '，' : '目前') + trend;
+    if (rsi != null) summary += `；RSI ${rsi.toFixed(0)}${rsi >= 70 ? '（過熱）' : rsi <= 30 ? '（超賣）' : '（中性）'}`;
+    if (macd) summary += `、MACD ${macd.hist > 0 ? '柱狀偏多' : '柱狀偏空'}`;
+    summary += `。綜合研判：${overall}。`;
+    return { last, ma5, ma20, ma60, rsi, macd, sig, score, overall, cross, trend, summary };
   }
   function renderUsSignals(sig) {
     if (!sig) return '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">資料不足或查無歷史資料，無法計算技術訊號。</div>';
@@ -8311,6 +8349,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">綜合分數 ${sig.score >= 0 ? '+' : ''}${sig.score}</div>
         <div style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">MA20 ${sig.ma20 ? sig.ma20.toFixed(2) : '—'} · MA60 ${sig.ma60 ? sig.ma60.toFixed(2) : '—'}</div>
       </div>
+      ${sig.summary ? `<div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); padding:9px 12px; border-radius:3px; font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:10px;">📖 ${escape(sig.summary)}</div>` : ''}
       <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:0 16px; margin-bottom:14px;">${sig.sig.map(chip).join('')}</div>`;
   }
 
