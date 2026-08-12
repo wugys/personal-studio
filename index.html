@@ -3837,6 +3837,28 @@
     </div>
   </div>
 
+  <!-- ============ 現金流儀表板 VIEW（聚合所有資產模組）============ -->
+  <div id="cashflowView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">⊟ CASHFLOW · DASHBOARD</div>
+        <h1>現金流 <em>總覽</em></h1>
+        <p>台股 · 美股 · 加密貨幣 · 高股息 ETF 全部聚合，統一換算台幣。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="loadCashflow()">↻ 重新整理</button>
+      </div>
+    </div>
+    <div class="stats-row" id="cfStats"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+      <span id="cfFxLabel" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.05em;">USD/TWD —</span>
+      <button class="btn btn-sm" onclick="refreshCashflowFxAndRender()">↻ 更新匯率</button>
+      <button class="btn btn-sm" onclick="setCashflowFxManual()">✎ 手動</button>
+    </div>
+    <div id="cfBody"></div>
+  </div>
+
   <!-- ============ 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF）============ -->
   <div class="modal-backdrop" id="tvChartModal">
     <div class="modal" style="max-width:680px;">
@@ -5026,7 +5048,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 6.4 · ζ</div>
+    <div>v 6.5 · ζ</div>
   </footer>
 </div>
 
@@ -5331,7 +5353,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     { id: 'm_assoc', name: '協會 · 組織', nameEn: 'ORGANIZATION', icon: '⚐', desc: '會員資料、活動行事曆、會費管理。', status: 'soon', groupId: 'g_life', order: 1 },
 
     // === 投資中心 · 總覽工具（最重要，放最前面）===
-    { id: 'm_dashboard', name: '現金流儀表板', nameEn: 'CASHFLOW · DASHBOARD', icon: '⊟', desc: '所有組合的總資產、損益、配息一覽。每月/每季現金流追蹤。', status: 'soon', groupId: 'g_invest', order: 0 },
+    { id: 'm_dashboard', name: '現金流儀表板', nameEn: 'CASHFLOW · DASHBOARD', icon: '⊟', desc: '台股/美股/加密/ETF 總資產、損益、配息、資產配置一覽（統一台幣）。', status: 'active', groupId: 'g_invest', order: 0, builtin: true, target: 'cashflowView' },
     { id: 'm_allocation', name: '資產配置分析', nameEn: 'ALLOCATION · ANALYSIS', icon: '◐', desc: '實際比例 vs 目標比例對照（60-10-30 模型）、再平衡提醒。', status: 'soon', groupId: 'g_invest', order: 1 },
     { id: 'm_dca', name: '定期定額計畫', nameEn: 'DCA · PLAN', icon: '⟳', desc: '每月自動進場規劃、扣款日提醒、累積績效檢視。', status: 'soon', groupId: 'g_invest', order: 2 },
     { id: 'm_goals', name: '挑戰目標', nameEn: 'GOAL · TRACKER', icon: '◎', desc: '退休金、財務自由、買房頭期款進度追蹤。', status: 'soon', groupId: 'g_invest', order: 3 },
@@ -5393,7 +5415,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '9';
+      const CURRENT_VERSION = '10';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -10624,6 +10646,129 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
   }
 
   // ============================================================
+  // 現金流儀表板 · Cashflow Dashboard（聚合台股/美股/加密/ETF，統一台幣）
+  // ============================================================
+  const CF_STORAGE = { fx: 'cashflow_fx_v1' };
+  let cashflowFx = { usdTwd: 32.0, updatedAt: 0, manual: false };
+  const CF_SOURCES = [
+    { key: 'tw', name: '台股個股', nameEn: 'TW · EQUITIES', cur: 'TWD', hKey: 'tw_holdings_v1', tKey: 'tw_transactions_v1', view: 'twStockView', color: '#d4a574' },
+    { key: 'us', name: '美股個股', nameEn: 'US · EQUITIES', cur: 'USD', hKey: 'us_holdings_v1', tKey: 'us_transactions_v1', view: 'usStockView', color: '#e8b88a' },
+    { key: 'crypto', name: '加密貨幣', nameEn: 'CRYPTO · ASSETS', cur: 'USD', hKey: 'crypto_holdings_v1', tKey: 'crypto_transactions_v1', view: 'cryptoView', color: '#c97b6a' },
+    { key: 'etf', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', cur: 'TWD', hKey: 'hdetf_holdings_v1', tKey: 'hdetf_transactions_v1', view: 'hdEtfView', color: '#8b6f47' }
+  ];
+  const cfMoney = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+  const cfMoneySign = n => (n >= 0 ? '+' : '-') + 'NT$' + Math.round(Math.abs(Number(n) || 0)).toLocaleString('en-US');
+
+  async function loadCashflowFx() { try { const v = await readKey(CF_STORAGE.fx); if (v) cashflowFx = { ...cashflowFx, ...JSON.parse(v) }; } catch (e) {} }
+  async function refreshCashflowFx() {
+    try {
+      const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+      const j = await r.json();
+      const rate = j && j.rates && j.rates.TWD;
+      if (rate && rate > 0) { cashflowFx = { usdTwd: rate, updatedAt: Date.now(), manual: false }; await writeKey(CF_STORAGE.fx, JSON.stringify(cashflowFx)); return rate; }
+    } catch (e) {}
+    return null;
+  }
+  async function refreshCashflowFxAndRender() {
+    const rate = await refreshCashflowFx();
+    showToast(rate ? ('匯率已更新 · USD/TWD ' + rate.toFixed(3)) : '匯率更新失敗，沿用現值');
+    loadCashflow();
+  }
+  function setCashflowFxManual() {
+    const v = prompt('手動輸入 USD/TWD 匯率', String(cashflowFx.usdTwd || 32));
+    if (v == null) return;
+    const n = Number(v);
+    if (!(n > 0)) { showToast('請輸入有效數字'); return; }
+    cashflowFx = { usdTwd: n, updatedAt: Date.now(), manual: true };
+    writeKey(CF_STORAGE.fx, JSON.stringify(cashflowFx));
+    loadCashflow();
+  }
+  async function cfCompute() {
+    const fx = cashflowFx.usdTwd || 32;
+    const rows = [];
+    for (const s of CF_SOURCES) {
+      let holdings = [], txns = [];
+      try { const v = await readKey(s.hKey); holdings = v ? JSON.parse(v) : []; } catch (e) { holdings = []; }
+      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) { txns = []; }
+      const rate = s.cur === 'USD' ? fx : 1;
+      const cost = holdings.reduce((a, h) => a + holdingCost(h), 0) * rate;
+      const value = holdings.reduce((a, h) => a + holdingValue(h), 0) * rate;
+      const div = txns.filter(t => t.type === 'dividend').reduce((a, t) => a + (Number(t.shares) || 0) * (Number(t.price) || 0), 0) * rate;
+      rows.push({ ...s, count: holdings.length, cost, value, pnl: value - cost, pnlPct: cost > 0 ? ((value - cost) / cost * 100) : 0, div });
+    }
+    return rows;
+  }
+  async function loadCashflow() {
+    await loadCashflowFx();
+    if (!cashflowFx.updatedAt) await refreshCashflowFx(); // 首次自動抓匯率
+    const rows = await cfCompute();
+    renderCashflow(rows);
+  }
+  function cfDonut(rows, total) {
+    let acc = 0; const stops = [];
+    rows.filter(r => r.value > 0).forEach(r => {
+      const start = total > 0 ? acc / total * 360 : 0;
+      acc += r.value;
+      const end = total > 0 ? acc / total * 360 : 0;
+      stops.push(`${r.color} ${start}deg ${end}deg`);
+    });
+    if (!stops.length) stops.push('var(--line) 0deg 360deg');
+    return `conic-gradient(${stops.join(', ')})`;
+  }
+  function renderCashflow(rows) {
+    const totalValue = rows.reduce((a, r) => a + r.value, 0);
+    const totalCost = rows.reduce((a, r) => a + r.cost, 0);
+    const totalPnl = totalValue - totalCost;
+    const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost * 100) : 0;
+    const totalDiv = rows.reduce((a, r) => a + r.div, 0);
+    const totalCount = rows.reduce((a, r) => a + r.count, 0);
+    const pnlClass = totalPnl > 0 ? 'profit' : totalPnl < 0 ? 'loss' : 'flat';
+    const statsEl = document.getElementById('cfStats');
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">總資產</div><div class="stat-value">${cfMoney(totalValue)}</div><div class="stat-sub">TOTAL · NET · WORTH</div></div>
+      <div class="stat-card"><div class="stat-label">總投入</div><div class="stat-value">${cfMoney(totalCost)}</div><div class="stat-sub">${totalCount} 檔標的</div></div>
+      <div class="stat-card ${pnlClass}"><div class="stat-label">未實現損益</div><div class="stat-value">${cfMoneySign(totalPnl)}</div><div class="stat-pct">${totalPnlPct >= 0 ? '+' : ''}${totalPnlPct.toFixed(2)}%</div></div>
+      <div class="stat-card profit"><div class="stat-label">累計配息</div><div class="stat-value">${cfMoney(totalDiv)}</div><div class="stat-sub">DIVIDENDS · RECEIVED</div></div>`;
+    const fxEl = document.getElementById('cfFxLabel');
+    if (fxEl) { const t = cashflowFx.updatedAt ? new Date(cashflowFx.updatedAt).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'; fxEl.textContent = `USD/TWD ${(cashflowFx.usdTwd || 0).toFixed(3)}${cashflowFx.manual ? '（手動）' : ''} · ${t}`; }
+    const donut = cfDonut(rows, totalValue);
+    const legend = rows.filter(r => r.value > 0).sort((a, b) => b.value - a.value).map(r => `
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+        <span style="width:10px; height:10px; border-radius:2px; background:${r.color}; flex:none;"></span>
+        <span style="flex:1; font-family:var(--serif);">${escape(r.name)} <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${r.cur}</span></span>
+        <span style="font-family:var(--mono); font-size:12px;">${cfMoney(r.value)}</span>
+        <span style="font-family:var(--mono); font-size:12px; color:var(--accent); min-width:48px; text-align:right;">${totalValue > 0 ? (r.value / totalValue * 100).toFixed(1) : '0.0'}%</span>
+      </div>`).join('') || '<div style="color:var(--ink-tertiary); padding:12px; font-size:12px;">四個資產模組目前都沒有持倉。先到各模組新增持股／持倉，這裡就會自動聚合。</div>';
+    const cards = rows.map(r => {
+      const cls = r.pnl > 0 ? 'profit' : r.pnl < 0 ? 'loss' : 'flat';
+      return `
+        <div class="opp-card" style="cursor:pointer;" onclick="showView('${r.view}')">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <div><div style="font-family:var(--serif); font-size:17px;">${escape(r.name)}</div><div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary); letter-spacing:0.15em;">${escape(r.nameEn)}</div></div>
+            <span style="width:12px; height:12px; border-radius:3px; background:${r.color};"></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:4px;"><span style="color:var(--ink-tertiary);">現值</span><span>${cfMoney(r.value)}</span></div>
+          <div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:4px;"><span style="color:var(--ink-tertiary);">成本</span><span>${cfMoney(r.cost)}</span></div>
+          <div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px;"><span style="color:var(--ink-tertiary);">損益</span><span class="${cls}">${cfMoneySign(r.pnl)} (${r.pnlPct >= 0 ? '+' : ''}${r.pnlPct.toFixed(1)}%)</span></div>
+          <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${r.count} 檔 · ${r.cur}${r.div > 0 ? ` · 配息 ${cfMoney(r.div)}` : ''}</div>
+        </div>`;
+    }).join('');
+    const bodyEl = document.getElementById('cfBody');
+    if (bodyEl) bodyEl.innerHTML = `
+      <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:center; margin-bottom:28px; background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:24px;">
+        <div style="position:relative; width:180px; height:180px; flex:none; margin:0 auto;">
+          <div style="width:180px; height:180px; border-radius:50%; background:${donut};"></div>
+          <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:112px; height:112px; border-radius:50%; background:var(--bg-card); display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary); letter-spacing:0.1em;">總資產</div>
+            <div style="font-family:var(--serif); font-size:15px; color:var(--ink-primary); text-align:center; padding:0 4px;">${cfMoney(totalValue)}</div>
+          </div>
+        </div>
+        <div style="flex:1; min-width:260px;"><div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:6px;">ASSET · ALLOCATION</div>${legend}</div>
+      </div>
+      <div class="opp-grid">${cards}</div>`;
+  }
+
+  // ============================================================
   // 旅遊模組 · Travel Module
   // ============================================================
 
@@ -15117,6 +15262,9 @@ ${daysBrief}
       closeMoreSheet();
     } else if (id === 'hdEtfView') {
       loadHdEtf();
+      closeMoreSheet();
+    } else if (id === 'cashflowView') {
+      loadCashflow();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
       // 回到儀表板時 reset 到群組總覽層
