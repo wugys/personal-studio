@@ -2666,6 +2666,7 @@
         <p>持股管理、平均成本、未實現/已實現損益、交易記錄。</p>
       </div>
       <div class="api-actions">
+        <button class="btn" onclick="openTvChartModal('2330','台積電','TWSE')">📈 看盤</button>
         <button class="btn" onclick="openTxnModal()">+ 新交易</button>
         <button class="btn btn-primary" onclick="openHoldingModal()">+ 新增持股</button>
       </div>
@@ -3568,6 +3569,7 @@
         <p>持股管理、平均成本、未實現損益、配息追蹤與年化殖利率（台幣計價）。</p>
       </div>
       <div class="api-actions">
+        <button class="btn" onclick="openTvChartModal('0056','元大高股息','TWSE')">📈 看盤</button>
         <button class="btn" onclick="openHdEtfTxnModal()">+ 新交易</button>
         <button class="btn btn-primary" onclick="openHdEtfHoldingModal()">+ 新增持股</button>
       </div>
@@ -3815,6 +3817,30 @@
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" onclick="closeHdEtfSyncModal()">取消</button>
         <button class="btn btn-primary" onclick="saveHdEtfSyncSettings()">儲存 + 立即同步</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF）============ -->
+  <div class="modal-backdrop" id="tvChartModal">
+    <div class="modal" style="max-width:680px;">
+      <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
+      <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:10px; font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 成交量 · 資料來源 FinMind（台股近一年日線）。</div>
+      <div id="tvChartBox" style="height:360px; margin-bottom:14px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
+      <div style="border-top:1px solid var(--line); padding-top:12px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+          <button class="btn btn-primary btn-sm" onclick="tvGeminiManual()">✦ 複製並開 Gemini（用會員）</button>
+          <button class="btn btn-sm" id="tvGeminiBtn" onclick="runTvAiAnalysis('gemini')">✦ App內一鍵（免費金鑰）</button>
+          <button class="btn btn-sm" id="tvClaudeBtn" onclick="runTvAiAnalysis('claude')">🤖 Claude</button>
+          <button class="btn btn-sm" onclick="copyTvChartPrompt()">📋 只複製提示詞</button>
+          <button class="btn btn-sm" onclick="openAiSite('chatgpt')">🚀 ChatGPT</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px; line-height:1.6;">✦ 用會員：一鍵複製提示詞並開 Gemini 貼上即分析（免金鑰）。分析框架含技術面／籌碼面／三大法人。</div>
+        <div id="tvChartAiResult" style="display:none; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px; font-size:13px; line-height:1.75; color:var(--ink-secondary); max-height:38vh; overflow-y:auto;"></div>
+        <div style="margin-top:10px; font-size:10.5px; color:var(--ink-tertiary);">⚠ 僅為資訊整理，不構成投資建議。</div>
+      </div>
+      <div class="form-actions" style="justify-content:flex-end; margin-top:14px;">
+        <button class="btn" type="button" onclick="closeTvChartModal()">關閉</button>
       </div>
     </div>
   </div>
@@ -7148,6 +7174,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
           <button class="hc-mini-btn" onclick="openTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
           <button class="hc-mini-btn" onclick="toggleHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
           <button class="hc-mini-btn" onclick="openTwStockNews('${escape(h.symbol)}','${escape(h.name)}'); event.stopPropagation();">📰 新聞</button>
+          <button class="hc-mini-btn" onclick="openTvChartModal('${escape(h.symbol)}','${escape(h.name)}','TWSE'); event.stopPropagation();">📈 圖表</button>
           <button class="hc-mini-btn" onclick="openTwStockAnalysis('${escape(h.symbol)}','${escape(h.name)}'); event.stopPropagation();">📊 技術分析</button>
         </div>
         <div class="hc-txn-list">${txnHtml}</div>
@@ -8040,6 +8067,105 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖需連網載入 · 目前無法顯示</div>';
     }
   }
+
+  // ===== 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF 用，TradingView + 重用 AI）=====
+  let tvChartPrompt = '';
+  let twChartObj = null;
+  // 台股 K 線：FinMind 日線資料（CORS 允許、免 token）+ lightweight-charts 自繪
+  // （免費 TradingView 嵌入 widget 不提供台股資料，故自繪）
+  async function loadTwCandleChart(containerId, code, name) {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    if (twChartObj) { try { twChartObj.remove(); } catch (e) {} twChartObj = null; }
+    cont.innerHTML = '<div style="padding:20px; color:var(--ink-tertiary); font-size:12px;">載入台股資料中…</div>';
+    try {
+      if (!window.LightweightCharts) await loadScript('https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', 'sdk-lwc');
+      if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
+      const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+      const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+      const resp = await fetch(url, { cache: 'no-store' });
+      const j = await resp.json().catch(() => null);
+      const rows = (j && j.data) || [];
+      if (j && j.status && j.status !== 200 && !rows.length) throw new Error(j.msg || ('FinMind ' + j.status));
+      if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查無此代號的台股日線（' + escape(code) + '）</div>'; return; }
+      const candles = rows.map(r => ({ time: r.date, open: +r.open, high: +r.max, low: +r.min, close: +r.close })).filter(c => c.close > 0);
+      const vols = rows.map(r => ({ time: r.date, value: +r.Trading_Volume || 0, color: (+r.close >= +r.open) ? 'rgba(212,165,116,0.4)' : 'rgba(201,123,106,0.4)' }));
+      const ma20 = candles.map((c, i, arr) => i < 19 ? null : { time: c.time, value: arr.slice(i - 19, i + 1).reduce((s, x) => s + x.close, 0) / 20 }).filter(Boolean);
+      cont.innerHTML = '';
+      const chart = LightweightCharts.createChart(cont, {
+        autoSize: true,
+        layout: { background: { color: 'transparent' }, textColor: '#b5a98a', fontFamily: 'JetBrains Mono, monospace' },
+        grid: { vertLines: { color: 'rgba(244,234,213,0.05)' }, horzLines: { color: 'rgba(244,234,213,0.05)' } },
+        rightPriceScale: { borderColor: 'rgba(244,234,213,0.1)' },
+        timeScale: { borderColor: 'rgba(244,234,213,0.1)' },
+        crosshair: { mode: 0 }
+      });
+      const cs = chart.addCandlestickSeries({ upColor: '#d4a574', downColor: '#c97b6a', wickUpColor: '#d4a574', wickDownColor: '#c97b6a', borderVisible: false });
+      cs.setData(candles);
+      if (ma20.length) { const ml = chart.addLineSeries({ color: '#8b6f47', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }); ml.setData(ma20); }
+      const vs = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' } });
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      vs.setData(vols);
+      chart.timeScale().fitContent();
+      twChartObj = chart;
+    } catch (e) {
+      cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">台股走勢載入失敗：' + escape(e.message) + '<br>可改用下方 AI 分析。</div>';
+    }
+  }
+  function openTvChartModal(symbol, name, exchange) {
+    symbol = String(symbol || '').trim();
+    document.getElementById('tvChartTitle').innerHTML = `${escape(symbol)}${name ? ' · ' + escape(name) : ''} <em>走勢</em>`;
+    const ai = document.getElementById('tvChartAiResult');
+    if (ai) { ai.style.display = 'none'; ai.innerHTML = ''; }
+    document.getElementById('tvChartModal').classList.add('active');
+    tvChartPrompt = buildAnalysisPrompt(symbol, name || symbol); // 重用台股技術/籌碼分析框架
+    loadTwCandleChart('tvChartBox', symbol, name);
+  }
+  function closeTvChartModal() { document.getElementById('tvChartModal').classList.remove('active'); }
+  function copyTvChartPrompt() {
+    navigator.clipboard.writeText(tvChartPrompt).then(
+      () => showToast('分析提示詞已複製'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+  function tvGeminiManual() {
+    let copied = false;
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = tvChartPrompt;
+      ta.style.position = 'fixed'; ta.style.top = '-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+    if (navigator.clipboard) navigator.clipboard.writeText(tvChartPrompt).then(() => {}, () => {});
+    openAiSite('gemini');
+    showToast(copied ? '✓ 提示詞已複製 · 到 Gemini 貼上(Ctrl/⌘+V)送出即可' : '請按「📋 只複製提示詞」再貼到 Gemini');
+  }
+  async function runTvAiAnalysis(provider) {
+    provider = provider || 'gemini';
+    const isG = provider === 'gemini';
+    const out = document.getElementById('tvChartAiResult');
+    const btn = document.getElementById(isG ? 'tvGeminiBtn' : 'tvClaudeBtn');
+    if (isG) {
+      if (!(await readKey(GEMINI_KEY_STORAGE))) { openGeminiKeyModal(); return; }
+    } else {
+      if (!(await readKey(AI_KEY_STORAGE))) { showToast('尚未設定 Anthropic API Key（可到「投資翻倍」設定）'); return; }
+    }
+    const origLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 15-40 秒）'; }
+    out.style.display = 'block';
+    out.innerHTML = `<div style="color:var(--ink-tertiary);">${isG ? 'Gemini' : 'Claude'} 正在分析…</div>`;
+    try {
+      const text = isG ? await callGeminiWithSearch(tvChartPrompt) : await callClaudeWithWebSearch(tvChartPrompt);
+      out.innerHTML = usMdLite(text);
+    } catch (e) {
+      out.innerHTML = '<div style="color:var(--danger);">分析失敗：' + escape(e.message) + '</div>';
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+    }
+  }
+
   function usAnaMini(k, v) {
     return `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:3px; padding:6px 8px; text-align:center;"><div style="font-size:9.5px; color:var(--ink-tertiary);">${k}</div><div style="font-family:var(--mono); font-size:12px;">${v}</div></div>`;
   }
@@ -9906,6 +10032,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
         ${h.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(h.notes)}</div>` : ''}
         <div class="hc-actions" onclick="event.stopPropagation();">
           <button class="hc-mini-btn" onclick="openHdEtfHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
+          <button class="hc-mini-btn" onclick="openTvChartModal('${escape(h.symbol)}','${escape(h.name)}','TWSE'); event.stopPropagation();">📈 圖表</button>
           <button class="hc-mini-btn" onclick="openHdEtfTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
           <button class="hc-mini-btn" onclick="openHdEtfTxnModal(null, '${escape(h.symbol)}', 'dividend'); event.stopPropagation();">+ 配息</button>
           <button class="hc-mini-btn" onclick="toggleHdEtfHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
