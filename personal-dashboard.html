@@ -3012,8 +3012,9 @@
         <p>持股管理、平均成本、未實現/已實現損益、交易記錄（美元計價）。</p>
       </div>
       <div class="api-actions">
+        <button class="btn btn-primary" onclick="openUsAnalysisSearch()">📈 看盤查股</button>
         <button class="btn" onclick="openUsTxnModal()">+ 新交易</button>
-        <button class="btn btn-primary" onclick="openUsHoldingModal()">+ 新增持股</button>
+        <button class="btn" onclick="openUsHoldingModal()">+ 新增持股</button>
       </div>
     </div>
 
@@ -3075,6 +3076,10 @@
   <div class="modal-backdrop" id="usAnalysisModal">
     <div class="modal" style="max-width:680px;">
       <h2 id="usAnalysisTitle">個股 <em>分析</em></h2>
+      <div class="form-group" style="margin-bottom:14px; position:relative;">
+        <input type="text" class="form-input" id="usAnalysisSearchBox" placeholder="⌕ 查任何美股：輝達 / AAPL / 台積電 / SPY..." autocomplete="off" oninput="onUsAnalysisSearch(this.value)" onfocus="onUsAnalysisSearch(this.value)" onblur="setTimeout(()=>{const el=document.getElementById('usAnalysisSearchResults'); if(el) el.style.display='none';},200)">
+        <div class="stock-search-results" id="usAnalysisSearchResults" style="display:none;"></div>
+      </div>
       <div id="usAnalysisBody"></div>
       <div class="form-actions" style="justify-content:flex-end; margin-top:16px;">
         <button class="btn" type="button" onclick="closeUsAnalysisModal()">關閉</button>
@@ -8002,6 +8007,28 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
 
 最後提醒：以上僅為資訊整理，不構成投資建議。`;
   }
+  // 「看盤查股」：不需持股，搜任何美股 → 立刻看 K 線 + 分析
+  function openUsAnalysisSearch() {
+    document.getElementById('usAnalysisModal').classList.add('active');
+    const box = document.getElementById('usAnalysisSearchBox');
+    if (box) box.value = '';
+    const res = document.getElementById('usAnalysisSearchResults');
+    if (res) res.style.display = 'none';
+    openUsAnalysis('SPY'); // 預設先給一張大盤圖，讓使用者立刻看到看盤效果
+  }
+  function onUsAnalysisSearch(q) {
+    const local = searchUsStocks(q);
+    renderUsSearchBox('usAnalysisSearchResults', local, 'pickUsAnalysisStock');
+    augmentUsSearchRemote(q, 'usAnalysisSearchResults', 'usAnalysisSearchBox', 'pickUsAnalysisStock', local);
+  }
+  function pickUsAnalysisStock(symbol) {
+    const s = usSearchResultCache[symbol] || US_STOCKS.find(x => x.symbol === symbol) || { symbol, name: symbol };
+    const box = document.getElementById('usAnalysisSearchBox');
+    if (box) box.value = `${s.symbol} · ${s.name || ''}`;
+    const res = document.getElementById('usAnalysisSearchResults');
+    if (res) res.style.display = 'none';
+    openUsAnalysis(symbol);
+  }
   async function openUsAnalysis(symbol) {
     const h = usHoldings.find(x => x.symbol === symbol) || US_STOCKS.find(x => x.symbol === symbol) || { symbol, name: symbol };
     document.getElementById('usAnalysisTitle').innerHTML = `${escape(h.symbol)} <em>分析</em>`;
@@ -8163,7 +8190,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
   function renderUsHoldings() {
     const grid = document.getElementById('usHoldingsGrid');
     if (usHoldings.length === 0) {
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">★</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p></div>';
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">★</span><h3>尚無持股</h3><p>點右上「+ 新增持股」開始記錄，<br>或點 <strong style="color:var(--accent);">「📈 看盤查股」</strong> 直接看任何美股的 K 線走勢圖與分析（免持股、免設定）。</p><button class="btn btn-primary" style="margin-top:16px;" onclick="openUsAnalysisSearch()">📈 立即看盤查股</button></div>';
       return;
     }
     const sortBy = document.getElementById('usSortBy')?.value || 'value';
