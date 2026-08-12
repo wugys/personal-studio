@@ -8191,13 +8191,13 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const aiBlock = `
       <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:4px;">
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
-          <button class="btn btn-primary btn-sm" id="usGeminiBtn" onclick="runUsAiAnalysis('gemini')">✦ 用 Gemini 分析</button>
-          <button class="btn btn-sm" id="usClaudeBtn" onclick="runUsAiAnalysis('claude')">🤖 用 Claude 分析</button>
-          <button class="btn btn-sm" onclick="copyUsAnalysisPrompt()">📋 複製提示詞</button>
-          <button class="btn btn-sm" onclick="openAiSite('gemini')">🚀 開 Gemini 網頁</button>
+          <button class="btn btn-primary btn-sm" onclick="geminiManualAnalysis()">✦ 複製並開 Gemini（用會員）</button>
+          <button class="btn btn-sm" id="usGeminiBtn" onclick="runUsAiAnalysis('gemini')">✦ App內一鍵（免費金鑰）</button>
+          <button class="btn btn-sm" id="usClaudeBtn" onclick="runUsAiAnalysis('claude')">🤖 Claude</button>
+          <button class="btn btn-sm" onclick="copyUsAnalysisPrompt()">📋 只複製提示詞</button>
           <button class="btn btn-sm" onclick="openAiSite('chatgpt')">🚀 ChatGPT</button>
         </div>
-        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px; line-height:1.6;">✦ <strong>Gemini</strong>：貼一次免費 API 金鑰（<a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--accent);">Google AI Studio</a> 取得，與會員不同但免費）即可一鍵分析；或用「📋 複製提示詞 → 🚀 開 Gemini」用你的<strong>會員</strong>手動分析。🤖 Claude 需 Anthropic key。</div>
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px; line-height:1.6;">✦ <strong>複製並開 Gemini（用會員）</strong>：一鍵複製提示詞並開 Gemini 網頁，貼上(Ctrl/⌘+V)即用你的會員分析，<strong>免金鑰</strong>。｜「App內一鍵」需 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--accent);">AI Studio</a> 免費金鑰；🤖 Claude 需 Anthropic key。</div>
         <div id="usAnalysisAiResult" style="display:none; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px; font-size:13px; line-height:1.75; color:var(--ink-secondary); max-height:42vh; overflow-y:auto;"></div>
         <div style="margin-top:12px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">⚠ 數據來自 Finnhub，僅供參考、不構成投資建議。即時報價於美股交易時段最準。</div>
       </div>`;
@@ -8209,6 +8209,22 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       () => showToast('分析提示詞已複製'),
       () => showToast('複製失敗，請手動選取')
     );
+  }
+  // 路 A：一鍵「複製提示詞 + 開 Gemini 網頁」，用會員手動貼上分析（免金鑰）
+  function geminiManualAnalysis() {
+    let copied = false;
+    // 同步 execCommand 複製（確保在使用者手勢內成功，避免 clipboard 權限問題）
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = usAnalysisPrompt;
+      ta.style.position = 'fixed'; ta.style.top = '-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+    if (navigator.clipboard) navigator.clipboard.writeText(usAnalysisPrompt).then(() => {}, () => {});
+    openAiSite('gemini'); // 同一手勢內開新分頁，避免被彈窗攔截
+    showToast(copied ? '✓ 提示詞已複製 · 到 Gemini 貼上(Ctrl/⌘+V)送出即可' : '請按「📋 只複製提示詞」再貼到 Gemini');
   }
   async function runUsAiAnalysis(provider) {
     provider = provider || 'gemini';
