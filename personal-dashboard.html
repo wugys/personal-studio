@@ -3865,6 +3865,7 @@
       <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
       <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:10px; font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 成交量 · 資料來源 FinMind（台股近一年日線）。</div>
       <div id="tvChartBox" style="height:360px; margin-bottom:14px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
+      <div id="tvSignalsPanel"></div>
       <div style="border-top:1px solid var(--line); padding-top:12px;">
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
           <button class="btn btn-primary btn-sm" onclick="tvGeminiManual()">✦ 複製並開 Gemini（用會員）</button>
@@ -8116,6 +8117,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (!cont) return;
     if (twChartObj) { try { twChartObj.remove(); } catch (e) {} twChartObj = null; }
     cont.innerHTML = '<div style="padding:20px; color:var(--ink-tertiary); font-size:12px;">載入台股資料中…</div>';
+    { const sp = document.getElementById('tvSignalsPanel'); if (sp) sp.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:8px;">計算技術訊號中…</div>'; }
     try {
       if (!window.LightweightCharts) await loadScript('https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', 'sdk-lwc');
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
@@ -8125,7 +8127,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       const j = await resp.json().catch(() => null);
       const rows = (j && j.data) || [];
       if (j && j.status && j.status !== 200 && !rows.length) throw new Error(j.msg || ('FinMind ' + j.status));
-      if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查無此代號的台股日線（' + escape(code) + '）</div>'; return; }
+      if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查無此代號的台股日線（' + escape(code) + '）</div>'; const sp = document.getElementById('tvSignalsPanel'); if (sp) sp.innerHTML = ''; return; }
       const candles = rows.map(r => ({ time: r.date, open: +r.open, high: +r.max, low: +r.min, close: +r.close })).filter(c => c.close > 0);
       const vols = rows.map(r => ({ time: r.date, value: +r.Trading_Volume || 0, color: (+r.close >= +r.open) ? 'rgba(212,165,116,0.4)' : 'rgba(201,123,106,0.4)' }));
       const ma20 = candles.map((c, i, arr) => i < 19 ? null : { time: c.time, value: arr.slice(i - 19, i + 1).reduce((s, x) => s + x.close, 0) / 20 }).filter(Boolean);
@@ -8146,8 +8148,15 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       vs.setData(vols);
       chart.timeScale().fitContent();
       twChartObj = chart;
+      // 技術訊號白話判讀（重用 usTechSignals）+ 餵進 AI 提示詞
+      const closes = candles.map(c => c.close);
+      const sig = usTechSignals(closes);
+      const sp = document.getElementById('tvSignalsPanel');
+      if (sp) sp.innerHTML = sig ? renderUsSignals(sig) : '';
+      if (sig && sig.summary) tvChartPrompt += '\n\n目前技術面：' + sig.summary;
     } catch (e) {
       cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">台股走勢載入失敗：' + escape(e.message) + '<br>可改用下方 AI 分析。</div>';
+      const sp = document.getElementById('tvSignalsPanel'); if (sp) sp.innerHTML = '';
     }
   }
   function openTvChartModal(symbol, name, exchange) {
