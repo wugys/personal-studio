@@ -3863,7 +3863,7 @@
   <div class="modal-backdrop" id="tvChartModal">
     <div class="modal" style="max-width:680px;">
       <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
-      <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:10px; font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 成交量 · 資料來源 FinMind（台股近一年日線）。</div>
+      <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:10px; font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20（實線）· 趨勢線（虛線·迴歸）· 成交量 · 來源 FinMind。</div>
       <div id="tvChartBox" style="height:360px; margin-bottom:14px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
       <div id="tvSignalsPanel"></div>
       <div style="border-top:1px solid var(--line); padding-top:12px;">
@@ -8131,6 +8131,14 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       const candles = rows.map(r => ({ time: r.date, open: +r.open, high: +r.max, low: +r.min, close: +r.close })).filter(c => c.close > 0);
       const vols = rows.map(r => ({ time: r.date, value: +r.Trading_Volume || 0, color: (+r.close >= +r.open) ? 'rgba(212,165,116,0.4)' : 'rgba(201,123,106,0.4)' }));
       const ma20 = candles.map((c, i, arr) => i < 19 ? null : { time: c.time, value: arr.slice(i - 19, i + 1).reduce((s, x) => s + x.close, 0) / 20 }).filter(Boolean);
+      // 趨勢線：最小平方線性迴歸（整段日線的趨勢斜率）
+      let trendLine = [];
+      if (candles.length >= 2) {
+        const n = candles.length; let sx = 0, sy = 0, sxx = 0, sxy = 0;
+        candles.forEach((c, i) => { sx += i; sy += c.close; sxx += i * i; sxy += i * c.close; });
+        const denom = n * sxx - sx * sx;
+        if (denom !== 0) { const b = (n * sxy - sx * sy) / denom, a = (sy - b * sx) / n; trendLine = candles.map((c, i) => ({ time: c.time, value: a + b * i })); }
+      }
       cont.innerHTML = '';
       const chart = LightweightCharts.createChart(cont, {
         autoSize: true,
@@ -8143,6 +8151,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       const cs = chart.addCandlestickSeries({ upColor: '#d4a574', downColor: '#c97b6a', wickUpColor: '#d4a574', wickDownColor: '#c97b6a', borderVisible: false });
       cs.setData(candles);
       if (ma20.length) { const ml = chart.addLineSeries({ color: '#8b6f47', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }); ml.setData(ma20); }
+      if (trendLine.length) { const tl = chart.addLineSeries({ color: 'rgba(232,184,138,0.55)', lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }); tl.setData(trendLine); }
       const vs = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' } });
       chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       vs.setData(vols);
@@ -8229,15 +8238,15 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   }
   // ===== Phase 1：多策略視角 =====
   const US_STRATEGIES = [
-    { key: 'general', name: '綜合盡職調查', focus: '' },
-    { key: 'value', name: '價值投資（低估值）', focus: '以價值投資角度：聚焦本益比／股價淨值比／自由現金流殖利率是否偏低、是否有安全邊際、內在價值 vs 現價、是否被市場錯殺。' },
-    { key: 'growth', name: '成長股（高成長）', focus: '以成長股角度：聚焦營收與 EPS 年增率、市場空間 TAM、產品／訂單動能是否加速、毛利趨勢、PEG。' },
-    { key: 'momentum', name: '動能／趨勢', focus: '以動能交易角度：聚焦相對強弱、資金與法人流向、突破型態、52 週高低位置、是否創新高、量價配合。' },
-    { key: 'dividend', name: '股息成長', focus: '以股息成長角度：聚焦殖利率、連續配息／連續加發年數、配息率、自由現金流覆蓋率、股息成長 CAGR、是否可持續。' },
-    { key: 'moat', name: '護城河長抱（巴菲特）', focus: '以巴菲特護城河角度：聚焦競爭優勢（品牌／網路效應／轉換成本／規模）、ROE 與 ROIC 長期穩定度、管理層資本配置、10 年持有的確定性。' },
-    { key: 'technical', name: '技術面短線', focus: '以技術面短線角度：聚焦均線排列、KD／RSI／MACD、支撐壓力、量價關係、明確的進場點、停損與目標價。' },
-    { key: 'garp', name: 'GARP（合理價成長）', focus: '以 GARP 角度：兼顧成長與估值，聚焦 PEG 是否接近 1、成長性是否對得起目前本益比。' },
-    { key: 'contrarian', name: '逆勢／落難股', focus: '以逆勢投資角度：聚焦超跌是否為暫時性、資產負債表是否撐得住、轉機催化劑、下檔風險與破產機率。' }
+    { key: 'general', name: '綜合盡職調查', desc: '不套特定風格，做基本面＋估值＋催化劑＋風險的全面體檢。不確定用哪種時選這個。', focus: '' },
+    { key: 'value', name: '價值投資（低估值）', desc: '找「便宜的好公司」。看本益比、股價淨值比、自由現金流是否偏低、有沒有安全邊際（現價 < 內在價值）。適合想低接、抱長線。', focus: '以價值投資角度：聚焦本益比／股價淨值比／自由現金流殖利率是否偏低、是否有安全邊際、內在價值 vs 現價、是否被市場錯殺。' },
+    { key: 'growth', name: '成長股（高成長）', desc: '找「成長最快的公司」。重視營收/EPS 年增率、市場空間、動能是否加速；願意付較高估值換高成長。', focus: '以成長股角度：聚焦營收與 EPS 年增率、市場空間 TAM、產品／訂單動能是否加速、毛利趨勢、PEG。' },
+    { key: 'momentum', name: '動能／趨勢', desc: '「強者恆強」。追近期最強、創新高、資金流入的股票，順勢操作，重勢不重價。', focus: '以動能交易角度：聚焦相對強弱、資金與法人流向、突破型態、52 週高低位置、是否創新高、量價配合。' },
+    { key: 'dividend', name: '股息成長', desc: '為「現金流」而買。看殖利率、連續配息與加發、配息能否持續。適合存股領息、退休配置。', focus: '以股息成長角度：聚焦殖利率、連續配息／連續加發年數、配息率、自由現金流覆蓋率、股息成長 CAGR、是否可持續。' },
+    { key: 'moat', name: '護城河長抱（巴菲特）', desc: '巴菲特式。找有強競爭優勢（品牌／網路效應／轉換成本）、ROE 長期穩定的公司，準備抱 10 年。', focus: '以巴菲特護城河角度：聚焦競爭優勢（品牌／網路效應／轉換成本／規模）、ROE 與 ROIC 長期穩定度、管理層資本配置、10 年持有的確定性。' },
+    { key: 'technical', name: '技術面短線', desc: '只看圖。均線、KD/RSI/MACD、支撐壓力、進出場點與停損，做波段／短線。', focus: '以技術面短線角度：聚焦均線排列、KD／RSI／MACD、支撐壓力、量價關係、明確的進場點、停損與目標價。' },
+    { key: 'garp', name: 'GARP（合理價成長）', desc: '「合理價的成長」。折衷派——要成長但不追高估值，看 PEG 是否接近 1。', focus: '以 GARP 角度：兼顧成長與估值，聚焦 PEG 是否接近 1、成長性是否對得起目前本益比。' },
+    { key: 'contrarian', name: '逆勢／落難股', desc: '「別人恐懼我貪婪」。找超跌但基本面沒壞、有轉機的股票，賭反彈；風險較高。', focus: '以逆勢投資角度：聚焦超跌是否為暫時性、資產負債表是否撐得住、轉機催化劑、下檔風險與破產機率。' }
   ];
   let usAnalysisCtx = null; // { symbol, name, snap, tech }
   function rebuildUsPrompt() {
@@ -8247,8 +8256,15 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (usAnalysisCtx.tech) snap += (snap ? ' · ' : '') + usAnalysisCtx.tech;
     usAnalysisPrompt = buildUsAnalysisPrompt(usAnalysisCtx.symbol, usAnalysisCtx.name, snap, strat);
   }
+  function renderStrategyDesc() {
+    const el = document.getElementById('usStrategyDesc');
+    if (!el) return;
+    const s = US_STRATEGIES.find(x => x.key === (document.getElementById('usStrategySelect')?.value)) || US_STRATEGIES[0];
+    el.innerHTML = '💡 <strong>' + escape(s.name) + '</strong>：' + escape(s.desc || '');
+  }
   function onUsStrategyChange() {
     rebuildUsPrompt();
+    renderStrategyDesc();
     const s = US_STRATEGIES.find(x => x.key === (document.getElementById('usStrategySelect')?.value));
     showToast('分析策略：' + (s ? s.name : '綜合'));
   }
@@ -8590,6 +8606,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
           </select>
           <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">← 換策略再按下方分析</span>
         </div>
+        <div id="usStrategyDesc" style="font-size:11.5px; color:var(--ink-secondary); background:rgba(212,165,116,0.06); border-left:2px solid var(--accent); padding:8px 12px; border-radius:3px; margin-bottom:10px; line-height:1.6;">💡 <strong>${escape(US_STRATEGIES[0].name)}</strong>：${escape(US_STRATEGIES[0].desc)}</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
           <button class="btn btn-primary btn-sm" onclick="geminiManualAnalysis()">✦ 複製並開 Gemini（用會員）</button>
           <button class="btn btn-sm" id="usGeminiBtn" onclick="runUsAiAnalysis('gemini')">✦ App內一鍵（免費金鑰）</button>
