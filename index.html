@@ -8180,9 +8180,107 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     s = s.replace(/\n/g, '<br>');
     return s;
   }
-  function buildUsAnalysisPrompt(symbol, name, snapshot) {
+  // ===== Phase 1：多策略視角 =====
+  const US_STRATEGIES = [
+    { key: 'general', name: '綜合盡職調查', focus: '' },
+    { key: 'value', name: '價值投資（低估值）', focus: '以價值投資角度：聚焦本益比／股價淨值比／自由現金流殖利率是否偏低、是否有安全邊際、內在價值 vs 現價、是否被市場錯殺。' },
+    { key: 'growth', name: '成長股（高成長）', focus: '以成長股角度：聚焦營收與 EPS 年增率、市場空間 TAM、產品／訂單動能是否加速、毛利趨勢、PEG。' },
+    { key: 'momentum', name: '動能／趨勢', focus: '以動能交易角度：聚焦相對強弱、資金與法人流向、突破型態、52 週高低位置、是否創新高、量價配合。' },
+    { key: 'dividend', name: '股息成長', focus: '以股息成長角度：聚焦殖利率、連續配息／連續加發年數、配息率、自由現金流覆蓋率、股息成長 CAGR、是否可持續。' },
+    { key: 'moat', name: '護城河長抱（巴菲特）', focus: '以巴菲特護城河角度：聚焦競爭優勢（品牌／網路效應／轉換成本／規模）、ROE 與 ROIC 長期穩定度、管理層資本配置、10 年持有的確定性。' },
+    { key: 'technical', name: '技術面短線', focus: '以技術面短線角度：聚焦均線排列、KD／RSI／MACD、支撐壓力、量價關係、明確的進場點、停損與目標價。' },
+    { key: 'garp', name: 'GARP（合理價成長）', focus: '以 GARP 角度：兼顧成長與估值，聚焦 PEG 是否接近 1、成長性是否對得起目前本益比。' },
+    { key: 'contrarian', name: '逆勢／落難股', focus: '以逆勢投資角度：聚焦超跌是否為暫時性、資產負債表是否撐得住、轉機催化劑、下檔風險與破產機率。' }
+  ];
+  let usAnalysisCtx = null; // { symbol, name, snap, tech }
+  function rebuildUsPrompt() {
+    if (!usAnalysisCtx) return;
+    const strat = document.getElementById('usStrategySelect')?.value || 'general';
+    let snap = usAnalysisCtx.snap || '';
+    if (usAnalysisCtx.tech) snap += (snap ? ' · ' : '') + usAnalysisCtx.tech;
+    usAnalysisPrompt = buildUsAnalysisPrompt(usAnalysisCtx.symbol, usAnalysisCtx.name, snap, strat);
+  }
+  function onUsStrategyChange() {
+    rebuildUsPrompt();
+    const s = US_STRATEGIES.find(x => x.key === (document.getElementById('usStrategySelect')?.value));
+    showToast('分析策略：' + (s ? s.name : '綜合'));
+  }
+
+  // ===== Phase 2：技術指標訊號（FinMind 美股日線 → RSI/MACD/均線）=====
+  async function fetchUsOhlc(symbol) {
+    const start = new Date(Date.now() - 260 * 864e5).toISOString().slice(0, 10);
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=USStockPrice&data_id=${encodeURIComponent(symbol)}&start_date=${start}`;
+    const r = await fetch(url, { cache: 'no-store' });
+    const j = await r.json().catch(() => null);
+    const rows = (j && j.data) || [];
+    return rows.map(x => +x.Close).filter(v => v > 0);
+  }
+  function usEMA(arr, period) {
+    if (arr.length < period) return [];
+    const k = 2 / (period + 1); const out = [];
+    let ema = arr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    out[period - 1] = ema;
+    for (let i = period; i < arr.length; i++) { ema = arr[i] * k + ema * (1 - k); out[i] = ema; }
+    return out;
+  }
+  function usRSI(closes, period = 14) {
+    if (closes.length <= period) return null;
+    let gain = 0, loss = 0;
+    for (let i = 1; i <= period; i++) { const d = closes[i] - closes[i - 1]; if (d >= 0) gain += d; else loss -= d; }
+    let ag = gain / period, al = loss / period;
+    for (let i = period + 1; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; ag = (ag * (period - 1) + (d > 0 ? d : 0)) / period; al = (al * (period - 1) + (d < 0 ? -d : 0)) / period; }
+    if (al === 0) return 100;
+    return 100 - 100 / (1 + ag / al);
+  }
+  function usMACD(closes) {
+    const e12 = usEMA(closes, 12), e26 = usEMA(closes, 26);
+    if (!e26.length) return null;
+    const macdVals = [];
+    for (let i = 0; i < closes.length; i++) { if (e12[i] != null && e26[i] != null) macdVals.push(e12[i] - e26[i]); }
+    if (macdVals.length < 9) return null;
+    const sig = usEMA(macdVals, 9);
+    const macd = macdVals[macdVals.length - 1];
+    const signal = sig[sig.length - 1];
+    return { macd, signal, hist: macd - signal };
+  }
+  function usTechSignals(closes) {
+    if (!closes || closes.length < 30) return null;
+    const last = closes[closes.length - 1];
+    const ma = p => closes.length >= p ? closes.slice(-p).reduce((a, b) => a + b, 0) / p : null;
+    const ma5 = ma(5), ma20 = ma(20), ma60 = ma(60);
+    const rsi = usRSI(closes, 14);
+    const macd = usMACD(closes);
+    const sig = []; let score = 0;
+    if (ma5 && ma20 && ma60) {
+      if (ma5 > ma20 && ma20 > ma60) { sig.push(['均線', '多頭排列 5>20>60', 'bull']); score++; }
+      else if (ma5 < ma20 && ma20 < ma60) { sig.push(['均線', '空頭排列 5<20<60', 'bear']); score--; }
+      else { sig.push(['均線', '糾結／盤整', 'flat']); }
+    }
+    if (ma20) { if (last > ma20) { sig.push(['月線', '站上 MA20', 'bull']); score++; } else { sig.push(['月線', '跌破 MA20', 'bear']); score--; } }
+    if (rsi != null) { if (rsi >= 70) { sig.push(['RSI', rsi.toFixed(0) + '·超買', 'bear']); score--; } else if (rsi <= 30) { sig.push(['RSI', rsi.toFixed(0) + '·超賣', 'bull']); score++; } else { sig.push(['RSI', rsi.toFixed(0) + '·中性', 'flat']); } }
+    if (macd) { if (macd.hist > 0) { sig.push(['MACD', '柱狀翻紅·偏多', 'bull']); score++; } else { sig.push(['MACD', '柱狀翻綠·偏空', 'bear']); score--; } }
+    const overall = score >= 2 ? '偏多' : score <= -2 ? '偏空' : '中性';
+    return { last, ma5, ma20, ma60, rsi, macd, sig, score, overall };
+  }
+  function renderUsSignals(sig) {
+    if (!sig) return '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">資料不足或查無歷史資料，無法計算技術訊號。</div>';
+    const cls = sig.overall === '偏多' ? 'profit' : sig.overall === '偏空' ? 'loss' : 'flat';
+    const chip = s => { const c = s[2] === 'bull' ? 'profit' : s[2] === 'bear' ? 'loss' : 'flat'; return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line);"><span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); min-width:44px;">${escape(s[0])}</span><span class="${c}" style="font-size:12px;">${escape(s[1])}</span></div>`; };
+    return `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:10px 0 6px;">技術訊號 · TECHNICAL（FinMind 日線）</div>
+      <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:8px;">
+        <div class="${cls}" style="font-family:var(--serif); font-size:22px;">${sig.overall}</div>
+        <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">綜合分數 ${sig.score >= 0 ? '+' : ''}${sig.score}</div>
+        <div style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">MA20 ${sig.ma20 ? sig.ma20.toFixed(2) : '—'} · MA60 ${sig.ma60 ? sig.ma60.toFixed(2) : '—'}</div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:0 16px; margin-bottom:14px;">${sig.sig.map(chip).join('')}</div>`;
+  }
+
+  function buildUsAnalysisPrompt(symbol, name, snapshot, strategyKey) {
     const today = new Date().toISOString().slice(0, 10);
-    return `請對美股 ${symbol}（${name || ''}）做一份完整的個股盡職調查與分析（今天 ${today}）。
+    const strat = US_STRATEGIES.find(s => s.key === strategyKey);
+    const stratLine = (strat && strat.focus) ? `\n**分析策略：${strat.name}** — ${strat.focus}\n` : '';
+    return `請對美股 ${symbol}（${name || ''}）做一份完整的個股盡職調查與分析（今天 ${today}）。${stratLine}
 ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字）：\n' + snapshot + '\n' : ''}
 請搜尋並整合最新資料：
 1. 最新股價、日/週/月漲跌、52 週高低
@@ -8258,12 +8356,27 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const mm = (metric && metric.metric) || {};
     if (mm.peTTM != null || mm.peBasicExclExtraTTM != null) snap += ` · P/E ${Number(mm.peTTM ?? mm.peBasicExclExtraTTM).toFixed(1)}`;
     if (mm['52WeekHigh'] != null) snap += ` · 52W ${mm['52WeekLow']}~${mm['52WeekHigh']}`;
-    usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap);
+    usAnalysisCtx = { symbol: h.symbol, name: h.name, snap, tech: '' };
+    usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap, 'general');
     const dataEl = document.getElementById('usAnalysisData');
     if (dataEl) {
       dataEl.style.padding = '0'; dataEl.style.textAlign = 'left'; dataEl.style.color = 'var(--ink-secondary)';
       dataEl.innerHTML = renderUsAnalysisData(h, quote, profile, metric, news);
     }
+    // 技術訊號：FinMind 美股日線 → RSI/MACD/均線，並把技術面摘要餵進 AI prompt
+    fetchUsOhlc(h.symbol).then(closes => {
+      if (seq !== usAnalysisSeq) return;
+      const panel = document.getElementById('usSignalsPanel');
+      const sig = usTechSignals(closes);
+      if (panel) panel.innerHTML = renderUsSignals(sig);
+      if (sig) {
+        usAnalysisCtx.tech = `技術面 ${sig.overall}（MA20 ${sig.ma20 ? sig.ma20.toFixed(2) : '—'}、RSI ${sig.rsi != null ? sig.rsi.toFixed(0) : '—'}、MACD柱 ${sig.macd ? (sig.macd.hist > 0 ? '正(偏多)' : '負(偏空)') : '—'}）`;
+        rebuildUsPrompt();
+      }
+    }).catch(() => {
+      const panel = document.getElementById('usSignalsPanel');
+      if (panel && seq === usAnalysisSeq) panel.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">技術訊號暫時無法計算（查無此代號歷史資料）。</div>';
+    });
   }
   function renderUsAnalysisData(h, quote, profile, metric, news) {
     const m = (metric && metric.metric) || {};
@@ -8321,6 +8434,13 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
 
     const aiBlock = `
       <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:4px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+          <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.12em;">分析策略</span>
+          <select id="usStrategySelect" class="form-select" onchange="onUsStrategyChange()" style="width:auto; font-size:12px; padding:4px 8px;">
+            ${US_STRATEGIES.map(s => `<option value="${s.key}">${escape(s.name)}</option>`).join('')}
+          </select>
+          <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">← 換策略再按下方分析</span>
+        </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
           <button class="btn btn-primary btn-sm" onclick="geminiManualAnalysis()">✦ 複製並開 Gemini（用會員）</button>
           <button class="btn btn-sm" id="usGeminiBtn" onclick="runUsAiAnalysis('gemini')">✦ App內一鍵（免費金鑰）</button>
@@ -8333,7 +8453,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
         <div style="margin-top:12px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">⚠ 數據來自 Finnhub，僅供參考、不構成投資建議。即時報價於美股交易時段最準。</div>
       </div>`;
 
-    return profileBlock + quoteBlock + metricBlock + newsBlock + aiBlock;
+    const signalsBlock = `<div id="usSignalsPanel"><div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">計算技術訊號中…</div></div>`;
+    return profileBlock + quoteBlock + metricBlock + signalsBlock + newsBlock + aiBlock;
   }
   function copyUsAnalysisPrompt() {
     navigator.clipboard.writeText(usAnalysisPrompt).then(
