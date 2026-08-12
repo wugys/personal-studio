@@ -3857,6 +3857,7 @@
       <button class="btn btn-sm" onclick="setCashflowFxManual()">✎ 手動</button>
     </div>
     <div id="cfBody"></div>
+    <div id="cfPerfRisk"></div>
   </div>
 
   <!-- ============ 資產配置分析 VIEW（60-10-30）============ -->
@@ -10852,10 +10853,10 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
   const CF_STORAGE = { fx: 'cashflow_fx_v1' };
   let cashflowFx = { usdTwd: 32.0, updatedAt: 0, manual: false };
   const CF_SOURCES = [
-    { key: 'tw', name: '台股個股', nameEn: 'TW · EQUITIES', cur: 'TWD', hKey: 'tw_holdings_v1', tKey: 'tw_transactions_v1', view: 'twStockView', color: '#d4a574' },
-    { key: 'us', name: '美股個股', nameEn: 'US · EQUITIES', cur: 'USD', hKey: 'us_holdings_v1', tKey: 'us_transactions_v1', view: 'usStockView', color: '#e8b88a' },
-    { key: 'crypto', name: '加密貨幣', nameEn: 'CRYPTO · ASSETS', cur: 'USD', hKey: 'crypto_holdings_v1', tKey: 'crypto_transactions_v1', view: 'cryptoView', color: '#c97b6a' },
-    { key: 'etf', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', cur: 'TWD', hKey: 'hdetf_holdings_v1', tKey: 'hdetf_transactions_v1', view: 'hdEtfView', color: '#8b6f47' }
+    { key: 'tw', name: '台股個股', nameEn: 'TW · EQUITIES', cur: 'TWD', hKey: 'tw_holdings_v1', tKey: 'tw_transactions_v1', rKey: 'tw_realized_v1', view: 'twStockView', color: '#d4a574' },
+    { key: 'us', name: '美股個股', nameEn: 'US · EQUITIES', cur: 'USD', hKey: 'us_holdings_v1', tKey: 'us_transactions_v1', rKey: 'us_realized_v1', view: 'usStockView', color: '#e8b88a' },
+    { key: 'crypto', name: '加密貨幣', nameEn: 'CRYPTO · ASSETS', cur: 'USD', hKey: 'crypto_holdings_v1', tKey: 'crypto_transactions_v1', rKey: 'crypto_realized_v1', view: 'cryptoView', color: '#c97b6a' },
+    { key: 'etf', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', cur: 'TWD', hKey: 'hdetf_holdings_v1', tKey: 'hdetf_transactions_v1', rKey: 'hdetf_realized_v1', view: 'hdEtfView', color: '#8b6f47' }
   ];
   const cfMoney = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
   const cfMoneySign = n => (n >= 0 ? '+' : '-') + 'NT$' + Math.round(Math.abs(Number(n) || 0)).toLocaleString('en-US');
@@ -10904,6 +10905,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     if (!cashflowFx.updatedAt) await refreshCashflowFx(); // 首次自動抓匯率
     const rows = await cfCompute();
     renderCashflow(rows);
+    renderPerformanceRisk();
   }
   function cfDonut(rows, total) {
     let acc = 0; const stops = [];
@@ -10967,6 +10969,103 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
         <div style="flex:1; min-width:260px;"><div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:6px;">ASSET · ALLOCATION</div>${legend}</div>
       </div>
       <div class="opp-grid">${cards}</div>`;
+  }
+
+  // ===== 績效 / 風險分析（掛在現金流儀表板下方）=====
+  function cfMiniStat(label, value, cls) {
+    return `<div class="stat-card ${cls}" style="padding:12px 14px;"><div class="stat-label">${label}</div><div class="stat-value" style="font-size:18px;">${value}</div></div>`;
+  }
+  function cfMoverRow(h) {
+    const cls = h.pnl > 0 ? 'profit' : h.pnl < 0 ? 'loss' : 'flat';
+    return `<div style="display:flex; justify-content:space-between; padding:4px 0; font-family:var(--mono); font-size:12px; border-bottom:1px solid var(--line);"><span>${escape(h.symbol)} <span style="color:var(--ink-tertiary); font-size:9.5px;">${escape(h.module)}</span></span><span class="${cls}">${cfMoneySign(h.pnl)} (${h.pnlPct >= 0 ? '+' : ''}${h.pnlPct.toFixed(1)}%)</span></div>`;
+  }
+  // 資金加權年化報酬（XIRR，bisection）
+  function computeXIRR(flows) {
+    const valid = flows.filter(f => f.date && isFinite(f.amount) && f.amount !== 0).sort((a, b) => a.date.localeCompare(b.date));
+    if (valid.length < 2) return null;
+    if (!valid.some(f => f.amount < 0) || !valid.some(f => f.amount > 0)) return null;
+    const t0 = new Date(valid[0].date).getTime();
+    const yrs = f => (new Date(f.date).getTime() - t0) / (365 * 24 * 3600 * 1000);
+    const npv = r => valid.reduce((s, f) => s + f.amount / Math.pow(1 + r, yrs(f)), 0);
+    let lo = -0.9499, hi = 10, fLo = npv(lo), fHi = npv(hi);
+    if (!isFinite(fLo) || !isFinite(fHi) || fLo * fHi > 0) return null;
+    for (let i = 0; i < 128; i++) {
+      const mid = (lo + hi) / 2, fm = npv(mid);
+      if (!isFinite(fm)) return null;
+      if (Math.abs(fm) < 1) return mid;
+      if (fLo * fm < 0) { hi = mid; fHi = fm; } else { lo = mid; fLo = fm; }
+    }
+    return (lo + hi) / 2;
+  }
+  async function renderPerformanceRisk() {
+    const el = document.getElementById('cfPerfRisk');
+    if (!el) return;
+    const fx = cashflowFx.usdTwd || 32;
+    let allH = [], realizedSum = 0, divSum = 0, unrealSum = 0, valueSum = 0, costSum = 0;
+    const flows = [];
+    for (const s of CF_SOURCES) {
+      const rate = s.cur === 'USD' ? fx : 1;
+      let holdings = [], txns = [], realized = 0;
+      try { const v = await readKey(s.hKey); holdings = v ? JSON.parse(v) : []; } catch (e) {}
+      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) {}
+      try { const v = await readKey(s.rKey); realized = v ? Number(v) : 0; } catch (e) {}
+      realizedSum += (realized || 0) * rate;
+      holdings.forEach(h => {
+        const cost = holdingCost(h) * rate, value = holdingValue(h) * rate;
+        costSum += cost; valueSum += value; unrealSum += (value - cost);
+        allH.push({ symbol: h.symbol, name: h.name, module: s.name, cur: s.cur, cost, value, pnl: value - cost, pnlPct: cost > 0 ? ((value - cost) / cost * 100) : 0 });
+      });
+      txns.forEach(t => {
+        const amt = (Number(t.shares) || 0) * (Number(t.price) || 0), fee = (Number(t.fee) || 0);
+        if (t.type === 'dividend') { divSum += amt * rate; flows.push({ date: t.date, amount: amt * rate }); }
+        else if (t.type === 'buy') flows.push({ date: t.date, amount: -(amt + fee) * rate });
+        else if (t.type === 'sell') flows.push({ date: t.date, amount: (amt - fee) * rate });
+      });
+    }
+    if (allH.length === 0) { el.innerHTML = '<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; color:var(--ink-tertiary); font-size:12.5px;">尚無持股，加了持股後這裡會顯示績效與風險分析。</div>'; return; }
+    flows.push({ date: new Date().toISOString().slice(0, 10), amount: valueSum }); // 期末＝目前總市值
+    const xirr = computeXIRR(flows);
+    const totalReturn = costSum > 0 ? (unrealSum / costSum * 100) : 0;
+    const winners = allH.filter(h => h.pnl > 0).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
+    const losers = allH.filter(h => h.pnl < 0).sort((a, b) => a.pnl - b.pnl).slice(0, 3);
+    const sorted = allH.slice().sort((a, b) => b.value - a.value);
+    const largest = sorted[0];
+    const top3 = sorted.slice(0, 3).reduce((a, h) => a + h.value, 0);
+    const largestPct = valueSum > 0 ? largest.value / valueSum * 100 : 0;
+    const top3Pct = valueSum > 0 ? top3 / valueSum * 100 : 0;
+    const conc = sorted.slice(0, 6).map(h => { const p = valueSum > 0 ? h.value / valueSum * 100 : 0; return `<div style="margin-bottom:6px;"><div style="display:flex; justify-content:space-between; font-size:11px; font-family:var(--mono);"><span>${escape(h.symbol)} <span style="color:var(--ink-tertiary); font-size:9px;">${escape(h.module)}</span></span><span>${p.toFixed(1)}%</span></div><div style="height:6px; background:var(--bg-elevated); border-radius:2px; overflow:hidden;"><div style="height:100%; width:${Math.min(100, p)}%; background:var(--accent); opacity:0.6;"></div></div></div>`; }).join('');
+    const warns = [];
+    if (largestPct > 20) warns.push(`⚠ 最大持股 ${escape(largest.symbol)} 占 ${largestPct.toFixed(1)}%，單一個股集中度偏高（>20%）。`);
+    if (top3Pct > 60) warns.push(`⚠ 前 3 大占 ${top3Pct.toFixed(1)}%，投組偏集中（>60%）。`);
+    if (allH.length < 5) warns.push(`⚠ 僅 ${allH.length} 檔標的，分散度偏低。`);
+    const warnHtml = warns.length ? `<div style="margin-top:12px; padding:10px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); font-size:11.5px; color:var(--ink-secondary); line-height:1.7;">${warns.join('<br>')}</div>` : '<div style="margin-top:12px; font-size:11px; color:var(--ink-tertiary);">✓ 集中度在合理範圍。</div>';
+    el.innerHTML = `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; margin:20px 0;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:14px;">績效 · PERFORMANCE（統一台幣）</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:18px;">
+          ${cfMiniStat('未實現損益', cfMoneySign(unrealSum), unrealSum >= 0 ? 'profit' : 'loss')}
+          ${cfMiniStat('已實現價差', cfMoneySign(realizedSum), realizedSum >= 0 ? 'profit' : 'loss')}
+          ${cfMiniStat('累計配息', cfMoney(divSum), 'profit')}
+          ${cfMiniStat('未實現報酬率', (totalReturn >= 0 ? '+' : '') + totalReturn.toFixed(2) + '%', totalReturn >= 0 ? 'profit' : 'loss')}
+          ${cfMiniStat('資金加權年化 XIRR', xirr != null ? ((xirr >= 0 ? '+' : '') + (xirr * 100).toFixed(1) + '%') : '—', xirr == null ? 'flat' : xirr >= 0 ? 'profit' : 'loss')}
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+          <div><div style="font-size:11px; color:var(--ink-tertiary); margin-bottom:6px; font-family:var(--mono);">🏆 最賺 · 未實現</div>${winners.length ? winners.map(cfMoverRow).join('') : '<div style="color:var(--ink-tertiary); font-size:12px;">—</div>'}</div>
+          <div><div style="font-size:11px; color:var(--ink-tertiary); margin-bottom:6px; font-family:var(--mono);">🔻 最賠 · 未實現</div>${losers.length ? losers.map(cfMoverRow).join('') : '<div style="color:var(--ink-tertiary); font-size:12px;">—</div>'}</div>
+        </div>
+        ${xirr == null ? '<div style="margin-top:10px; font-size:10px; color:var(--ink-tertiary);">＊XIRR 需要有買賣交易記錄與日期才能算；只手動填持股（無交易）時顯示 —。</div>' : ''}
+      </div>
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; margin-bottom:20px;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:14px;">風險 · 集中度 · CONCENTRATION</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px;">
+          ${cfMiniStat('標的數', String(allH.length), 'flat')}
+          ${cfMiniStat('最大單一持股', largest ? `${escape(largest.symbol)} ${largestPct.toFixed(1)}%` : '—', largestPct > 20 ? 'loss' : 'flat')}
+          ${cfMiniStat('前 3 大集中度', top3Pct.toFixed(1) + '%', top3Pct > 60 ? 'loss' : 'flat')}
+        </div>
+        <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:8px;">個別持股佔比（前 6）</div>
+        ${conc}
+        ${warnHtml}
+      </div>`;
   }
 
   // ============================================================
