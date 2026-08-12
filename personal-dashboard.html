@@ -3859,6 +3859,23 @@
     <div id="cfBody"></div>
   </div>
 
+  <!-- ============ 資產配置分析 VIEW（60-10-30）============ -->
+  <div id="allocationView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">◐ ALLOCATION · ANALYSIS</div>
+        <h1>資產 <em>配置分析</em></h1>
+        <p>實際比例 vs 目標（60-10-30）· 再平衡建議。股票自動聚合台股/美股/ETF；現金、債券、不動產可手動輸入。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="loadAllocation()">↻ 重新整理</button>
+      </div>
+    </div>
+    <div class="stats-row" id="allocStats"></div>
+    <div id="allocBody"></div>
+  </div>
+
   <!-- ============ 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF）============ -->
   <div class="modal-backdrop" id="tvChartModal">
     <div class="modal" style="max-width:680px;">
@@ -5049,7 +5066,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 6.5 · ζ</div>
+    <div>v 6.6 · ζ</div>
   </footer>
 </div>
 
@@ -5355,7 +5372,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
     // === 投資中心 · 總覽工具（最重要，放最前面）===
     { id: 'm_dashboard', name: '現金流儀表板', nameEn: 'CASHFLOW · DASHBOARD', icon: '⊟', desc: '台股/美股/加密/ETF 總資產、損益、配息、資產配置一覽（統一台幣）。', status: 'active', groupId: 'g_invest', order: 0, builtin: true, target: 'cashflowView' },
-    { id: 'm_allocation', name: '資產配置分析', nameEn: 'ALLOCATION · ANALYSIS', icon: '◐', desc: '實際比例 vs 目標比例對照（60-10-30 模型）、再平衡提醒。', status: 'soon', groupId: 'g_invest', order: 1 },
+    { id: 'm_allocation', name: '資產配置分析', nameEn: 'ALLOCATION · ANALYSIS', icon: '◐', desc: '實際比例 vs 目標（60-10-30）對照、再平衡建議。股票自動聚合、現金/債券可手動輸入。', status: 'active', groupId: 'g_invest', order: 1, builtin: true, target: 'allocationView' },
     { id: 'm_dca', name: '定期定額計畫', nameEn: 'DCA · PLAN', icon: '⟳', desc: '每月自動進場規劃、扣款日提醒、累積績效檢視。', status: 'soon', groupId: 'g_invest', order: 2 },
     { id: 'm_goals', name: '挑戰目標', nameEn: 'GOAL · TRACKER', icon: '◎', desc: '退休金、財務自由、買房頭期款進度追蹤。', status: 'soon', groupId: 'g_invest', order: 3 },
 
@@ -5416,7 +5433,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '10';
+      const CURRENT_VERSION = '11';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -10942,6 +10959,98 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
   }
 
   // ============================================================
+  // 資產配置分析 · Allocation（60-10-30，重用 cfCompute + 匯率）
+  // ============================================================
+  const ALLOC_STORAGE = 'alloc_config_v1';
+  let allocConfig = { cash: 0, bond: 0, realEstate: 0, otherAlt: 0, tEquity: 60, tBondCash: 10, tAlt: 30 };
+  async function saveAllocConfig() { await writeKey(ALLOC_STORAGE, JSON.stringify(allocConfig)); }
+  async function loadAllocation() {
+    try { const v = await readKey(ALLOC_STORAGE); if (v) allocConfig = { ...allocConfig, ...JSON.parse(v) }; } catch (e) {}
+    await loadCashflowFx();
+    if (!cashflowFx.updatedAt) await refreshCashflowFx();
+    const rows = await cfCompute();
+    renderAllocation(rows);
+  }
+  function applyAllocInputs() {
+    const g = (id) => Number(document.getElementById(id).value) || 0;
+    allocConfig.cash = g('allocCash'); allocConfig.bond = g('allocBond');
+    allocConfig.realEstate = g('allocRe'); allocConfig.otherAlt = g('allocOther');
+    allocConfig.tEquity = g('allocTEq'); allocConfig.tBondCash = g('allocTBc'); allocConfig.tAlt = g('allocTAlt');
+    saveAllocConfig();
+    loadAllocation();
+    showToast('已更新配置');
+  }
+  function useAllocPreset() {
+    allocConfig.tEquity = 60; allocConfig.tBondCash = 10; allocConfig.tAlt = 30;
+    saveAllocConfig(); loadAllocation(); showToast('已套用 60-10-30 目標');
+  }
+  function renderAllocation(rows) {
+    const byKey = {}; rows.forEach(r => byKey[r.key] = r.value);
+    const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0);
+    const alt = (byKey.crypto || 0) + (Number(allocConfig.realEstate) || 0) + (Number(allocConfig.otherAlt) || 0);
+    const bondCash = (Number(allocConfig.cash) || 0) + (Number(allocConfig.bond) || 0);
+    const total = equity + bondCash + alt;
+    const cats = [
+      { name: '公開市場股票', en: 'EQUITIES', color: '#d4a574', value: equity, target: Number(allocConfig.tEquity) || 0, note: '台股 + 美股 + 高股息 ETF（自動）' },
+      { name: '債券／現金', en: 'BONDS · CASH', color: '#9aa06a', value: bondCash, target: Number(allocConfig.tBondCash) || 0, note: '手動輸入' },
+      { name: '另類資產', en: 'ALTERNATIVES', color: '#c97b6a', value: alt, target: Number(allocConfig.tAlt) || 0, note: '加密貨幣（自動）+ 不動產/其他' }
+    ];
+    const targetSum = cats.reduce((a, c) => a + c.target, 0);
+    const statsEl = document.getElementById('allocStats');
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">總資產</div><div class="stat-value">${cfMoney(total)}</div><div class="stat-sub">含手動現金/債券/不動產</div></div>
+      ${cats.map(c => { const a = total > 0 ? c.value / total * 100 : 0; const dev = a - c.target; const cls = Math.abs(dev) < 2 ? 'flat' : dev > 0 ? 'loss' : 'profit'; return `
+      <div class="stat-card ${cls}"><div class="stat-label">${escape(c.name)}</div><div class="stat-value">${a.toFixed(1)}%</div><div class="stat-sub">目標 ${c.target}% · ${dev >= 0 ? '超配 +' : '低配 '}${dev.toFixed(1)}%</div></div>`; }).join('')}
+    `;
+    const bars = cats.map(c => {
+      const a = total > 0 ? c.value / total * 100 : 0;
+      const dev = a - c.target;
+      const devNT = (c.target - a) / 100 * total; // 需調整金額（正=加碼）
+      const advCls = dev > 2 ? 'loss' : dev < -2 ? 'profit' : 'flat';
+      const adv = Math.abs(dev) < 2 ? '接近目標 ✓'
+        : dev < 0 ? `低於目標 ${(-dev).toFixed(1)}% → 建議加碼 ${cfMoney(devNT)}`
+        : `高於目標 ${dev.toFixed(1)}% → 建議減碼 ${cfMoney(-devNT)}`;
+      return `
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px;">
+            <span><span style="width:9px; height:9px; border-radius:2px; background:${c.color}; display:inline-block; margin-right:6px;"></span><strong style="font-family:var(--serif); font-size:15px;">${escape(c.name)}</strong> <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${escape(c.note)}</span></span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${cfMoney(c.value)} · 實際 ${(total > 0 ? c.value / total * 100 : 0).toFixed(1)}% / 目標 ${c.target}%</span>
+          </div>
+          <div style="position:relative; height:18px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; overflow:hidden;">
+            <div style="height:100%; width:${Math.min(100, a)}%; background:${c.color}; opacity:0.75;"></div>
+            <div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, c.target)}%; width:2px; background:var(--ink-primary);" title="目標 ${c.target}%"></div>
+          </div>
+          <div class="${advCls}" style="font-family:var(--mono); font-size:11px; margin-top:4px;">${adv}</div>
+        </div>`;
+    }).join('');
+    const bodyEl = document.getElementById('allocBody');
+    if (bodyEl) bodyEl.innerHTML = `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px;">
+          <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">ACTUAL vs TARGET · 白線＝目標</div>
+          <button class="btn btn-sm" onclick="useAllocPreset()">套用 60-10-30</button>
+        </div>
+        ${bars}
+        ${targetSum !== 100 ? `<div style="font-size:11px; color:var(--danger); margin-top:6px;">⚠ 目標比例合計為 ${targetSum}%，建議調整為 100%。</div>` : ''}
+      </div>
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:14px;">手動輸入 · 未在模組中的資產（台幣）</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-bottom:16px;">
+          ${[['allocCash', '現金 / 活存', allocConfig.cash], ['allocBond', '債券 / 債券ETF', allocConfig.bond], ['allocRe', '不動產', allocConfig.realEstate], ['allocOther', '其他另類', allocConfig.otherAlt]].map(([id, label, val]) => `
+            <div><label class="form-label">${label}</label><input type="number" id="${id}" class="form-input" value="${Number(val) || 0}" style="font-family:var(--mono);"></div>`).join('')}
+        </div>
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:10px;">目標比例 %（合計建議 100）</div>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
+          <div><label class="form-label">股票 %</label><input type="number" id="allocTEq" class="form-input" value="${Number(allocConfig.tEquity) || 0}" style="font-family:var(--mono);"></div>
+          <div><label class="form-label">債券/現金 %</label><input type="number" id="allocTBc" class="form-input" value="${Number(allocConfig.tBondCash) || 0}" style="font-family:var(--mono);"></div>
+          <div><label class="form-label">另類 %</label><input type="number" id="allocTAlt" class="form-input" value="${Number(allocConfig.tAlt) || 0}" style="font-family:var(--mono);"></div>
+        </div>
+        <button class="btn btn-primary" onclick="applyAllocInputs()">💾 儲存並更新</button>
+        <div style="margin-top:12px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">＊60-10-30 模型參考 Long Angle 高淨值資產配置：公開市場股票 60% / 債券現金 10% / 私募與另類（含不動產）30%。僅供參考、不構成投資建議。</div>
+      </div>`;
+  }
+
+  // ============================================================
   // 旅遊模組 · Travel Module
   // ============================================================
 
@@ -15438,6 +15547,9 @@ ${daysBrief}
       closeMoreSheet();
     } else if (id === 'cashflowView') {
       loadCashflow();
+      closeMoreSheet();
+    } else if (id === 'allocationView') {
+      loadAllocation();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
       // 回到儀表板時 reset 到群組總覽層
