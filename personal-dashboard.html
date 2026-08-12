@@ -3014,6 +3014,7 @@
       </div>
       <div class="api-actions">
         <button class="btn btn-primary" onclick="openUsAnalysisSearch()">📈 看盤查股</button>
+        <button class="btn" onclick="openUsScreener()">🔎 選股</button>
         <button class="btn" onclick="openUsTxnModal()">+ 新交易</button>
         <button class="btn" onclick="openUsHoldingModal()">+ 新增持股</button>
       </div>
@@ -3093,6 +3094,21 @@
           <button class="btn" type="button" onclick="closeGeminiKeyModal()">取消</button>
           <button class="btn btn-primary" type="button" onclick="saveGeminiKey()">儲存</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 美股條件選股 Modal ============ -->
+  <div class="modal-backdrop" id="usScreenerModal">
+    <div class="modal" style="max-width:620px;">
+      <h2>🔎 條件<em>選股</em></h2>
+      <div style="font-size:12px; color:var(--ink-secondary); margin-bottom:12px; line-height:1.6;">從內建熱門美股清單，依條件篩選（可多選，取 <strong>AND 交集</strong>）。用 Finnhub 免費基本面，需先設金鑰。</div>
+      <div id="usScreenerChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"></div>
+      <button class="btn btn-primary btn-sm" id="usScreenerRunBtn" type="button" onclick="runUsScreener()" style="margin-bottom:14px;">🔎 開始篩選</button>
+      <div id="usScreenerResults" style="max-height:46vh; overflow-y:auto;"></div>
+      <div style="margin-top:10px; font-size:10px; color:var(--ink-tertiary);">⚠ 僅就內建清單篩選、資料來自 Finnhub，不構成投資建議。點結果可開該股分析。</div>
+      <div class="form-actions" style="justify-content:flex-end; margin-top:12px;">
+        <button class="btn" type="button" onclick="closeUsScreener()">關閉</button>
       </div>
     </div>
   </div>
@@ -5010,7 +5026,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 6.3 · ζ</div>
+    <div>v 6.4 · ζ</div>
   </footer>
 </div>
 
@@ -8274,6 +8290,69 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         <div style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">MA20 ${sig.ma20 ? sig.ma20.toFixed(2) : '—'} · MA60 ${sig.ma60 ? sig.ma60.toFixed(2) : '—'}</div>
       </div>
       <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:0 16px; margin-bottom:14px;">${sig.sig.map(chip).join('')}</div>`;
+  }
+
+  // ===== Phase 3：條件選股篩選器（Finnhub 基本面，AND 交集）=====
+  const US_SCREENS = [
+    { key: 'lowpe', name: '低本益比', desc: 'P/E<20', test: m => { const v = +(m.peTTM ?? m.peBasicExclExtraTTM); return v > 0 && v < 20; } },
+    { key: 'highdiv', name: '高股息', desc: '殖利率>3%', test: m => { const v = +(m.currentDividendYieldTTM ?? m.dividendYieldIndicatedAnnual); return v > 3; } },
+    { key: 'highroe', name: '高ROE', desc: 'ROE>15%', test: m => { const v = +(m.roeTTM ?? m.roeRfy); return v > 15; } },
+    { key: 'highmargin', name: '高毛利', desc: '毛利率>40%', test: m => { const v = +(m.grossMarginTTM ?? m.grossMarginAnnual); return v > 40; } },
+    { key: 'lowpb', name: '低淨值比', desc: 'P/B<3', test: m => { const v = +(m.pbAnnual ?? m.pbQuarterly); return v > 0 && v < 3; } },
+    { key: 'lowbeta', name: '低波動', desc: 'Beta<1', test: m => { const v = +m.beta; return v > 0 && v < 1; } }
+  ];
+  let usScreenerCache = {}; // symbol -> metric（session 快取，避免重抓）
+  let usScreenerSelected = new Set(['lowpe']);
+  function openUsScreener() {
+    document.getElementById('usScreenerModal').classList.add('active');
+    renderScreenerChips();
+    document.getElementById('usScreenerResults').innerHTML = '<div style="color:var(--ink-tertiary); font-size:12px; padding:12px;">選好條件後按「開始篩選」。首次需抓各股基本面（約 5-8 秒），之後有快取。</div>';
+  }
+  function closeUsScreener() { document.getElementById('usScreenerModal').classList.remove('active'); }
+  function renderScreenerChips() {
+    const box = document.getElementById('usScreenerChips');
+    if (!box) return;
+    box.innerHTML = US_SCREENS.map(s => `<button class="btn btn-sm ${usScreenerSelected.has(s.key) ? 'btn-primary' : ''}" type="button" onclick="toggleScreen('${s.key}')">${escape(s.name)} <span style="opacity:0.6; font-size:9.5px;">${escape(s.desc)}</span></button>`).join('');
+  }
+  function toggleScreen(key) { if (usScreenerSelected.has(key)) usScreenerSelected.delete(key); else usScreenerSelected.add(key); renderScreenerChips(); }
+  async function runUsScreener() {
+    if (!finnhubKey) await loadFinnhubKey();
+    if (!finnhubKey) { showToast('條件選股需要 Finnhub 金鑰（免費）'); openFinnhubKeyModal(); return; }
+    if (usScreenerSelected.size === 0) { showToast('請至少選一個條件'); return; }
+    const btn = document.getElementById('usScreenerRunBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '篩選中…'; }
+    const results = document.getElementById('usScreenerResults');
+    const universe = US_STOCKS.slice();
+    let done = 0;
+    results.innerHTML = `<div style="color:var(--ink-tertiary); font-size:12px; padding:10px;">抓取基本面 0/${universe.length}…</div>`;
+    for (const s of universe) {
+      if (!usScreenerCache[s.symbol]) {
+        try { const mm = await finnhubMetrics(s.symbol); usScreenerCache[s.symbol] = (mm && mm.metric) || {}; }
+        catch (e) { usScreenerCache[s.symbol] = {}; if (/401|金鑰|429/.test(String(e.message))) { showToast('☒ ' + e.message); break; } }
+        await new Promise(r => setTimeout(r, 110));
+      }
+      done++;
+      if (done % 4 === 0) results.innerHTML = `<div style="color:var(--ink-tertiary); font-size:12px; padding:10px;">抓取基本面 ${done}/${universe.length}…</div>`;
+    }
+    const selected = US_SCREENS.filter(x => usScreenerSelected.has(x.key));
+    const matches = universe.filter(s => selected.every(cond => cond.test(usScreenerCache[s.symbol] || {})));
+    renderScreenerResults(matches, selected);
+    if (btn) { btn.disabled = false; btn.textContent = '🔎 開始篩選'; }
+  }
+  function renderScreenerResults(matches, selected) {
+    const results = document.getElementById('usScreenerResults');
+    if (!results) return;
+    if (!matches.length) { results.innerHTML = '<div style="color:var(--ink-tertiary); font-size:12px; padding:12px;">內建清單中沒有同時符合全部條件的標的，試試減少條件。</div>'; return; }
+    results.innerHTML = `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:8px; letter-spacing:0.1em;">符合 ${matches.length} 檔 · ${selected.map(s => s.name).join(' + ')}</div>` +
+      matches.map(s => {
+        const m = usScreenerCache[s.symbol] || {};
+        const pe = +(m.peTTM ?? m.peBasicExclExtraTTM), dy = +(m.currentDividendYieldTTM ?? m.dividendYieldIndicatedAnnual), roe = +(m.roeTTM ?? m.roeRfy);
+        return `<div onclick="closeUsScreener(); openUsAnalysis('${escape(s.symbol)}')" style="cursor:pointer; display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px; margin-bottom:6px;">
+          <span style="font-family:var(--mono); color:var(--accent); font-weight:600; min-width:52px;">${escape(s.symbol)}</span>
+          <span style="flex:1; font-family:var(--serif);">${escape(s.zh || s.name)}</span>
+          <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-secondary);">P/E ${isNaN(pe) ? '—' : pe.toFixed(1)} · 殖 ${isNaN(dy) ? '—' : dy.toFixed(1) + '%'} · ROE ${isNaN(roe) ? '—' : roe.toFixed(0) + '%'}</span>
+        </div>`;
+      }).join('');
   }
 
   function buildUsAnalysisPrompt(symbol, name, snapshot, strategyKey) {
