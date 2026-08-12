@@ -8102,7 +8102,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (twChartObj) { try { twChartObj.remove(); } catch (e) {} twChartObj = null; } // 清掉自繪圖再放 TradingView
     try {
       if (!window.TradingView) await loadScript('https://s3.tradingview.com/tv.js', 'sdk-tradingview');
-      if (typeof seq === 'number' && seq !== usAnalysisSeq) return; // 已切到別檔，別把舊圖畫進新容器
+      if ((typeof seq === 'number' && seq !== usAnalysisSeq) || usChartMode !== 'tv') return; // 已切到別檔/別的圖表模式
       if (!window.TradingView) throw new Error('lib');
       cont.innerHTML = '';
       new TradingView.widget({
@@ -8212,18 +8212,21 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     }
   }
   // 美股「自繪」圖：FinMind 美股日線 + K線/MA20/趨勢線/金叉死叉標記（給趨勢線圖切換用）
-  async function loadUsSelfChart(containerId, symbol) {
+  async function loadUsSelfChart(containerId, symbol, seq) {
     const cont = document.getElementById(containerId);
     if (!cont) return;
     if (twChartObj) { try { twChartObj.remove(); } catch (e) {} twChartObj = null; }
     cont.innerHTML = '<div style="padding:20px; color:var(--ink-tertiary); font-size:12px;">載入自繪走勢中（FinMind）…</div>';
+    const stale = () => (typeof seq === 'number' && seq !== usAnalysisSeq) || usChartMode !== 'self'; // 世代 + 模式守衛
     try {
       if (!window.LightweightCharts) await loadScript('https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', 'sdk-lwc');
+      if (stale()) return;
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
       const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
       const url = `https://api.finmindtrade.com/api/v4/data?dataset=USStockPrice&data_id=${encodeURIComponent(symbol)}&start_date=${start}`;
       const resp = await fetch(url, { cache: 'no-store' });
       const j = await resp.json().catch(() => null);
+      if (stale()) return; // 已切標的或切回即時圖 → 別覆蓋現在的容器
       const rows = (j && j.data) || [];
       if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">FinMind 查無 ' + escape(symbol) + ' 日線，請切回「即時圖」。</div>'; return; }
       const candles = rows.map(r => ({ time: r.date, open: +r.Open, high: +r.High, low: +r.Low, close: +r.Close })).filter(c => c.close > 0);
@@ -8593,7 +8596,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       list.push({ symbol: tq, name: '＋ 直接分析此代號（免金鑰）', industry: '手動輸入' });
     }
     renderUsSearchBox('usAnalysisSearchResults', list, 'pickUsAnalysisStock');
-    augmentUsSearchRemote(q, 'usAnalysisSearchResults', 'usAnalysisSearchBox', 'pickUsAnalysisStock', list);
+    // 傳 local（不含「直接分析」合成項）給 augment，避免合成項的代號把 Finnhub 真實結果去重掉
+    augmentUsSearchRemote(q, 'usAnalysisSearchResults', 'usAnalysisSearchBox', 'pickUsAnalysisStock', local);
   }
   function pickUsAnalysisStock(symbol) {
     const s = usSearchResultCache[symbol] || US_STOCKS.find(x => x.symbol === symbol) || { symbol, name: symbol };
@@ -8615,7 +8619,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       const h = usHoldings.find(x => x.symbol === ctx.symbol) || US_STOCKS.find(x => x.symbol === ctx.symbol) || { symbol: ctx.symbol };
       loadUsTvChart(h, usAnalysisSeq);
     } else {
-      loadUsSelfChart('usTvChart', ctx.symbol);
+      loadUsSelfChart('usTvChart', ctx.symbol, usAnalysisSeq);
     }
   }
   let usAnalysisSeq = 0;
@@ -8646,6 +8650,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       news = await finnhubNews(h.symbol).catch(() => null);
     }
     if (seq !== usAnalysisSeq) return; // 舊請求不得覆蓋新標的的資料與 AI 提示詞
+    if (profile && profile.name && h.name === h.symbol) h.name = profile.name; // 用 Finnhub 公司名補上非清單代號（AI 提示詞才有公司名）
     // 快照字串餵給 AI prompt
     let snap = '';
     if (quote && quote.c > 0) snap += `現價 $${quote.c} · 當日 ${quote.dp >= 0 ? '+' : ''}${Number(quote.dp).toFixed(2)}%`;
