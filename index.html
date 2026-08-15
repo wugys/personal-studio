@@ -35,7 +35,13 @@
   html, body {
     background: var(--bg-base); color: var(--ink-primary);
     font-family: var(--sans); line-height: 1.6;
-    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    /* ⚠ 不要改回單獨的 overflow-x: hidden！
+       hidden 會讓 html 變成「捲動容器」，導覽列的 position:sticky 就完全失效
+       （實測捲 456px 後整條列被捲走）。clip 一樣會擋住橫向溢出，但不建立捲動容器。
+       舊瀏覽器不認得 clip 會沿用上一行的 hidden，最多就是回到原本的行為。 */
+    overflow-x: hidden;   /* 舊瀏覽器 fallback */
+    overflow-x: clip;     /* 新瀏覽器：sticky 才不會壞 */
   }
   body::before {
     content: ''; position: fixed; inset: 0; pointer-events: none;
@@ -2504,7 +2510,7 @@
   <!-- Breadcrumb 全域導覽 -->
   <nav class="breadcrumb-bar" id="breadcrumbBar" style="display:none;">
     <button class="bc-back" id="bcBackBtn" onclick="goBack()" title="上一頁">← 上一頁</button>
-    <button class="bc-home" onclick="goHome()" title="儀表板首頁">🏠</button>
+    <!-- 原本這裡還有一顆單獨的 🏠 按鈕，跟麵包屑第一層的「🏠 首頁」重複了 → 移除，留有文字的那顆 -->
     <div class="bc-trail" id="bcTrail"></div>
   </nav>
 
@@ -6540,6 +6546,72 @@
 
 
 
+  <!-- ============ 雲端同步總管 Modal（一次設定，全部模組通用）============ -->
+  <div class="modal-backdrop" id="syncMasterModal">
+    <div class="modal" style="max-width: 760px;">
+      <h2>☁ 雲端同步 <em>總管</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        以前每個模組都要各自填一次 Supabase，換手機要填十幾次。<strong>現在在這裡填一次，按「套用到全部模組」就好。</strong>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Supabase URL</label>
+          <input type="text" id="syncMasterUrl" class="form-input" placeholder="https://xxx.supabase.co">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">User ID（多裝置要相同）</label>
+          <input type="text" id="syncMasterUserId" class="form-input" placeholder="kevin-personal">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="syncMasterKey" class="form-input" placeholder="eyJhbGciOi..." style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillSyncMasterFromExisting()" title="從任何一個已經設好的模組帶入">↓ 從現有模組帶入</button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:16px 0 8px;">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">要同步哪些模組</span>
+        <button class="btn btn-sm" type="button" onclick="syncMasterToggleAll(true)">全選</button>
+        <button class="btn btn-sm" type="button" onclick="syncMasterToggleAll(false)">全不選</button>
+        <span id="syncMasterCount" style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);"></span>
+      </div>
+      <div id="syncMasterList" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:2px 14px; max-height:34vh; overflow-y:auto; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;"></div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+        <button class="btn btn-primary" type="button" onclick="applySyncMasterToAll()">✔ 套用到全部模組</button>
+        <button class="btn" type="button" id="syncAllBtn" onclick="syncAllModulesNow()">☁ 立即同步全部</button>
+      </div>
+
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:12px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 一次建好全部資料表</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">到 Supabase Dashboard → <strong>SQL Editor</strong> → 複製下方 SQL → 貼上 → Run。<strong>已存在的表不會被動到</strong>（用 CREATE TABLE IF NOT EXISTS）。</div>
+        <button class="btn btn-sm" type="button" onclick="copyAllSyncSql()" style="margin-top:10px;">📋 複製全部建表 SQL</button>
+      </details>
+
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📱 換手機 · 設定碼（複製一串貼過去就好）</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">在舊裝置按「複製設定碼」，把那串字傳到新裝置（LINE 傳給自己就行），在新裝置貼進下面欄位按「套用設定碼」。</div>
+        <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
+          <button class="btn btn-sm" type="button" onclick="copySyncMasterCode()">📋 複製設定碼</button>
+        </div>
+        <textarea class="form-textarea" id="syncMasterCodeInput" placeholder="在新裝置把設定碼貼在這裡…" style="margin-top:10px; min-height:70px; font-family:var(--mono); font-size:11px;"></textarea>
+        <button class="btn btn-sm btn-primary" type="button" onclick="applySyncMasterCode()" style="margin-top:8px;">✔ 套用設定碼</button>
+      </details>
+
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.55;">
+        ⚠ 設定碼裡面含有你的 Supabase 金鑰，<strong>誰拿到誰就能看你全部資料</strong>（含協會會員名冊的個資）。只傳給自己，不要貼到公開群組。
+      </div>
+
+      <div class="form-actions" style="justify-content:space-between;">
+        <button class="btn btn-sm" onclick="closeSyncMasterModal()">關閉</button>
+        <span id="syncMasterStatus" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); align-self:center;"></span>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 現金流儀表板 VIEW（聚合所有資產模組）============ -->
   <div id="cashflowView" class="view">
     <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
@@ -7771,7 +7843,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.1 · θ</div>
+    <div>v 8.2 · θ</div>
   </footer>
 </div>
 
@@ -8370,6 +8442,8 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ sep: true });
     items.push({ icon: '+', label: '新增群組', action: 'openGroupModal()' });
     items.push({ icon: '+', label: '新增模組', action: 'openModuleModal()' });
+    items.push({ sep: true });
+    items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
 
     const html = items.map(it => {
       if (it.sep) return '<div style="height:1px; background:var(--line); margin:6px 0;"></div>';
@@ -21562,6 +21636,239 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   // ============================================================
+  // 雲端同步總管 · Sync Master
+  //
+  // 問題：13 個模組各有一份 Supabase 設定（tw_sync_v1、us_sync_v1…），
+  //       換一台裝置要重填 13 次。
+  // 做法：中央存一份 `studio_sync_master_v1`，按「套用到全部模組」時
+  //       **把同一組帳密寫進每個模組自己的 storage key、同時更新它的全域變數**。
+  // ⚠ 刻意用「扇出」而不是「改成全部模組都讀中央那一份」——
+  //   後者要動 13 個模組的 load/save/init，風險高；扇出則是零侵入，
+  //   模組原本的程式碼一行都不用改，舊使用者的既有設定也不會壞。
+  // ============================================================
+  const SYNC_MASTER_STORAGE = 'studio_sync_master_v1';
+  const SYNC_CODE_PREFIX = 'PERSONAL-STUDIO-SYNC-V1:';
+  let syncMaster = { supabaseUrl: '', supabaseKey: '', userId: '', modules: null, updatedAt: 0 };
+
+  // 每張表的額外欄位（不是每張都一樣，寫錯 upsert 會失敗）
+  const SYNC_MODULES = [
+    { key: 'tw',     name: '台股個股',      sKey: 'tw_sync_v1',     get: () => twSyncConfig,     set: c => { twSyncConfig = c; twSyncClient = null; },         run: () => syncTwNow(),     badge: () => renderTwSyncBadge(),     tables: [['tw_holdings'], ['tw_transactions', 'symbol']] },
+    { key: 'us',     name: '美股個股',      sKey: 'us_sync_v1',     get: () => usSyncConfig,     set: c => { usSyncConfig = c; usSyncClient = null; },         run: () => syncUsNow(),     badge: () => renderUsSyncBadge(),     tables: [['us_holdings'], ['us_transactions', 'symbol']] },
+    { key: 'crypto', name: '加密貨幣',      sKey: 'crypto_sync_v1', get: () => cryptoSyncConfig, set: c => { cryptoSyncConfig = c; cryptoSyncClient = null; }, run: () => syncCryptoNow(), badge: () => renderCryptoSyncBadge(), tables: [['crypto_holdings'], ['crypto_transactions', 'symbol']] },
+    { key: 'hdetf',  name: '高股息 ETF',    sKey: 'hdetf_sync_v1',  get: () => hdEtfSyncConfig,  set: c => { hdEtfSyncConfig = c; hdEtfSyncClient = null; },   run: () => syncHdEtfNow(),  badge: () => renderHdEtfSyncBadge(),  tables: [['hdetf_holdings'], ['hdetf_transactions', 'symbol']] },
+    { key: 'mketf',  name: '市值型 ETF',    sKey: 'mketf_sync_v1',  get: () => mkEtfSyncConfig,  set: c => { mkEtfSyncConfig = c; mkEtfSyncClient = null; },   run: () => syncMkEtfNow(),  badge: () => renderMkEtfSyncBadge(),  tables: [['mketf_holdings'], ['mketf_transactions', 'symbol']] },
+    { key: 'bond',   name: '債券 · 債券ETF', sKey: 'bond_sync_v1',   get: () => bondSyncConfig,   set: c => { bondSyncConfig = c; bondSyncClient = null; },     run: () => syncBondNow(),   badge: () => renderBondSyncBadge(),   tables: [['bond_holdings'], ['bond_transactions', 'symbol']] },
+    { key: 'fxdep',  name: '外幣存款',      sKey: 'fxdep_sync_v1',  get: () => fxDepSyncConfig,  set: c => { fxDepSyncConfig = c; fxDepSyncClient = null; },   run: () => syncFxDepNow(),  badge: () => renderFxDepSyncBadge(),  tables: [['fxdep_holdings'], ['fxdep_transactions', 'symbol']] },
+    { key: 'fund',   name: '主動式基金',    sKey: 'fund_sync_v1',   get: () => fundSyncConfig,   set: c => { fundSyncConfig = c; fundSyncClient = null; },     run: () => syncFundNow(),   badge: () => renderFundSyncBadge(),   tables: [['fund_holdings'], ['fund_transactions', 'symbol']] },
+    { key: 'metal',  name: '貴金屬',        sKey: 'metal_sync_v1',  get: () => metalSyncConfig,  set: c => { metalSyncConfig = c; metalSyncClient = null; },   run: () => syncMetalNow(),  badge: () => renderMetalSyncBadge(),  tables: [['metal_holdings'], ['metal_transactions', 'symbol']] },
+    { key: 're',     name: '不動產（出租＋商業）', sKey: 're_sync_v1', get: () => reSyncConfig,  set: c => { reSyncConfig = c; reSyncClient = null; },         run: () => syncReNow('rental'), badge: () => { renderReSyncBadge('rental'); renderReSyncBadge('commercial'); }, tables: [['re_rental_properties'], ['re_rental_transactions', 'symbol'], ['re_com_properties'], ['re_com_transactions', 'symbol']] },
+    { key: 'dca',    name: '定期定額計畫',  sKey: 'dca_sync_v1',    get: () => dcaSyncConfig,    set: c => { dcaSyncConfig = c; dcaSyncClient = null; },       run: () => syncDcaNow(),    badge: () => renderDcaSyncBadge(),    tables: [['dca_plans'], ['dca_executions', 'plan_id']] },
+    { key: 'goals',  name: '挑戰目標',      sKey: 'goals_sync_v1',  get: () => goalSyncConfig,   set: c => { goalSyncConfig = c; goalSyncClient = null; },     run: () => syncGoalsNow(),  badge: () => renderGoalSyncBadge(),   tables: [['goal_targets']] },
+    { key: 'assoc',  name: '協會 · 組織',    sKey: 'assoc_sync_v1',  get: () => assocSyncConfig,  set: c => { assocSyncConfig = c; assocSyncClient = null; },   run: () => syncAssocNow(),  badge: () => renderAssocSyncBadge(),  tables: [['assoc_members'], ['assoc_events'], ['assoc_dues']] }
+  ];
+
+  async function loadSyncMaster() {
+    try { const v = await readKey(SYNC_MASTER_STORAGE); if (v) syncMaster = { ...syncMaster, ...JSON.parse(v) }; } catch (e) {}
+    return syncMaster;
+  }
+  async function saveSyncMaster() { await writeKey(SYNC_MASTER_STORAGE, JSON.stringify(syncMaster)); }
+  // 沒設過的話，預設全選（大部分人就是想全部一起同步）
+  function syncMasterPicked() {
+    if (Array.isArray(syncMaster.modules)) return syncMaster.modules;
+    return SYNC_MODULES.map(m => m.key);
+  }
+
+  async function openSyncMasterModal() {
+    await loadSyncMaster();
+    // 沒有中央設定就從任何一個已設好的模組帶過來，省得使用者重打
+    if (!syncMaster.supabaseUrl) {
+      const src = SYNC_MODULES.map(m => { try { return m.get(); } catch (e) { return null; } }).find(c => c && c.supabaseUrl);
+      if (src) { syncMaster.supabaseUrl = src.supabaseUrl; syncMaster.supabaseKey = src.supabaseKey; syncMaster.userId = src.userId; }
+    }
+    document.getElementById('syncMasterUrl').value = syncMaster.supabaseUrl || '';
+    document.getElementById('syncMasterKey').value = syncMaster.supabaseKey || '';
+    document.getElementById('syncMasterUserId').value = syncMaster.userId || '';
+    document.getElementById('syncMasterCodeInput').value = '';
+    document.getElementById('syncMasterStatus').textContent = '';
+    renderSyncMasterList();
+    document.getElementById('syncMasterModal').classList.add('active');
+  }
+  function closeSyncMasterModal() { document.getElementById('syncMasterModal').classList.remove('active'); }
+
+  function renderSyncMasterList() {
+    const box = document.getElementById('syncMasterList');
+    if (!box) return;
+    const picked = syncMasterPicked();
+    box.innerHTML = SYNC_MODULES.map(m => {
+      let cfg = {};
+      try { cfg = m.get() || {}; } catch (e) {}
+      const on = cfg.enabled && cfg.supabaseUrl;
+      const t = cfg.lastPullAt ? new Date(cfg.lastPullAt).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+      return `
+        <label style="display:flex; align-items:center; gap:8px; padding:6px 0; cursor:pointer; border-bottom:1px solid var(--line);">
+          <input type="checkbox" data-sync-mod="${escape(m.key)}" ${picked.includes(m.key) ? 'checked' : ''} onchange="onSyncMasterPick()">
+          <span style="font-size:12.5px; color:var(--ink-primary); flex:1; min-width:0;">${escape(m.name)}</span>
+          <span style="font-family:var(--mono); font-size:9.5px; color:${on ? 'var(--accent)' : 'var(--ink-tertiary)'}; white-space:nowrap;">${on ? (t ? '☁ ' + t : '☁ 已啟用') : '未啟用'}</span>
+        </label>`;
+    }).join('');
+    onSyncMasterPick();
+  }
+  function onSyncMasterPick() {
+    const n = document.querySelectorAll('[data-sync-mod]:checked').length;
+    const el = document.getElementById('syncMasterCount');
+    if (el) el.textContent = `已選 ${n} / ${SYNC_MODULES.length}`;
+  }
+  function syncMasterToggleAll(on) {
+    document.querySelectorAll('[data-sync-mod]').forEach(cb => { cb.checked = on; });
+    onSyncMasterPick();
+  }
+  function fillSyncMasterFromExisting() {
+    const src = SYNC_MODULES.map(m => { try { return m.get(); } catch (e) { return null; } }).find(c => c && c.supabaseUrl);
+    const trv = (typeof trvMultiConfig !== 'undefined' && trvMultiConfig.supabaseUrl) ? trvMultiConfig : null;
+    const use = src || trv;
+    if (!use) { showToast('目前沒有任何模組設定過 Supabase'); return; }
+    document.getElementById('syncMasterUrl').value = use.supabaseUrl || '';
+    document.getElementById('syncMasterKey').value = use.supabaseKey || '';
+    document.getElementById('syncMasterUserId').value = use.userId || '';
+    showToast('已從現有設定帶入');
+  }
+
+  function readSyncMasterForm() {
+    return {
+      supabaseUrl: document.getElementById('syncMasterUrl').value.trim(),
+      supabaseKey: document.getElementById('syncMasterKey').value.trim(),
+      userId: document.getElementById('syncMasterUserId').value.trim(),
+      modules: [...document.querySelectorAll('[data-sync-mod]:checked')].map(cb => cb.getAttribute('data-sync-mod'))
+    };
+  }
+  function validateSyncMaster(f) {
+    if (!f.supabaseUrl) return '請填 Supabase URL';
+    if (!/^https:\/\/.+\.supabase\.co$/.test(f.supabaseUrl)) return 'Supabase URL 格式錯（應為 https://xxx.supabase.co）';
+    if (!f.supabaseKey) return '請填 Supabase Anon Key';
+    if (!f.userId) return '請填 User ID（自取，但多裝置要相同）';
+    return null;
+  }
+
+  // 核心：把同一組帳密扇出到每個模組
+  async function applySyncMasterToAll(silent = false) {
+    const f = readSyncMasterForm();
+    const err = validateSyncMaster(f);
+    if (err) { showToast(err); return false; }
+    syncMaster = { ...f, updatedAt: Date.now() };
+    await saveSyncMaster();
+    let on = 0, off = 0;
+    for (const m of SYNC_MODULES) {
+      const picked = f.modules.includes(m.key);
+      let prev = {};
+      try { prev = m.get() || {}; } catch (e) {}
+      const cfg = {
+        ...prev,
+        enabled: picked,
+        supabaseUrl: f.supabaseUrl,
+        supabaseKey: f.supabaseKey,
+        userId: f.userId,
+        lastPullAt: prev.lastPullAt || 0
+      };
+      try { m.set(cfg); } catch (e) {}
+      await writeKey(m.sKey, JSON.stringify(cfg));
+      try { m.badge(); } catch (e) {}
+      picked ? on++ : off++;
+    }
+    renderSyncMasterList();
+    const msg = `已套用到 ${on} 個模組${off ? `（${off} 個關閉）` : ''}`;
+    const st = document.getElementById('syncMasterStatus');
+    if (st) st.textContent = '✔ ' + msg;
+    if (!silent) showToast('☁ ' + msg);
+    return true;
+  }
+
+  // 依序跑每個已啟用模組的同步（不並行——13 個一起打 Supabase 容易被限流）
+  async function syncAllModulesNow() {
+    const ok = await applySyncMasterToAll(true);
+    if (!ok) return;
+    const picked = SYNC_MODULES.filter(m => syncMasterPicked().includes(m.key));
+    const btn = document.getElementById('syncAllBtn');
+    const st = document.getElementById('syncMasterStatus');
+    if (btn) { btn.disabled = true; }
+    let done = 0, fail = 0;
+    for (const m of picked) {
+      if (btn) btn.textContent = `☁ 同步中 ${done + fail + 1}/${picked.length}…`;
+      if (st) st.textContent = `正在同步「${m.name}」…`;
+      try { await m.run(); done++; } catch (e) { fail++; console.warn('sync fail ' + m.key, e); }
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '☁ 立即同步全部'; }
+    renderSyncMasterList();
+    const msg = `同步完成 · ${done} 個成功${fail ? ` / ${fail} 個失敗` : ''}`;
+    if (st) st.textContent = (fail ? '⚠ ' : '✔ ') + msg;
+    showToast('☁ ' + msg);
+  }
+
+  // 一次產出全部資料表的建表 SQL
+  function copyAllSyncSql() {
+    const tbl = ([name, extra]) => `CREATE TABLE IF NOT EXISTS ${name} (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,${extra ? `\n  ${extra} TEXT,` : ''}
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_${name}_user ON ${name}(user_id);
+ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON ${name};
+CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
+    const all = SYNC_MODULES.flatMap(m => m.tables);
+    const sql = `-- Personal Studio · 一次建好全部同步資料表（共 ${all.length} 張）
+-- 已存在的表不會被動到（CREATE TABLE IF NOT EXISTS）
+-- RLS 是 Allow-All，適合個人使用；anon key 誰拿到誰看得到，別外流
+
+${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\n\n')).join('\n\n')}`;
+    navigator.clipboard.writeText(sql).then(
+      () => showToast(`SQL 已複製（${all.length} 張表），貼到 Supabase SQL Editor 跑一次`),
+      () => showCopiableError('建表 SQL（請手動複製）', sql)
+    );
+  }
+
+  // 設定碼：換裝置用
+  function copySyncMasterCode() {
+    const f = readSyncMasterForm();
+    const err = validateSyncMaster(f);
+    if (err) { showToast(err); return; }
+    const code = SYNC_CODE_PREFIX + b64UrlEncode(JSON.stringify(f));
+    navigator.clipboard.writeText(code).then(
+      () => showToast('設定碼已複製 · 只傳給自己，不要貼到公開群組'),
+      () => showCopiableError('同步設定碼（請手動複製）', code)
+    );
+  }
+  async function applySyncMasterCode() {
+    let raw = document.getElementById('syncMasterCodeInput').value || '';
+    raw = unescapeHtmlEntities(raw).trim();
+    // ⚠ 智慧標點要在「找前綴之前」就還原 —— 前綴 PERSONAL-STUDIO-SYNC-V1 本身就含 '-'，
+    //    iOS / LINE 常把它自動變成 – 或 —，先找前綴會直接找不到（實測踩到）
+    raw = raw.replace(/[‐-―]/g, '-');
+    const i = raw.indexOf(SYNC_CODE_PREFIX);
+    if (i < 0) { showToast('這不是同步設定碼（應該以 ' + SYNC_CODE_PREFIX + ' 開頭）'); return; }
+    let b64 = raw.slice(i + SYNC_CODE_PREFIX.length);
+    // 我們用的是 base64url（只有 A-Z a-z 0-9 - _），本來就不含空白與 + /
+    // → 空白一律當雜訊去掉；萬一被別的工具轉成標準 base64，再轉回來
+    b64 = b64.replace(/\s+/g, '');
+    b64 = b64.replace(/\+/g, '-').replace(/\//g, '_');
+    b64 = b64.replace(/[^A-Za-z0-9\-_]/g, '');
+    let data;
+    try { data = JSON.parse(b64UrlDecode(b64)); }
+    catch (e) { showToast('設定碼解析失敗，請確認有完整複製到'); return; }
+    if (!data || !data.supabaseUrl) { showToast('設定碼內容不完整'); return; }
+    document.getElementById('syncMasterUrl').value = data.supabaseUrl || '';
+    document.getElementById('syncMasterKey').value = data.supabaseKey || '';
+    document.getElementById('syncMasterUserId').value = data.userId || '';
+    if (Array.isArray(data.modules)) {
+      document.querySelectorAll('[data-sync-mod]').forEach(cb => { cb.checked = data.modules.includes(cb.getAttribute('data-sync-mod')); });
+      onSyncMasterPick();
+    }
+    const ok = await applySyncMasterToAll(true);
+    showToast(ok ? '☁ 設定碼已套用，可以按「立即同步全部」把資料拉下來' : '設定碼已填入，但驗證沒過');
+  }
+
+  // ============================================================
   // 資產歷史快照 · Net Worth History（時間序列）
   //
   // 為什麼要有：其他所有畫面都是「當下快照」，看不到資產怎麼變化。
@@ -26212,17 +26519,32 @@ ${daysBrief}
   }
 
   // URL-safe base64（避開 + / =，防止 LINE / URL 把這些字元破壞）
+  //
+  // ⚠⚠ 這裡以前寫成 `decodeURIComponent(escape(atob(s)))`，是**踩到自己的坑**：
+  //    本檔在上面定義了 `function escape(s)`（HTML 跳脫），它會**蓋掉瀏覽器內建的
+  //    escape()**（URL 跳脫）。所以解碼出來的 JSON 裡 " 全都變成 &quot;、& 變成 &amp;，
+  //    JSON.parse 直接爆掉。這被誤記成「LINE in-app browser 的 quirk」很久，
+  //    但其實**每個瀏覽器都會發生**，跟 LINE 無關。
+  //    → 改用 TextEncoder / TextDecoder，完全不碰 escape / unescape 這兩個已棄用的全域。
+  //    產生的 base64 與舊版完全相同（都是 UTF-8 bytes → base64），所以舊的分享連結
+  //    與設定碼照樣解得開，不會有相容性問題。
   function b64UrlEncode(s) {
-    return btoa(unescape(encodeURIComponent(s)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const bytes = new TextEncoder().encode(String(s));
+    let bin = '';
+    bytes.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
   function b64UrlDecode(s) {
     // 補回 padding
-    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    s = String(s).replace(/-/g, '+').replace(/_/g, '/');
     while (s.length % 4) s += '=';
-    return decodeURIComponent(escape(atob(s)));
+    const bin = atob(s);
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    return new TextDecoder('utf-8').decode(bytes);
   }
-  // 還原 HTML entity（iOS LINE in-app browser 偶爾會把剪貼簿內的 " 變成 &quot;）
+  // 還原 HTML entity。原本以為是 iOS LINE in-app browser 的 quirk，
+  // 實際上主因是上面那個 escape() 覆蓋（已修）。保留這個函式當保險——
+  // 使用者從網頁複製貼上時，來源真的有可能已經是 HTML entity。
   function unescapeHtmlEntities(s) {
     if (!s || typeof s !== 'string' || s.indexOf('&') === -1) return s;
     return s
