@@ -6547,6 +6547,45 @@
 
 
 
+  <!-- ============ 全站備份 / 還原 Modal ============ -->
+  <div class="modal-backdrop" id="backupModal">
+    <div class="modal" style="max-width: 820px;">
+      <h2>💾 全站 <em>備份 / 還原</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:16px;">
+        以前每個模組要各自匯出，18 個模組要按 18 次。<strong>這裡一顆按鈕把全部資料存成一個檔</strong>——投資、不動產、協會、旅遊、歷史走勢，全部都在裡面。
+      </div>
+
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--accent); margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--line);">① 匯出備份</div>
+      <div id="backupSummary" style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:12px; max-height:26vh; overflow-y:auto;"></div>
+      <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:10px;">
+        <input type="checkbox" id="backupIncludeSecrets" checked onchange="renderBackupSummary()" style="margin-top:3px;">
+        <span>包含<strong>金鑰與雲端同步設定</strong>（Finnhub / Gemini / Anthropic 金鑰、Supabase 帳密）
+          <span style="display:block; font-size:11px; color:var(--danger); margin-top:2px;">⚠ 勾了的話，這個檔案外流等於你的金鑰外流。只存在自己電腦、不要傳給別人。</span>
+        </span>
+      </label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">
+        <button class="btn btn-primary" type="button" onclick="exportFullBackup()">💾 下載完整備份</button>
+        <button class="btn" type="button" onclick="renderBackupSummary()">↻ 重新統計</button>
+      </div>
+
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--accent); margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--line);">② 還原備份</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <button class="btn" type="button" onclick="document.getElementById('backupFile').click()">📂 選擇備份檔</button>
+        <input type="file" id="backupFile" accept=".json" style="display:none" onchange="onBackupFilePicked(event)">
+        <span id="backupFileName" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">尚未選擇檔案</span>
+      </div>
+      <div id="backupRestorePreview"></div>
+
+      <div style="margin-top:14px; padding:9px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.6;">
+        ⚠ <strong>還原會覆蓋你現在的資料</strong>，而且無法復原。建議還原之前先按上面「💾 下載完整備份」存一份現在的狀態當保險。
+      </div>
+
+      <div class="form-actions" style="justify-content:flex-end; margin-top:12px;">
+        <button class="btn" onclick="closeBackupModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 美股 · 短線機會掃描 Modal ============ -->
   <div class="modal-backdrop" id="usScanModal">
     <div class="modal" style="max-width: 900px;">
@@ -7906,7 +7945,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.3 · θ</div>
+    <div>v 8.4 · θ</div>
   </footer>
 </div>
 
@@ -8507,6 +8546,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '+', label: '新增模組', action: 'openModuleModal()' });
     items.push({ sep: true });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
+    items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
 
     const html = items.map(it => {
       if (it.sep) return '<div style="height:1px; background:var(--line); margin:6px 0;"></div>';
@@ -21696,6 +21736,216 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     await recordAssetSnapshot(rows);
     renderAssetHistory();
     renderPerformanceRisk();
+  }
+
+  // ============================================================
+  // 全站備份 / 還原 · Full Backup
+  //
+  // ⚠ 為什麼是掃 localStorage 而不是列一張固定的 key 清單：
+  //   旅遊模組的 key 是**動態**的（`travel_<tripId>_<項目>`，見 tripKey()），
+  //   使用者自建的行程會產生列不完的 key。所以改成「掃 localStorage + 前綴白名單」。
+  // ⚠ 為什麼要前綴白名單而不是整包 localStorage：
+  //   GitHub Pages 的 wugys.github.io 是**跨專案共用同一個 origin** 的，
+  //   整包備份會把別的專案的資料一起打包走。
+  // ⚠ writeKey 一定會寫 localStorage（window.storage 只是加寫），
+  //   所以 localStorage 必定是完整的來源，掃它就對了。
+  // ============================================================
+  const BACKUP_FORMAT = 1;
+  const BACKUP_APP_ID = 'personal-studio';
+  // 金鑰／同步設定另外分一組，讓使用者自己決定要不要放進備份檔
+  const BACKUP_SECRET_MATCH = k =>
+    /_sync_v\d+$/.test(k) || k === 'studio_sync_master_v1' ||
+    k === 'studio_ai_key_v1' || k === 'studio_finnhub_key_v1' || k === 'studio_gemini_key_v1' ||
+    k === 'tw_news_worker_url_v1' || k === 'travel_multi_config_v1';
+  const BACKUP_GROUPS = [
+    { key: 'core',    name: '儀表板與模組設定', test: k => /^studio_(groups|modules|viewmode)/.test(k) },
+    { key: 'tw',      name: '台股個股',        test: k => /^tw_(holdings|transactions|realized|news_v)/.test(k) },
+    { key: 'us',      name: '美股個股',        test: k => /^us_(holdings|transactions|realized|check)/.test(k) },
+    { key: 'crypto',  name: '加密貨幣',        test: k => /^crypto_/.test(k) },
+    { key: 'hdetf',   name: '高股息 ETF',      test: k => /^hdetf_/.test(k) },
+    { key: 'mketf',   name: '市值型 ETF',      test: k => /^mketf_/.test(k) },
+    { key: 'bond',    name: '債券 · 債券 ETF',  test: k => /^bond_/.test(k) },
+    { key: 'fxdep',   name: '外幣存款',        test: k => /^fxdep_/.test(k) },
+    { key: 'fund',    name: '主動式基金',      test: k => /^fund_/.test(k) },
+    { key: 'metal',   name: '貴金屬',          test: k => /^metal_/.test(k) },
+    { key: 're',      name: '不動產（出租＋商業）', test: k => /^re_(rental|com)_/.test(k) },
+    { key: 'dca',     name: '定期定額計畫',    test: k => /^dca_/.test(k) },
+    { key: 'goals',   name: '挑戰目標',        test: k => k === 'goals_v1' },
+    { key: 'assoc',   name: '協會 · 組織',      test: k => /^assoc_(org|members|events|dues)/.test(k) },
+    { key: 'opps',    name: '投資翻倍 / 以小搏大', test: k => k === 'studio_opps_v1' },
+    { key: 'history', name: '資產歷史走勢',    test: k => k === 'studio_history_v1' },
+    { key: 'cfg',     name: '匯率與配置設定',  test: k => k === 'cashflow_fx_v1' || k === 'alloc_config_v1' },
+    { key: 'apis',    name: 'AI API 收藏館',   test: k => k === 'ai_apis_v1' },
+    { key: 'travel',  name: '旅遊規劃',        test: k => /^travel_/.test(k) },
+    { key: 'secrets', name: '🔑 金鑰與雲端同步設定', test: BACKUP_SECRET_MATCH }
+  ];
+  // 前綴白名單：只有本 App 的資料才會被打包
+  const BACKUP_PREFIXES = ['studio_', 'ai_apis_', 'alloc_', 'assoc_', 'bond_', 'cashflow_', 'crypto_',
+    'dca_', 'fund_', 'fxdep_', 'goals_', 'hdetf_', 'metal_', 'mketf_', 're_com_', 're_rental_', 're_sync',
+    'travel_', 'tw_', 'us_'];
+  const backupOwns = k => BACKUP_PREFIXES.some(p => k.startsWith(p));
+
+  function backupGroupOf(k) {
+    // secrets 要先判，否則 xxx_sync_v1 會被該模組的規則先吃掉
+    if (BACKUP_SECRET_MATCH(k)) return 'secrets';
+    const g = BACKUP_GROUPS.find(x => x.key !== 'secrets' && x.test(k));
+    return g ? g.key : 'other';
+  }
+  // 掃出目前所有屬於本 App 的資料
+  function backupCollect() {
+    const out = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !backupOwns(k)) continue;
+        const v = localStorage.getItem(k);
+        if (v == null) continue;
+        out[k] = v;
+      }
+    } catch (e) {}
+    return out;
+  }
+  // 幫每一組算出「幾筆資料」，預覽才看得懂
+  function backupStats(data) {
+    const groups = {};
+    Object.keys(data).forEach(k => {
+      const g = backupGroupOf(k);
+      if (!groups[g]) groups[g] = { keys: 0, items: 0, bytes: 0 };
+      groups[g].keys++;
+      groups[g].bytes += (data[k] || '').length;
+      try { const v = JSON.parse(data[k]); if (Array.isArray(v)) groups[g].items += v.length; } catch (e) {}
+    });
+    return groups;
+  }
+  const backupSize = n => n >= 1048576 ? (n / 1048576).toFixed(2) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
+
+  function openBackupModal() {
+    renderBackupSummary();
+    document.getElementById('backupFileName').textContent = '尚未選擇檔案';
+    document.getElementById('backupRestorePreview').innerHTML = '';
+    backupPending = null;
+    document.getElementById('backupModal').classList.add('active');
+  }
+  function closeBackupModal() { document.getElementById('backupModal').classList.remove('active'); }
+
+  function backupRowHtml(name, st, extra) {
+    return `<div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--line); font-size:12.5px;">
+      <span style="flex:1; min-width:0; color:var(--ink-primary);">${escape(name)}</span>
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${st.items > 0 ? st.items + ' 筆' : st.keys + ' 項設定'}</span>
+      <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); min-width:56px; text-align:right;">${backupSize(st.bytes)}</span>
+      ${extra || ''}
+    </div>`;
+  }
+  function renderBackupSummary() {
+    const box = document.getElementById('backupSummary');
+    if (!box) return;
+    const withSecrets = document.getElementById('backupIncludeSecrets')?.checked;
+    const all = backupCollect();
+    const data = {};
+    Object.keys(all).forEach(k => { if (withSecrets || !BACKUP_SECRET_MATCH(k)) data[k] = all[k]; });
+    const st = backupStats(data);
+    const totalBytes = Object.values(data).reduce((a, v) => a + v.length, 0);
+    const rows = BACKUP_GROUPS.concat([{ key: 'other', name: '其他' }])
+      .filter(g => st[g.key])
+      .map(g => backupRowHtml(g.name, st[g.key])).join('');
+    box.innerHTML = rows
+      ? rows + `<div style="display:flex; gap:8px; padding-top:8px; margin-top:4px; border-top:1px solid var(--line-strong); font-family:var(--mono); font-size:11.5px;">
+          <span style="flex:1; color:var(--ink-primary);">合計</span>
+          <span style="color:var(--accent);">${Object.keys(data).length} 個項目</span>
+          <span style="color:var(--ink-secondary);">${backupSize(totalBytes)}</span>
+        </div>`
+      : '<div style="color:var(--ink-tertiary); font-size:12.5px; padding:8px 0;">目前沒有任何資料可備份。先去各模組輸入一些資料吧。</div>';
+  }
+
+  function exportFullBackup() {
+    const withSecrets = document.getElementById('backupIncludeSecrets')?.checked;
+    const all = backupCollect();
+    const data = {};
+    Object.keys(all).forEach(k => { if (withSecrets || !BACKUP_SECRET_MATCH(k)) data[k] = all[k]; });
+    if (!Object.keys(data).length) { showToast('沒有資料可以備份'); return; }
+    const payload = {
+      app: BACKUP_APP_ID,
+      formatVersion: BACKUP_FORMAT,
+      appVersion: '8.4',
+      exportedAt: new Date().toISOString(),
+      includesSecrets: !!withSecrets,
+      data
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `personal-studio-backup-${new Date().toISOString().slice(0, 10)}${withSecrets ? '-含金鑰' : ''}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`💾 已下載備份 · ${Object.keys(data).length} 個項目`);
+  }
+
+  let backupPending = null;   // 讀進來待還原的備份
+  function onBackupFilePicked(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('backupFileName').textContent = file.name + '　' + backupSize(file.size);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      let d;
+      try { d = JSON.parse(ev.target.result); }
+      catch (err) { showCopiableError('備份檔讀取失敗', '這個檔案不是有效的 JSON。\n\n' + err.message); return; }
+      if (!d || d.app !== BACKUP_APP_ID || !d.data || typeof d.data !== 'object') {
+        showCopiableError('備份檔格式不對', '這看起來不是 Personal Studio 的完整備份檔。\n\n完整備份檔的開頭會有 "app": "personal-studio"。\n（如果這是某個單一模組的匯出檔，請到該模組用它自己的「↑ 匯入」。）');
+        return;
+      }
+      backupPending = d;
+      renderBackupRestorePreview();
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  function renderBackupRestorePreview() {
+    const box = document.getElementById('backupRestorePreview');
+    if (!box || !backupPending) return;
+    const d = backupPending;
+    const st = backupStats(d.data);
+    const cur = backupStats(backupCollect());
+    const groups = BACKUP_GROUPS.concat([{ key: 'other', name: '其他' }]).filter(g => st[g.key]);
+    const when = d.exportedAt ? new Date(d.exportedAt).toLocaleString('zh-TW') : '（未記錄時間）';
+    box.innerHTML = `
+      <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:12px 14px;">
+        <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:4px;">備份時間：${escape(when)}　·　版本 v${escape(String(d.appVersion || '?'))}${d.includesSecrets ? '　·　<span style="color:var(--danger);">含金鑰</span>' : ''}</div>
+        <div style="font-size:11.5px; color:var(--ink-tertiary); margin-bottom:10px;">勾選要還原的項目。<strong>沒勾的不會被動到</strong>，右邊是「備份檔的量 → 你現在的量」。</div>
+        ${groups.map(g => {
+          const c = cur[g.key];
+          return `<label style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--line); cursor:pointer; font-size:12.5px;">
+            <input type="checkbox" data-backup-g="${escape(g.key)}" checked>
+            <span style="flex:1; min-width:0; color:var(--ink-primary);">${escape(g.name)}</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--accent);">${st[g.key].items > 0 ? st[g.key].items + ' 筆' : st[g.key].keys + ' 項'}</span>
+            <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">→ 現在 ${c ? (c.items > 0 ? c.items + ' 筆' : c.keys + ' 項') : '無'}</span>
+          </label>`;
+        }).join('')}
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+          <button class="btn btn-sm" type="button" onclick="document.querySelectorAll('[data-backup-g]').forEach(c=>c.checked=true)">全選</button>
+          <button class="btn btn-sm" type="button" onclick="document.querySelectorAll('[data-backup-g]').forEach(c=>c.checked=false)">全不選</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="restoreFullBackup()" style="margin-left:auto; border-color:var(--danger);">⚠ 確定還原（會覆蓋）</button>
+        </div>
+      </div>`;
+  }
+
+  async function restoreFullBackup() {
+    if (!backupPending) return;
+    const picked = [...document.querySelectorAll('[data-backup-g]:checked')].map(c => c.getAttribute('data-backup-g'));
+    if (!picked.length) { showToast('請至少勾一個要還原的項目'); return; }
+    const d = backupPending;
+    const keys = Object.keys(d.data).filter(k => picked.includes(backupGroupOf(k)));
+    const names = BACKUP_GROUPS.concat([{ key: 'other', name: '其他' }]).filter(g => picked.includes(g.key)).map(g => g.name);
+    if (!confirm(`確定還原以下項目？\n\n${names.join('\n')}\n\n共 ${keys.length} 個資料項會被覆蓋，這個動作無法復原。\n還原後頁面會自動重新整理。`)) return;
+    let ok = 0;
+    for (const k of keys) {
+      if (!backupOwns(k)) continue;   // 再擋一次，備份檔被人動過也不會寫到不該寫的地方
+      try { await writeKey(k, d.data[k]); ok++; } catch (e) {}
+    }
+    showToast(`✔ 已還原 ${ok} 個項目 · 即將重新整理…`);
+    setTimeout(() => location.reload(), 1200);
   }
 
   // ============================================================
