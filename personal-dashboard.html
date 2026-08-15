@@ -2545,6 +2545,9 @@
       <h1 class="hero-title">屬於你的<em>數位書房</em>。</h1>
     </section>
 
+    <!-- 今日提醒：跨模組把「需要你處理的事」集中到首頁 -->
+    <div id="studioAlerts"></div>
+
     <!-- 快速入口 chip 列（手機隱藏 · 桌面顯示） -->
     <div class="quick-access hide-on-mobile" id="quickAccess"></div>
 
@@ -7981,7 +7984,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.9 · θ</div>
+    <div>v 9.0 · ι</div>
   </footer>
 </div>
 
@@ -8697,6 +8700,205 @@ alter publication supabase_realtime add table party_locations;</pre>
     else renderUnified();
     updateApiCount();
     updateMobileHeaderTitle();
+    refreshStudioAlerts();   // 非同步，不擋畫面
+  }
+
+  // ============================================================
+  // 今日提醒 · Studio Alerts
+  //
+  // 這個 App 現在有 20 個模組、9 種資產，資料都在，但**你要一個一個點進去才知道
+  // 有什麼事該處理**（租約快到期？會費沒收齊？停損被跌破？）。
+  // 這裡把跨模組的「需要行動」集中到首頁第一眼。
+  // ⚠ 全部直接讀 storage，不依賴任何模組是否已經被載入過。
+  // ⚠ 只讀不寫、任何一段失敗都不能影響其他段（各自 try/catch）。
+  // ============================================================
+  const ALERT_LEVEL = { urgent: 0, warn: 1, info: 2 };
+  // ⚠ 一律用「日期對日期」比，不要拿當日結束時間去減現在時間。
+  //    用 T23:59:59 的話，今天會被算成 1（因為還沒到今天結束），
+  //    導致「就是今天」那類判斷永遠不成立。這裡把兩邊都歸零到午夜再相減。
+  function daysBetweenToday(dateStr) {
+    if (!dateStr) return null;
+    const t = new Date(String(dateStr) + 'T00:00:00');
+    if (isNaN(t.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((t.getTime() - today.getTime()) / 86400000);
+  }
+  const alertDaysTo = d => daysBetweenToday(d);
+  async function readJson(key, fallback) {
+    try { const v = await readKey(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+  }
+
+  async function buildStudioAlerts() {
+    const A = [];
+    const push = (level, icon, text, view, extra) => A.push({ level, icon, text, view, extra });
+    const money = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+
+    // 1) 停損被跌破（美股 + 台股，用「新手體檢」裡自己填的停損價）
+    try {
+      const answers = await readJson('us_check_v1', {});
+      const mkts = [
+        { hKey: 'us_holdings_v1', view: 'usStockView', cur: '$', name: '美股' },
+        { hKey: 'tw_holdings_v1', view: 'twStockView', cur: 'NT$', name: '台股' }
+      ];
+      for (const m of mkts) {
+        const hs = await readJson(m.hKey, []);
+        hs.forEach(h => {
+          const a = answers[h.symbol];
+          const stop = a && Number(a.stop);
+          const px = Number(h.currentPrice);
+          if (!(stop > 0) || !(px > 0)) return;
+          if (px <= stop) {
+            push('urgent', '🔻', `${h.symbol} ${h.name || ''} 現價 ${m.cur}${px} <strong>已跌破你設的停損 ${m.cur}${stop}</strong>`, m.view);
+          } else if (px <= stop * 1.03) {
+            push('warn', '⚠', `${h.symbol} ${h.name || ''} 現價 ${m.cur}${px}，距停損 ${m.cur}${stop} 只剩 ${((px / stop - 1) * 100).toFixed(1)}%`, m.view);
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 2) 租約快到期
+    try {
+      for (const [k, v, label] of [['re_rental_props_v1', 'rentalView', '出租'], ['re_com_props_v1', 'commercialView', '商業']]) {
+        const ps = await readJson(k, []);
+        ps.forEach(p => {
+          const d = alertDaysTo(p.leaseEnd);
+          if (d == null) return;
+          if (d < 0) push('urgent', '🏠', `${label}物件「${p.name}」租約<strong>已到期 ${-d} 天</strong>，要續約還是找新房客？`, v);
+          else if (d <= 30) push('urgent', '🏠', `${label}物件「${p.name}」租約 <strong>${d} 天後到期</strong>`, v);
+          else if (d <= 60) push('warn', '🏠', `${label}物件「${p.name}」租約 ${d} 天後到期`, v);
+        });
+      }
+    } catch (e) {}
+
+    // 3) 協會會費未繳 / 活動 / 壽星
+    try {
+      const y = new Date().getFullYear();
+      const dues = await readJson('assoc_dues_v1', []);
+      const members = await readJson('assoc_members_v1', []);
+      const unpaid = dues.filter(d => Number(d.year) === y && (Number(d.paid) || 0) < (Number(d.amount) || 0));
+      if (unpaid.length) {
+        const owed = unpaid.reduce((s, d) => s + ((Number(d.amount) || 0) - (Number(d.paid) || 0)), 0);
+        push('warn', '¥', `協會 ${y} 年度會費還有 <strong>${unpaid.length} 人未繳清</strong>，共 ${money(owed)}`, 'assocView');
+      }
+      const events = await readJson('assoc_events_v1', []);
+      events.forEach(e => {
+        if (e.status === '取消') return;
+        const d = alertDaysTo(e.date);
+        if (d == null || d < 0) return;
+        if (d === 0) push('urgent', '✦', `協會活動<strong>就是今天</strong>：${e.title}${e.time ? ' ' + e.time : ''}${e.place ? ' @ ' + e.place : ''}`, 'assocView');
+        else if (d <= 7) push('warn', '✦', `協會活動 <strong>${d} 天後</strong>：${e.title}`, 'assocView');
+      });
+      const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+      const bd = members.filter(m => (m.status || '在籍') === '在籍' && (m.birthday || '').slice(0, 2) === mm);
+      if (bd.length) push('info', '🎂', `本月壽星 ${bd.length} 位：${bd.slice(0, 4).map(b => b.name).join('、')}${bd.length > 4 ? '…' : ''}`, 'assocView');
+    } catch (e) {}
+
+    // 4) 債券 / 外幣定存快到期
+    try {
+      for (const [k, v, label] of [['bond_holdings_v1', 'bondView', '債券'], ['fxdep_holdings_v1', 'fxDepView', '外幣定存']]) {
+        const hs = await readJson(k, []);
+        hs.forEach(h => {
+          const d = alertDaysTo(h.maturity);
+          if (d == null || d < 0) return;
+          if (d <= 14) push('urgent', '⏰', `${label}「${h.name || h.symbol}」<strong>${d} 天後到期</strong>，先想好要不要續作`, v);
+          else if (d <= 30) push('warn', '⏰', `${label}「${h.name || h.symbol}」${d} 天後到期`, v);
+        });
+      }
+    } catch (e) {}
+
+    // 5) 定期定額有沒有漏登記
+    try {
+      const plans = await readJson('dca_plans_v1', []);
+      const execs = await readJson('dca_executions_v1', []);
+      if (plans.length && typeof dcaDatesInRange === 'function') {
+        const from = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10);
+        const to = new Date().toISOString().slice(0, 10);
+        let missing = 0;
+        plans.filter(p => p.status === 'active').forEach(p => {
+          let dates = [];
+          try { dates = dcaDatesInRange(p, from, to) || []; } catch (e) {}
+          dates.forEach(d => { if (!execs.some(x => x.planId === p.id && x.date === d)) missing++; });
+        });
+        if (missing) push('warn', '↻', `定期定額有 <strong>${missing} 筆扣款還沒登記</strong>（近 60 天）`, 'dcaView');
+      }
+    } catch (e) {}
+
+    // 6) 資產快照斷了（代表很久沒看現金流儀表板）
+    try {
+      const hist = await readJson('studio_history_v1', []);
+      if (hist.length) {
+        const last = hist[hist.length - 1];
+        const gap = -alertDaysTo(last.date);
+        if (gap >= 14) push('info', '📈', `資產走勢已經 <strong>${gap} 天</strong>沒有新紀錄了，打開現金流儀表板就會自動補一筆`, 'cashflowView');
+      }
+    } catch (e) {}
+
+    // 7) 儲存空間快滿
+    try {
+      const used = storageUsedBytes();
+      const pct = used / STORAGE_SOFT_LIMIT * 100;
+      if (pct >= 85) push('urgent', '💾', `瀏覽器儲存空間已用 <strong>${pct.toFixed(0)}%</strong>，快滿了會存不進新資料 —— 請先備份再清快取`, null, 'backup');
+      else if (pct >= 65) push('warn', '💾', `儲存空間已用 ${pct.toFixed(0)}%，建議清一下快取`, null, 'backup');
+    } catch (e) {}
+
+    // 8) 從來沒備份過（資料只在瀏覽器裡，很脆弱）
+    try {
+      const hasData = (await readJson('tw_holdings_v1', [])).length || (await readJson('us_holdings_v1', [])).length
+                   || (await readJson('assoc_members_v1', [])).length || (await readJson('re_rental_props_v1', [])).length;
+      if (hasData && !localStorage.getItem('studio_last_backup_v1')) {
+        push('warn', '💾', `你還沒做過全站備份。<strong>資料只存在這台裝置的瀏覽器裡</strong>，清掉就沒了`, null, 'backup');
+      }
+    } catch (e) {}
+
+    return A.sort((a, b) => ALERT_LEVEL[a.level] - ALERT_LEVEL[b.level]);
+  }
+
+  let studioAlertsCollapsed = false;
+  let studioAlertsCache = null;   // 收合／展開時直接用快取重畫，不要再讀一次全部 storage
+  function toggleStudioAlerts() {
+    studioAlertsCollapsed = !studioAlertsCollapsed;
+    if (studioAlertsCache) paintStudioAlerts(studioAlertsCache);   // 同步，按了立刻有反應
+    else refreshStudioAlerts();
+  }
+  async function refreshStudioAlerts() {
+    const el = document.getElementById('studioAlerts');
+    if (!el) return;
+    // 只有在群組總覽層才顯示（進到群組內就讓位給模組）
+    if (dashLevel !== 'overview') { el.innerHTML = ''; return; }
+    let list = [];
+    try { list = await buildStudioAlerts(); } catch (e) { console.warn('alerts fail', e); }
+    studioAlertsCache = list;
+    paintStudioAlerts(list);
+  }
+  function paintStudioAlerts(list) {
+    const el = document.getElementById('studioAlerts');
+    if (!el) return;
+    if (dashLevel !== 'overview') { el.innerHTML = ''; return; }
+    if (!list.length) {
+      el.innerHTML = `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:10px 14px; margin-bottom:18px; font-size:12.5px; color:var(--ink-secondary);">
+        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查停損、租約、會費、活動、定存到期、備份狀態）</span>
+      </div>`;
+      return;
+    }
+    const urgent = list.filter(a => a.level === 'urgent').length;
+    const color = { urgent: 'var(--danger)', warn: 'var(--accent-warm)', info: 'var(--ink-tertiary)' };
+    const shown = studioAlertsCollapsed ? [] : list;
+    el.innerHTML = `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid ${urgent ? 'var(--danger)' : 'var(--accent-warm)'}; border-radius:4px; padding:12px 14px; margin-bottom:18px;">
+        <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:${studioAlertsCollapsed ? '0' : '8px'};">
+          <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">今日提醒 · NEEDS ATTENTION</span>
+          <span style="font-family:var(--serif); font-size:15px; color:${urgent ? 'var(--danger)' : 'var(--accent)'};">${list.length} 件${urgent ? `（${urgent} 件緊急）` : ''}</span>
+          <button class="btn btn-sm" onclick="toggleStudioAlerts()" style="margin-left:auto;">${studioAlertsCollapsed ? '展開' : '收起'}</button>
+        </div>
+        ${shown.map(a => `
+          <div style="display:flex; align-items:flex-start; gap:9px; padding:6px 0; border-bottom:1px solid var(--line); ${a.view || a.extra ? 'cursor:pointer;' : ''}"
+               ${a.view ? `onclick="showView('${escape(a.view)}')"` : a.extra === 'backup' ? 'onclick="openBackupModal()"' : ''}>
+            <span style="font-size:13px; line-height:1.5;">${a.icon}</span>
+            <span style="flex:1; min-width:0; font-size:12.5px; color:var(--ink-secondary); line-height:1.55;">${a.text}</span>
+            ${a.view || a.extra ? '<span style="font-family:var(--mono); font-size:10px; color:var(--accent); white-space:nowrap; align-self:center;">前往 →</span>' : ''}
+          </div>`).join('')}
+      </div>`;
   }
 
   function updateMobileHeaderTitle() {
@@ -20459,12 +20661,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
     if (!(mv > 0)) return null;
     return reNOI(p) / mv * 100;
   }
-  function reDaysLeft(dateStr) {
-    if (!dateStr) return null;
-    const d = new Date(dateStr + 'T23:59:59');
-    if (isNaN(d.getTime())) return null;
-    return Math.ceil((d.getTime() - Date.now()) / 86400000);
-  }
+  function reDaysLeft(dateStr) { return daysBetweenToday(dateStr); }
   // 把衍生欄位寫回物件，讓 holdingCost / holdingValue 這組通用函式直接可用
   function reSyncDerived(p) {
     p.shares = 1;
@@ -21119,12 +21316,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   const assocMoney = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
   const assocNum = v => Number(v) || 0;
-  function assocDaysTo(dateStr) {
-    if (!dateStr) return null;
-    const d = new Date(dateStr + 'T23:59:59');
-    if (isNaN(d.getTime())) return null;
-    return Math.ceil((d.getTime() - Date.now()) / 86400000);
-  }
+  // 用共用的 daysBetweenToday（日期對日期），否則「就是今天」永遠不會成立
+  function assocDaysTo(dateStr) { return daysBetweenToday(dateStr); }
   // 生日只存 MM-DD；容錯接受 3/15、03-15、2026-03-15
   function assocBirthMD(v) {
     const s = String(v || '').trim();
@@ -22130,6 +22323,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     a.download = `personal-studio-backup-${new Date().toISOString().slice(0, 10)}${withSecrets ? '-含金鑰' : ''}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    // 記一下最後備份時間，首頁的「你還沒備份過」提醒才會消失
+    try { localStorage.setItem('studio_last_backup_v1', new Date().toISOString()); } catch (e) {}
     showToast(`💾 已下載備份 · ${Object.keys(data).length} 個項目`);
   }
 
