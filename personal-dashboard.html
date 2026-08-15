@@ -6559,6 +6559,7 @@
       <button class="btn btn-sm" onclick="refreshCashflowFxAndRender()">↻ 更新匯率</button>
       <button class="btn btn-sm" onclick="setCashflowFxManual()">✎ 手動</button>
     </div>
+    <div id="cfHistory"></div>
     <div id="cfBody"></div>
     <div id="cfPerfRisk"></div>
   </div>
@@ -7770,7 +7771,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.0 · θ</div>
+    <div>v 8.1 · θ</div>
   </footer>
 </div>
 
@@ -21553,7 +21554,257 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!cashflowFx.updatedAt) await refreshCashflowFx(); // 首次自動抓匯率
     const rows = await cfCompute();
     renderCashflow(rows);
+    // 每天第一次打開這一頁就自動留下一筆快照 → 使用者什麼都不用做就會累積出走勢
+    await loadAssetHistory();
+    await recordAssetSnapshot(rows);
+    renderAssetHistory();
     renderPerformanceRisk();
+  }
+
+  // ============================================================
+  // 資產歷史快照 · Net Worth History（時間序列）
+  //
+  // 為什麼要有：其他所有畫面都是「當下快照」，看不到資產怎麼變化。
+  // 怎麼累積：每天第一次打開現金流儀表板就自動記一筆（同一天重複開會覆蓋成最新）。
+  // 儲存策略：不會無限長大 —— histThin() 會把舊資料稀釋
+  //   近 90 天：每天一筆／90 天~2 年：每週一筆／2 年以上：每月一筆
+  // ⚠ 圖表是自繪 inline SVG，**刻意不用 lightweight-charts**：
+  //   那個是全域共用物件（twChartObj），跟台股/美股圖搶會出事；而且這裡只要一條線。
+  // ============================================================
+  const HIST_STORAGE = 'studio_history_v1';
+  let assetHistory = [];
+  let histRangeDays = 90;
+  let histMode = 'total';   // 'total' | 'modules'
+
+  async function loadAssetHistory() {
+    try { const v = await readKey(HIST_STORAGE); assetHistory = v ? JSON.parse(v) : []; }
+    catch (e) { assetHistory = []; }
+    if (!Array.isArray(assetHistory)) assetHistory = [];
+    return assetHistory;
+  }
+  async function saveAssetHistory() { await writeKey(HIST_STORAGE, JSON.stringify(assetHistory)); }
+
+  function histWeekKey(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    const dow = (d.getDay() + 6) % 7;      // 0 = 週一
+    d.setDate(d.getDate() - dow);
+    return d.toISOString().slice(0, 10);
+  }
+  // 稀釋舊資料：同一個時間桶只留最新的那一筆
+  function histThin(list) {
+    const now = Date.now();
+    const buckets = new Map();
+    list.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(s => {
+      if (!s || !s.date) return;
+      const age = (now - new Date(s.date + 'T00:00:00').getTime()) / 864e5;
+      const key = age <= 90 ? 'd' + s.date
+        : age <= 730 ? 'w' + histWeekKey(s.date)
+        : 'm' + s.date.slice(0, 7);
+      const prev = buckets.get(key);
+      if (!prev || s.date >= prev.date) buckets.set(key, s);
+    });
+    return Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  async function recordAssetSnapshot(rows, manual = false) {
+    const total = rows.reduce((a, r) => a + (Number(r.value) || 0), 0);
+    const cost = rows.reduce((a, r) => a + (Number(r.cost) || 0), 0);
+    const div = rows.reduce((a, r) => a + (Number(r.div) || 0), 0);
+    // 還沒有任何資料時不要留下一堆 0，會讓走勢圖從 0 起跳很難看
+    if (!(total > 0) && assetHistory.length === 0 && !manual) return null;
+    const byKey = {};
+    rows.forEach(r => { if (Number(r.value)) byKey[r.key] = Math.round(Number(r.value)); });
+    const date = new Date().toISOString().slice(0, 10);
+    const snap = { date, ts: Date.now(), total: Math.round(total), cost: Math.round(cost), pnl: Math.round(total - cost), div: Math.round(div), byKey, fx: Number(cashflowFx.usdTwd) || null };
+    const i = assetHistory.findIndex(s => s.date === date);
+    if (i > -1) assetHistory[i] = snap; else assetHistory.push(snap);
+    assetHistory = histThin(assetHistory);
+    await saveAssetHistory();
+    return snap;
+  }
+  async function recordAssetSnapshotManual() {
+    const rows = await cfCompute();
+    await loadAssetHistory();
+    const s = await recordAssetSnapshot(rows, true);
+    renderAssetHistory();
+    showToast(s ? `📸 已記錄今天：${cfMoney(s.total)}` : '記錄失敗');
+  }
+  function setHistRange(days) { histRangeDays = days; renderAssetHistory(); }
+  function setHistMode(m) { histMode = m; renderAssetHistory(); }
+  async function clearAssetHistory() {
+    if (!confirm(`確定清空全部 ${assetHistory.length} 筆歷史快照？\n這個動作無法復原，走勢圖會從頭開始累積。`)) return;
+    assetHistory = [];
+    await saveAssetHistory();
+    renderAssetHistory();
+    showToast('歷史快照已清空');
+  }
+  function exportAssetHistory() {
+    const blob = new Blob([JSON.stringify({ history: assetHistory, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `asset-history-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  // 軸標籤用精簡寫法（1,234,567 → 123.5萬），不然左邊會被數字塞滿
+  function histAxisFmt(n) {
+    const v = Number(n) || 0;
+    const a = Math.abs(v);
+    if (a >= 1e8) return (v / 1e8).toFixed(2) + '億';
+    if (a >= 1e4) return (v / 1e4).toFixed(a >= 1e6 ? 0 : 1) + '萬';
+    return String(Math.round(v));
+  }
+
+  // 自繪 SVG 折線圖：series = [{ name, color, dash, area, values:[number|null] }]
+  function histSvg(dates, series) {
+    const W = 820, H = 280, PL = 74, PR = 14, PT = 14, PB = 28;
+    const plotW = W - PL - PR, plotH = H - PT - PB;
+    const all = series.flatMap(s => s.values).filter(v => typeof v === 'number' && isFinite(v));
+    if (!all.length) return '';
+    let min = Math.min(...all), max = Math.max(...all);
+    if (max === min) { max = max + Math.abs(max || 1) * 0.1; min = min - Math.abs(min || 1) * 0.1; }
+    else { const pad = (max - min) * 0.08; max += pad; min -= pad; }
+    if (min > 0 && min < (max - min) * 0.35) min = 0;   // 底部接近 0 就從 0 起，比例才誠實
+    const n = dates.length;
+    const X = i => PL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+    const Y = v => PT + (1 - (v - min) / (max - min)) * plotH;
+
+    const grid = [0, 0.25, 0.5, 0.75, 1].map(t => {
+      const v = min + (max - min) * (1 - t);
+      const y = PT + t * plotH;
+      return `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="rgba(244,234,213,0.07)" stroke-width="1"/>
+        <text x="${PL - 8}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" font-family="monospace" font-size="10" fill="#6b6552">${histAxisFmt(v)}</text>`;
+    }).join('');
+
+    const paths = series.map(s => {
+      const pts = s.values.map((v, i) => (typeof v === 'number' && isFinite(v)) ? `${X(i).toFixed(1)},${Y(v).toFixed(1)}` : null).filter(Boolean);
+      if (!pts.length) return '';
+      const d = 'M' + pts.join(' L');
+      const areaPath = s.area && pts.length > 1
+        ? `<path d="${d} L${X(n - 1).toFixed(1)},${(PT + plotH).toFixed(1)} L${X(0).toFixed(1)},${(PT + plotH).toFixed(1)} Z" fill="${s.color}" opacity="0.10"/>` : '';
+      return areaPath + `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}" stroke-linejoin="round" stroke-linecap="round"${s.dash ? ` stroke-dasharray="${s.dash}"` : ''}/>`;
+    }).join('');
+
+    // 每個資料點一塊透明感應區，滑上去出現原生 tooltip（不用寫 JS，手機也不會壞）
+    const hit = dates.map((dt, i) => {
+      const lines = [dt, ...series.map(s => {
+        const v = s.values[i];
+        return (typeof v === 'number' && isFinite(v)) ? `${s.name} ${cfMoney(v)}` : null;
+      }).filter(Boolean)];
+      const w = n === 1 ? plotW : plotW / (n - 1);
+      return `<rect x="${(X(i) - w / 2).toFixed(1)}" y="${PT}" width="${w.toFixed(1)}" height="${plotH}" fill="transparent"><title>${escape(lines.join('\n'))}</title></rect>`;
+    }).join('');
+
+    // 端點與最高點
+    const main = series[0];
+    const lastIdx = (() => { for (let i = main.values.length - 1; i >= 0; i--) if (typeof main.values[i] === 'number') return i; return -1; })();
+    const maxIdx = main.values.reduce((bi, v, i) => (typeof v === 'number' && (bi < 0 || v > main.values[bi])) ? i : bi, -1);
+    const dots = [
+      maxIdx > -1 && maxIdx !== lastIdx ? `<circle cx="${X(maxIdx).toFixed(1)}" cy="${Y(main.values[maxIdx]).toFixed(1)}" r="3" fill="none" stroke="${main.color}" stroke-width="1.5"/>` : '',
+      lastIdx > -1 ? `<circle cx="${X(lastIdx).toFixed(1)}" cy="${Y(main.values[lastIdx]).toFixed(1)}" r="3.5" fill="${main.color}"/>` : ''
+    ].join('');
+
+    const xLabels = (() => {
+      if (n === 1) return `<text x="${X(0)}" y="${H - 8}" text-anchor="middle" font-family="monospace" font-size="10" fill="#6b6552">${escape(dates[0])}</text>`;
+      const idxs = n <= 3 ? dates.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+      return idxs.map((i, k) => `<text x="${X(i).toFixed(1)}" y="${H - 8}" text-anchor="${k === 0 ? 'start' : k === idxs.length - 1 ? 'end' : 'middle'}" font-family="monospace" font-size="10" fill="#6b6552">${escape(dates[i])}</text>`).join('');
+    })();
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; display:block;" role="img" aria-label="資產走勢圖">
+      ${grid}${paths}${dots}${hit}${xLabels}
+    </svg>`;
+  }
+
+  function renderAssetHistory() {
+    const el = document.getElementById('cfHistory');
+    if (!el) return;
+    const ranges = [[30, '1 個月'], [90, '3 個月'], [180, '半年'], [365, '1 年'], [0, '全部']];
+    const toolbar = `
+      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">資產走勢 · NET WORTH TREND</span>
+        <span style="display:inline-flex; gap:4px; margin-left:8px;">
+          ${ranges.map(([d, t]) => `<button class="btn btn-sm" onclick="setHistRange(${d})" style="${histRangeDays === d ? 'background:var(--accent); color:var(--bg-base); border-color:var(--accent);' : ''}">${t}</button>`).join('')}
+        </span>
+        <span style="display:inline-flex; gap:4px; margin-left:4px;">
+          <button class="btn btn-sm" onclick="setHistMode('total')" style="${histMode === 'total' ? 'background:var(--accent); color:var(--bg-base); border-color:var(--accent);' : ''}">總資產</button>
+          <button class="btn btn-sm" onclick="setHistMode('modules')" style="${histMode === 'modules' ? 'background:var(--accent); color:var(--bg-base); border-color:var(--accent);' : ''}">各模組</button>
+        </span>
+        <span style="margin-left:auto; display:inline-flex; gap:4px; align-items:center;">
+          <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${assetHistory.length} 筆快照</span>
+          <button class="btn btn-sm" onclick="recordAssetSnapshotManual()" title="立刻記錄目前的資產狀態">📸 記錄今天</button>
+          <button class="btn btn-sm" onclick="exportAssetHistory()" title="匯出歷史快照">↓</button>
+          <button class="btn btn-sm" onclick="clearAssetHistory()" title="清空歷史" style="border-color:var(--danger); color:var(--danger);">✕</button>
+        </span>
+      </div>`;
+
+    if (assetHistory.length < 2) {
+      el.innerHTML = `
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:20px 22px; margin-bottom:24px;">
+          ${toolbar}
+          <div style="text-align:center; padding:26px 10px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
+            <div style="font-family:var(--serif); font-size:17px; color:var(--ink-secondary); margin-bottom:6px;">還在累積資料</div>
+            目前只有 <strong>${assetHistory.length}</strong> 筆快照，至少要 2 筆才畫得出線。<br>
+            <strong>你什麼都不用做</strong>——每天第一次打開這一頁就會自動記一筆，過幾天就有走勢了。<br>
+            想馬上多一筆可以按「📸 記錄今天」（同一天只會留最新的那一筆）。
+          </div>
+        </div>`;
+      return;
+    }
+
+    // 期間過濾
+    const cutoff = histRangeDays > 0 ? Date.now() - histRangeDays * 864e5 : 0;
+    let list = assetHistory.filter(s => !cutoff || new Date(s.date + 'T23:59:59').getTime() >= cutoff);
+    if (list.length < 2) list = assetHistory.slice(-2);   // 期間太短就至少畫兩點，不要變空白
+    const dates = list.map(s => s.date);
+
+    let series;
+    if (histMode === 'modules') {
+      const keys = CF_SOURCES.filter(s => list.some(x => (x.byKey || {})[s.key] > 0));
+      series = keys.map(s => ({ name: s.name, color: s.color, area: false, width: 1.8, values: list.map(x => (x.byKey || {})[s.key] || 0) }));
+      if (!series.length) series = [{ name: '總資產', color: '#d4a574', area: true, values: list.map(s => s.total) }];
+    } else {
+      series = [
+        { name: '總資產', color: '#d4a574', area: true, width: 2.2, values: list.map(s => s.total) },
+        { name: '總投入', color: '#6b6552', dash: '4 4', width: 1.4, values: list.map(s => s.cost) }
+      ];
+    }
+
+    const first = list[0], last = list[list.length - 1];
+    const chg = last.total - first.total;
+    const chgPct = first.total > 0 ? chg / first.total * 100 : 0;
+    const chgCls = chg > 0 ? 'profit' : chg < 0 ? 'loss' : 'flat';
+    // 歷史最高（看全部，不只這個期間）
+    const peak = assetHistory.reduce((b, s) => (!b || s.total > b.total) ? s : b, null);
+    const peakDays = peak ? Math.round((Date.now() - new Date(peak.date + 'T00:00:00').getTime()) / 864e5) : null;
+    const fromPeak = peak && peak.total > 0 ? (last.total - peak.total) / peak.total * 100 : 0;
+    const spanDays = Math.max(1, Math.round((new Date(last.date) - new Date(first.date)) / 864e5));
+
+    const legend = series.map(s => `
+      <span style="display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10.5px; color:var(--ink-secondary);">
+        <span style="width:14px; height:0; border-top:${s.dash ? '2px dashed' : '2px solid'} ${s.color}; display:inline-block;"></span>${escape(s.name)}
+      </span>`).join('');
+
+    el.innerHTML = `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:20px 22px; margin-bottom:24px;">
+        ${toolbar}
+        <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px;">
+          <div>
+            <div style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.12em; color:var(--ink-tertiary); margin-bottom:2px;">這段期間變化（${spanDays} 天）</div>
+            <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+              <span class="${chgCls}" style="font-family:var(--serif); font-size:26px;">${cfMoneySign(chg)}</span>
+              <span class="${chgCls}" style="font-family:var(--mono); font-size:14px;">${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%</span>
+            </div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); margin-top:3px;">${escape(first.date)} ${cfMoney(first.total)} → ${escape(last.date)} ${cfMoney(last.total)}</div>
+          </div>
+          <div style="margin-left:auto; display:flex; gap:12px; flex-wrap:wrap;">${legend}</div>
+        </div>
+        ${histSvg(dates, series)}
+        <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">
+          ${peak ? `<span>🔺 歷史最高 <strong style="color:var(--accent);">${cfMoney(peak.total)}</strong>（${escape(peak.date)}${peakDays === 0 ? ' · 就是今天' : ' · ' + peakDays + ' 天前'}）</span>` : ''}
+          ${peak && peakDays > 0 ? `<span style="color:${fromPeak < -5 ? 'var(--danger)' : 'var(--ink-tertiary)'};">距高點 ${fromPeak.toFixed(1)}%</span>` : ''}
+          <span style="margin-left:auto; color:var(--ink-tertiary);">近 90 天每日一筆 · 之後自動稀釋成每週／每月，不會無限長大</span>
+        </div>
+      </div>`;
   }
   function cfDonut(rows, total) {
     let acc = 0; const stops = [];
