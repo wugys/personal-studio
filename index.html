@@ -6761,6 +6761,8 @@
       <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
       <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:10px; font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 趨勢線 · 布林通道 · 成交量 · 來源 FinMind。</div>
       <div id="tvChartBox" style="height:360px; margin-bottom:14px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
+      <div id="twCheckPanel"></div>
+      <div id="twLevelsPanel"></div>
       <div id="tvSignalsPanel"></div>
       <div style="border-top:1px solid var(--line); padding-top:12px;">
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
@@ -7945,7 +7947,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.4 · θ</div>
+    <div>v 8.5 · θ</div>
   </footer>
 </div>
 
@@ -11094,6 +11096,69 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const g = sig.cross.type === 'golden';
     cs.setMarkers([{ time: candles[idx].time, position: g ? 'belowBar' : 'aboveBar', color: g ? '#d4a574' : '#c97b6a', shape: g ? 'arrowUp' : 'arrowDown', text: g ? '金叉' : '死叉' }]);
   }
+  // ===== 台股基本面（FinMind，全部免金鑰）=====
+  // TaiwanStockPER 直接給 PER / PBR / 殖利率。
+  // ⭐ ROE 不用另外抓：數學上 ROE = EPS/每股淨值 =(股價/PER)/(股價/PBR) = PBR/PER。
+  //    實測台積電 PBR 9.66 / PER 27.76 → 34.8%，與實際相符。
+  // 毛利率、營益率走財報（TaiwanStockFinancialStatements 有乾淨的英文 type）。
+  //    ⚠ 台股財報有「本期」與「累計」之分，但我們只取**比率**（GrossProfit/Revenue），
+  //      比率不受累計與否影響，所以不用去分辨。
+  const twFundCache = {};   // { code: { data, ts } }
+  const TW_FUND_TTL = 6 * 3600 * 1000;
+  async function fetchTwFundamentals(code) {
+    const c = twFundCache[code];
+    if (c && Date.now() - c.ts < TW_FUND_TTL) return c.data;
+    const out = { per: null, pbr: null, dy: null, gm: null, om: null, perDate: null, fsDate: null };
+    const base = 'https://api.finmindtrade.com/api/v4/data?dataset=';
+    try {
+      const s = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+      const r = await fetch(`${base}TaiwanStockPER&data_id=${encodeURIComponent(code)}&start_date=${s}`, { cache: 'no-store' });
+      const j = await r.json();
+      const rows = (j && j.data) || [];
+      const last = rows[rows.length - 1];
+      if (last) {
+        out.per = Number(last.PER) > 0 ? Number(last.PER) : null;
+        out.pbr = Number(last.PBR) > 0 ? Number(last.PBR) : null;
+        out.dy = last.dividend_yield != null ? Number(last.dividend_yield) : null;
+        out.perDate = last.date;
+      }
+    } catch (e) {}
+    try {
+      const s = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+      const r = await fetch(`${base}TaiwanStockFinancialStatements&data_id=${encodeURIComponent(code)}&start_date=${s}`, { cache: 'no-store' });
+      const j = await r.json();
+      const rows = (j && j.data) || [];
+      if (rows.length) {
+        const latest = rows.reduce((a, b) => (b.date > a ? b.date : a), rows[0].date);
+        const pick = t => { const x = rows.find(v => v.date === latest && v.type === t); return x ? Number(x.value) : null; };
+        const rev = pick('Revenue'), gp = pick('GrossProfit'), oi = pick('OperatingIncome');
+        if (rev > 0) {
+          if (gp != null) out.gm = gp / rev * 100;
+          if (oi != null) out.om = oi / rev * 100;
+        }
+        out.fsDate = latest;
+      }
+    } catch (e) {}
+    twFundCache[code] = { data: out, ts: Date.now() };
+    return out;
+  }
+  // 把台股資料組成跟 Finnhub 一樣的形狀，這樣 usPriceLevels / usCheckItems 完全不用改
+  function twSynthMetric(f, bars, price) {
+    const last252 = bars.slice(-252);
+    const highs = last252.map(b => b.high).filter(v => v > 0);
+    const lows = last252.map(b => b.low).filter(v => v > 0);
+    const roe = (f.per > 0 && f.pbr > 0) ? (f.pbr / f.per * 100) : null;
+    const eps = (f.per > 0 && price > 0) ? (price / f.per) : null;
+    return { metric: {
+      peTTM: f.per, pbAnnual: f.pbr,
+      currentDividendYieldTTM: f.dy,
+      roeTTM: roe, epsTTM: eps,
+      grossMarginTTM: f.gm, operatingMarginTTM: f.om,
+      '52WeekHigh': highs.length ? Math.max(...highs) : null,
+      '52WeekLow': lows.length ? Math.min(...lows) : null
+    } };
+  }
+
   async function loadTwCandleChart(containerId, code, name) {
     const cont = document.getElementById(containerId);
     if (!cont) return;
@@ -11120,6 +11185,32 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       const sp = document.getElementById('tvSignalsPanel');
       if (sp) sp.innerHTML = sig ? renderUsSignals(sig) : '';
       if (sig && sig.summary) tvChartPrompt += '\n\n目前技術面：' + sig.summary;
+
+      // 新手體檢 + 參考價位帶（跟美股同一套，只是資料來源與幣別不同）
+      const price = sig ? sig.last : (candles[candles.length - 1] || {}).close;
+      const chk = document.getElementById('twCheckPanel');
+      const lvl = document.getElementById('twLevelsPanel');
+      if (chk) chk.innerHTML = renderUsBeginnerCheck(code, price, null, sig, 'tw');   // 先用技術面畫一次
+      if (lvl) lvl.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">計算參考價位帶中…</div>';
+      await loadUsCheckAnswers();
+      if (usCheckTotalAssets == null) {
+        cfCompute().then(rows => { usCheckTotalAssets = rows.reduce((a, r) => a + (Number(r.value) || 0), 0); })
+                   .catch(() => { usCheckTotalAssets = 0; });
+      }
+      // 基本面另外抓（抓不到也不影響上面已經畫好的技術面部分）
+      fetchTwFundamentals(code).then(f => {
+        const synth = twSynthMetric(f, candles, price);
+        const L = usPriceLevels(price, synth, sig, candles);
+        usLevelsCache = L;
+        const l2 = document.getElementById('twLevelsPanel');
+        if (l2) l2.innerHTML = renderUsPriceLevels(L, 'NT$');
+        const c2 = document.getElementById('twCheckPanel');
+        if (c2) c2.innerHTML = renderUsBeginnerCheck(code, price, synth, sig, 'tw');
+        if (L) tvChartPrompt += '\n關鍵價位（規則算出，非預測）：' + usLevelsSummary(L, 'NT$');
+      }).catch(() => {
+        const l2 = document.getElementById('twLevelsPanel');
+        if (l2) l2.innerHTML = renderUsPriceLevels(usPriceLevels(price, null, sig, candles), 'NT$');
+      });
     } catch (e) {
       cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">台股走勢載入失敗：' + escape(e.message) + '<br>可改用下方 AI 分析。</div>';
       const sp = document.getElementById('tvSignalsPanel'); if (sp) sp.innerHTML = '';
@@ -11510,10 +11601,10 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     return { c, atr, atrPct: atr ? atr / c * 100 : null, supports, resists, stops, valuation, pos52, w52h, w52l };
   }
 
-  // 一句白話總結價位帶（也餵給 AI 提示詞）
-  function usLevelsSummary(L) {
+  // 一句白話總結價位帶（也餵給 AI 提示詞）· cur 讓台股顯示 NT$
+  function usLevelsSummary(L, cur) {
     if (!L) return '';
-    const f = v => '$' + Number(v).toFixed(2);
+    const f = v => (cur || '$') + Number(v).toFixed(2);
     const parts = [];
     if (L.supports[0]) parts.push(`最近支撐 ${L.supports[0].label} ${f(L.supports[0].v)}（${L.supports[0].pct.toFixed(1)}%）`);
     if (L.resists[0]) parts.push(`最近壓力 ${L.resists[0].label} ${f(L.resists[0].v)}（+${L.resists[0].pct.toFixed(1)}%）`);
@@ -11529,9 +11620,9 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       <span style="margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>
     </div>`;
 
-  function renderUsPriceLevels(L) {
+  function renderUsPriceLevels(L, cur) {
     if (!L) return '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">價位帶需要歷史資料，此代號暫時算不出來。</div>';
-    const f = v => '$' + Number(v).toFixed(2);
+    const f = v => (cur || '$') + Number(v).toFixed(2);
     const stopHtml = L.stops.map(s => `
       <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--danger); border-radius:3px; padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
@@ -11586,7 +11677,10 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   }
 
   // ===== 新手體檢（8 項自動紅綠燈）=====
-  function usCheckItems(price, metric, sig) {
+  // market: 'us' | 'tw'
+  //   台股沒有現成的 Beta（要自己算對大盤的迴歸），但台股投資人很看殖利率，
+  //   所以第 6 項在台股換成「殖利率」。其餘 7 項兩邊共用，門檻也一致。
+  function usCheckItems(price, metric, sig, market) {
     const m = (metric && metric.metric) || {};
     const num = v => { const n = Number(v); return isFinite(n) ? n : null; };
     const mk = (label, valText, verdict, say) => ({ label, valText, verdict, say });
@@ -11616,10 +11710,18 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     items.push(pos == null ? mk('52 週位置', '—', 'na', '沒資料')
       : mk('52 週位置', pos.toFixed(0) + '%', pos < 40 ? 'green' : pos < 75 ? 'amber' : 'red',
           pos >= 75 ? '接近一年來的高點，追高風險大' : pos < 40 ? '接近一年來的低點，但要先搞懂為什麼跌' : '在區間中段'));
-    const beta = num(m.beta);
-    items.push(beta == null ? mk('Beta 波動度', '—', 'na', '沒資料')
-      : mk('Beta 波動度', beta.toFixed(2), beta < 1 ? 'green' : beta < 1.5 ? 'amber' : 'red',
-          '大盤跌 10%，它大約跌 ' + (beta * 10).toFixed(1) + '%' + (beta >= 1.5 ? '，抖很大，部位要放小' : '')));
+    if (market === 'tw') {
+      // 殖利率低不等於「爛」（成長股本來就配得少），所以最差只給黃燈、不給紅燈
+      const dy = num(m.currentDividendYieldTTM ?? m.dividendYieldIndicatedAnnual);
+      items.push(dy == null ? mk('殖利率', '—', 'na', '沒資料')
+        : mk('殖利率', dy.toFixed(2) + '%', dy >= 4 ? 'green' : dy >= 2 ? 'amber' : 'amber',
+            dy >= 4 ? '配息不錯，存股族會喜歡' : dy >= 2 ? '配息普通' : '配息很少，成長股常見（不代表不好，但別指望領息）'));
+    } else {
+      const beta = num(m.beta);
+      items.push(beta == null ? mk('Beta 波動度', '—', 'na', '沒資料')
+        : mk('Beta 波動度', beta.toFixed(2), beta < 1 ? 'green' : beta < 1.5 ? 'amber' : 'red',
+            '大盤跌 10%，它大約跌 ' + (beta * 10).toFixed(1) + '%' + (beta >= 1.5 ? '，抖很大，部位要放小' : '')));
+    }
     items.push(!sig ? mk('技術方向', '計算中', 'na', '')
       : mk('技術方向', sig.overall, sig.overall === '偏多' ? 'green' : sig.overall === '偏空' ? 'red' : 'amber',
           sig.trend || ''));
@@ -11635,8 +11737,9 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     return items;
   }
 
-  function renderUsBeginnerCheck(symbol, price, metric, sig) {
-    const items = usCheckItems(price, metric, sig);
+  function renderUsBeginnerCheck(symbol, price, metric, sig, market) {
+    const cur = market === 'tw' ? 'NT$' : 'US$';
+    const items = usCheckItems(price, metric, sig, market);
     const red = items.filter(i => i.verdict === 'red').length;
     const green = items.filter(i => i.verdict === 'green').length;
     const na = items.filter(i => i.verdict === 'na').length;
@@ -11676,7 +11779,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         </label>
         <div class="form-row" style="margin-bottom:8px;">
           <div class="form-group" style="margin:0;">
-            <label class="form-label">跌到多少我認錯出場（US$）</label>
+            <label class="form-label">跌到多少我認錯出場（${cur}）</label>
             <input type="number" step="any" min="0" class="form-input" id="usCheckStop" value="${ans.stop || ''}" placeholder="看上面「停損參考」挑一個" oninput="saveUsCheckField('${escape(symbol)}')" style="font-family:var(--mono);">
             <div id="usCheckStopHint" style="font-size:11px; color:${stopPct != null && stopPct < -20 ? 'var(--danger)' : 'var(--ink-tertiary)'}; margin-top:5px; line-height:1.5;">${stopPct != null ? `距現價 ${stopPct.toFixed(1)}%${stopPct < -20 ? '　⚠ 這個停損太遠了，一次會賠掉五分之一以上' : ''}` : '沒寫下來就不要買。這一格是新手和賭徒的分界線。'}</div>
           </div>
