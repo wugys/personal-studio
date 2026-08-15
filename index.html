@@ -2673,6 +2673,7 @@
       </div>
       <div class="api-actions">
         <button class="btn" onclick="openTvChartModal('2330','台積電','TWSE')">📈 看盤</button>
+        <button class="btn" onclick="openUsScanModal('tw')" title="用多種技術條件掃描台股，找出短線值得關注的">🎯 機會掃描</button>
         <button class="btn" onclick="openTxnModal()">+ 新交易</button>
         <button class="btn btn-primary" onclick="openHoldingModal()">+ 新增持股</button>
       </div>
@@ -6589,9 +6590,9 @@
   <!-- ============ 美股 · 短線機會掃描 Modal ============ -->
   <div class="modal-backdrop" id="usScanModal">
     <div class="modal" style="max-width: 900px;">
-      <h2>🎯 短線 <em>機會掃描</em></h2>
+      <h2>🎯 <span id="usScanMarketLabel">短線</span> <em>機會掃描</em></h2>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
-        勾好你要的技術條件，掃描一批美股，<strong>符合越多條件的排越前面</strong>。每一檔會直接給你現價、停損參考、目標價與符合了哪幾項。
+        勾好你要的技術條件，掃描一批股票，<strong>符合越多條件的排越前面</strong>。每一檔會直接給你現價、停損參考、目標價與符合了哪幾項。
         <br><strong>資料抓一次就會快取</strong>——之後改條件重新排名是<strong>秒出</strong>的，可以放心一直調。
       </div>
 
@@ -6606,12 +6607,7 @@
 
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
         <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">掃描範圍</span>
-        <select id="usScanScope" class="form-select" style="width:auto;" onchange="onUsScanScopeChange()">
-          <option value="builtin">內建熱門（42 檔）</option>
-          <option value="wide">內建 + 擴充（70 檔）</option>
-          <option value="mine">只掃我的持股</option>
-          <option value="custom">自訂代號</option>
-        </select>
+        <select id="usScanScope" class="form-select" style="width:auto;" onchange="onUsScanScopeChange()"></select>
         <input type="text" id="usScanCustom" class="form-input" placeholder="AAPL, NVDA, TSLA（逗號分隔）" style="width:auto; min-width:220px; flex:1; display:none;">
         <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">至少符合</span>
         <select id="usScanMinMatch" class="form-select" style="width:auto;" onchange="renderUsScanResults()">
@@ -6638,7 +6634,7 @@
         ⚠ 這裡找出來的是<strong>「值得你花時間研究的候選名單」，不是「該買的股票」</strong>。技術面只描述「過去發生了什麼」，不預測未來。進場價與停損價都是規則算出來的參考值。<strong>不構成投資建議。</strong>
       </div>
       <div style="margin-top:8px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">
-        資料來源：FinMind 美股日線（免費、免金鑰）。價格是<strong>最近一個交易日的收盤價</strong>，不是即時報價。
+        資料來源：<span id="usScanSourceLabel">FinMind 美股日線</span>（免費、免金鑰）。價格是<strong>最近一個交易日的收盤價</strong>，不是即時報價。
       </div>
 
       <div class="form-actions" style="justify-content:space-between; margin-top:12px;">
@@ -7947,7 +7943,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.5 · θ</div>
+    <div>v 8.6 · θ</div>
   </footer>
 </div>
 
@@ -22102,12 +22098,66 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   };
 
   const US_SCAN_CACHE_TTL = 4 * 3600 * 1000;   // 日線 4 小時內不重抓
-  let usScanCache = {};      // { symbol: { bars, ts } }
+  let usScanCache = {};      // { 'market:symbol': { bars, ts } } —— 台美共用一份，用 market 前綴隔開
   let usScanRows = [];       // 掃完的結果（含 ctx），改條件時直接重算不重抓
   let usScanPicked = US_SCAN_PRESETS.pullback.slice();
   let usScanRunning = false;
+  let usScanMarket = 'us';   // 'us' | 'tw' —— 13 個技術條件都只吃日線，兩邊完全共用
 
-  function openUsScanModal() {
+  // 台股日線（欄位名跟美股不一樣：open/max/min/close/Trading_Volume）
+  async function fetchTwOhlc(code) {
+    const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+    const r = await fetch(url, { cache: 'no-store' });
+    const j = await r.json().catch(() => null);
+    const rows = (j && j.data) || [];
+    return rows.map(x => ({ time: x.date, open: +x.open, high: +x.max, low: +x.min, close: +x.close, volume: +x.Trading_Volume || 0 }))
+               .filter(b => b.close > 0);
+  }
+  const scanFetch = (market, sym) => market === 'tw' ? fetchTwOhlc(sym) : fetchUsOhlc(sym);
+  const scanCur = () => usScanMarket === 'tw' ? 'NT$' : '$';
+  // 台股清單有重複（2308/3661/6669… 出現兩次），一律去重
+  function twScanList() {
+    const seen = new Set();
+    return (typeof TW_STOCKS !== 'undefined' ? TW_STOCKS : []).filter(s => {
+      if (!s.symbol || seen.has(s.symbol)) return false;
+      seen.add(s.symbol); return true;
+    });
+  }
+  const twIsEtf = s => /^00/.test(s.symbol);
+
+  const US_SCAN_SCOPES = {
+    us: [
+      { v: 'builtin', t: '內建熱門（42 檔）' },
+      { v: 'wide', t: '內建 + 擴充（70 檔）' },
+      { v: 'mine', t: '只掃我的持股' },
+      { v: 'custom', t: '自訂代號' }
+    ],
+    tw: [
+      { v: 'tw_major', t: '權值與熱門個股（40 檔）' },
+      { v: 'tw_all', t: '全部個股（不含 ETF）' },
+      { v: 'tw_etf', t: '只掃 ETF' },
+      { v: 'mine', t: '只掃我的持股' },
+      { v: 'custom', t: '自訂代號' }
+    ]
+  };
+
+  function openUsScanModal(market) {
+    const m = market === 'tw' ? 'tw' : 'us';
+    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; }   // 換市場先清結果，避免混在一起
+    const lab = document.getElementById('usScanMarketLabel');
+    if (lab) lab.textContent = m === 'tw' ? '台股短線' : '美股短線';
+    const src = document.getElementById('usScanSourceLabel');
+    if (src) src.textContent = m === 'tw' ? 'FinMind 台股日線' : 'FinMind 美股日線';
+    const cust = document.getElementById('usScanCustom');
+    if (cust) cust.placeholder = m === 'tw' ? '2330, 2454, 0050（逗號分隔）' : 'AAPL, NVDA, TSLA（逗號分隔）';
+    const sel = document.getElementById('usScanScope');
+    if (sel) {
+      sel.innerHTML = US_SCAN_SCOPES[m].map(o => `<option value="${escape(o.v)}">${escape(o.t)}</option>`).join('');
+      sel.value = US_SCAN_SCOPES[m][0].v;
+    }
+    const btn = document.getElementById('usScanRunBtn');
+    if (btn) btn.textContent = '▶ 開始掃描';
     renderUsScanConds();
     onUsScanScopeChange();
     renderUsScanResults();
@@ -22146,19 +22196,28 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   function usScanUniverse() {
     const scope = document.getElementById('usScanScope').value;
-    // 自訂／持股也去內建清單查一下中文名，卡片才不會顯示成「AAPL AAPL」
-    const lookup = s => (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === s)
-      || US_SCAN_EXTRA.find(x => x.symbol === s) || null;
-    if (scope === 'mine') return usHoldings.filter(h => h.symbol).map(h => {
+    const tw = usScanMarket === 'tw';
+    // 自訂／持股也去內建清單查一下名字，卡片才不會顯示成「AAPL AAPL」
+    const lookup = s => tw
+      ? twScanList().find(x => x.symbol === s) || null
+      : ((typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === s) || US_SCAN_EXTRA.find(x => x.symbol === s) || null);
+    const holdings = tw ? (typeof twHoldings !== 'undefined' ? twHoldings : []) : usHoldings;
+    if (scope === 'mine') return (holdings || []).filter(h => h.symbol).map(h => {
       const ref = lookup(h.symbol);
-      return { symbol: h.symbol, name: h.name || (ref && ref.name) || h.symbol, zh: (ref && ref.zh) || '' };
+      return { symbol: h.symbol, name: h.name || (ref && ref.name) || h.symbol, zh: tw ? '' : ((ref && ref.zh) || '') };
     });
     if (scope === 'custom') {
       const raw = document.getElementById('usScanCustom').value || '';
       return raw.split(/[,，\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean).map(s => {
         const ref = lookup(s);
-        return { symbol: s, name: (ref && ref.name) || s, zh: (ref && ref.zh) || '' };
+        return { symbol: s, name: (ref && ref.name) || s, zh: tw ? '' : ((ref && ref.zh) || '') };
       });
+    }
+    if (tw) {
+      const all = twScanList();
+      if (scope === 'tw_etf') return all.filter(twIsEtf);
+      const stocks = all.filter(s => !twIsEtf(s));
+      return scope === 'tw_major' ? stocks.slice(0, 40) : stocks;
     }
     const base = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).slice();
     if (scope === 'wide') {
@@ -22215,10 +22274,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       while (queue.length) {
         const item = queue.shift();
         try {
-          const c = usScanCache[item.symbol];
+          const ck = usScanMarket + ':' + item.symbol;
+          const c = usScanCache[ck];
           let bars;
           if (c && (now - c.ts) < US_SCAN_CACHE_TTL) { bars = c.bars; cached++; }
-          else { bars = await fetchUsOhlc(item.symbol); usScanCache[item.symbol] = { bars, ts: Date.now() }; }
+          else { bars = await scanFetch(usScanMarket, item.symbol); usScanCache[ck] = { bars, ts: Date.now() }; }
           const ctx = usScanCtx(item, bars);
           if (ctx) rows.push(ctx); else failed++;
         } catch (e) { failed++; }
@@ -22273,7 +22333,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       </div>`;
       return;
     }
-    const f = v => '$' + Number(v).toFixed(2);
+    const cur = scanCur();
+    const f = v => cur + Number(v).toFixed(2);
     box.innerHTML = `
       <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px;">
         共 ${scored.length} 檔符合（掃了 ${usScanRows.length} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序
@@ -22321,7 +22382,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             📖 ${escape(c.sig.summary || '')}
           </div>
           <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
-            <button class="btn btn-sm" onclick="closeUsScanModal(); openUsAnalysis('${escape(c.symbol)}');">📊 詳細分析</button>
+            <button class="btn btn-sm" onclick="closeUsScanModal(); ${usScanMarket === 'tw' ? `openTvChartModal('${escape(c.symbol)}','${escape(c.name || '')}','TWSE')` : `openUsAnalysis('${escape(c.symbol)}')`};">📊 詳細分析</button>
             <span style="margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); align-self:center;">資料至 ${escape(c.lastDate || '')}</span>
           </div>
         </div>`;
