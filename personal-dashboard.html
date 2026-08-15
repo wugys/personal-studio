@@ -6564,6 +6564,8 @@
         以前每個模組要各自匯出，18 個模組要按 18 次。<strong>這裡一顆按鈕把全部資料存成一個檔</strong>——投資、不動產、協會、旅遊、歷史走勢，全部都在裡面。
       </div>
 
+      <div id="storageMeter" style="margin-bottom:14px;"></div>
+
       <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--accent); margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--line);">① 匯出備份</div>
       <div id="backupSummary" style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:12px; max-height:26vh; overflow-y:auto;"></div>
       <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:10px;">
@@ -6604,6 +6606,25 @@
         <br><strong>資料抓一次就會快取</strong>——之後改條件重新排名是<strong>秒出</strong>的，可以放心一直調。
       </div>
 
+      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">模式</span>
+        <button class="btn btn-sm" id="usScanModeStrategy" type="button" onclick="setUsScanMode('strategy')">🎯 按策略找（可複選）</button>
+        <button class="btn btn-sm" id="usScanModeCond" type="button" onclick="setUsScanMode('cond')">⚙ 自己勾條件</button>
+        <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);" id="usScanModeHint"></span>
+      </div>
+
+      <!-- 策略模式 -->
+      <div id="usScanStrategyBox" style="display:none; margin-bottom:14px;">
+        <div id="usScanStrategyList" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:2px 16px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; max-height:34vh; overflow-y:auto;"></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:8px;">
+          <button class="btn btn-sm" type="button" onclick="toggleAllUsStrategies(true)">全選</button>
+          <button class="btn btn-sm" type="button" onclick="toggleAllUsStrategies(false)">全不選</button>
+          <span id="usScanStrategyCount" style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);"></span>
+        </div>
+      </div>
+
+      <!-- 條件模式 -->
+      <div id="usScanCondBox">
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
         <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">快速套用</span>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('breakout')">🚀 突破追強</button>
@@ -6620,6 +6641,7 @@
         </span>
       </label>
       <div id="usScanConds" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:2px 16px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px; max-height:28vh; overflow-y:auto;"></div>
+      </div><!-- /usScanCondBox -->
 
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
         <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">掃描範圍</span>
@@ -7959,7 +7981,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.8 · θ</div>
+    <div>v 8.9 · θ</div>
   </footer>
 </div>
 
@@ -8313,9 +8335,93 @@ alter publication supabase_realtime add table party_locations;</pre>
     }
     return val;
   }
+  // ⚠⚠ 這裡以前是 `try { localStorage.setItem(...) } catch (e) {}` —— **靜默吞掉失敗**。
+  //    瀏覽器空間滿了（QuotaExceededError）時，存檔失敗但畫面照樣跳「已新增」，
+  //    使用者要等到重新整理才發現資料不見，而且不知道為什麼。這是會掉資料的 bug。
+  //    現在：寫失敗一定會讓使用者知道，而且明確告訴他該做什麼。
+  let storageFullNotified = false;   // 同一次工作階段只吵一次，不然每次存檔都跳
+  function isQuotaError(e) {
+    if (!e) return false;
+    return e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+        || e.code === 22 || e.code === 1014;
+  }
+  function notifyStorageFull(key) {
+    if (storageFullNotified) { showToast('⚠ 空間仍是滿的，這筆一樣沒存進去'); return; }
+    storageFullNotified = true;
+    const used = storageUsedBytes();
+    showCopiableError('⚠ 瀏覽器儲存空間已滿 · 這筆資料沒有存進去', [
+      '剛剛那筆資料「沒有」存起來，重新整理後會不見。',
+      '',
+      `目前已用：約 ${storageSizeLabel(used)}（瀏覽器上限通常是 5 MB）`,
+      `寫入失敗的項目：${key}`,
+      '',
+      '請照這個順序處理：',
+      '1. 先到「☰ 選單 → 💾 全站備份 / 還原」按「下載完整備份」，把現有資料存成檔案',
+      '2. 在同一個地方按「🧹 清理快取」，清掉可重新產生的暫存（新聞、AI 快取、地點資料）',
+      '3. 如果還是不夠，考慮刪掉舊的旅遊集合照片（那些最佔空間，一張約 200 KB）',
+      '',
+      '⚠ 在清出空間之前，你新增的任何資料都不會被保存。'
+    ].join('\n'));
+  }
   async function writeKey(key, value) {
-    try { localStorage.setItem(key, value); } catch (e) {}
-    try { if (window.storage) await window.storage.set(key, value); } catch (e) {}
+    let ok = true;
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      ok = false;
+      console.error('[storage.write.fail]', key, e);
+      if (isQuotaError(e)) notifyStorageFull(key);
+      else showToast('⚠ 資料寫入失敗：' + ((e && e.message) || '未知錯誤'));
+    }
+    try { if (window.storage) await window.storage.set(key, value); }
+    catch (e) { console.warn('[storage.cloud.fail]', key, e); }
+    return ok;
+  }
+
+  // === 儲存空間用量（給備份頁顯示，也給上面的錯誤訊息用）===
+  const STORAGE_SOFT_LIMIT = 5 * 1024 * 1024;   // 多數瀏覽器 localStorage 上限
+  function storageSizeLabel(n) {
+    return n >= 1048576 ? (n / 1048576).toFixed(2) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
+  }
+  function storageUsedBytes() {
+    let total = 0;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k);
+        // key 與 value 都佔空間（UTF-16 → 每字元 2 bytes）
+        total += ((k || '').length + (v || '').length) * 2;
+      }
+    } catch (e) {}
+    return total;
+  }
+  // 可以安全清掉的快取（都會自己重新產生，刪了不會掉資料）
+  const PURGEABLE = [
+    { key: 'travel_spot_ai_cache_v1', name: '旅遊景點 AI 快取' },
+    { key: 'travel_wiki_cache_v1', name: '旅遊維基快取' },
+    { key: 'tw_news_v1', name: '台股新聞快取' }
+  ];
+  function storageBreakdown() {
+    const rows = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k) || '';
+        rows.push({ key: k, bytes: ((k || '').length + v.length) * 2,
+                    可清: PURGEABLE.some(p => p.key === k) });
+      }
+    } catch (e) {}
+    return rows.sort((a, b) => b.bytes - a.bytes);
+  }
+  async function purgeStorageCaches() {
+    const rows = storageBreakdown().filter(r => r.可清 && r.bytes > 0);
+    const freed = rows.reduce((a, r) => a + r.bytes, 0);
+    if (!rows.length) { showToast('沒有可清理的快取（目前都是實際資料）'); return; }
+    if (!confirm(`清掉這些可重新產生的快取？\n\n${rows.map(r => '· ' + (PURGEABLE.find(p => p.key === r.key) || {}).name + '（' + storageSizeLabel(r.bytes) + '）').join('\n')}\n\n可釋放約 ${storageSizeLabel(freed)}。\n這些是暫存，刪了會自動重新抓，不會掉你的資料。`)) return;
+    for (const r of rows) { try { localStorage.removeItem(r.key); } catch (e) {} }
+    storageFullNotified = false;   // 清過之後允許再次提醒
+    renderBackupSummary();
+    showToast(`🧹 已釋放約 ${storageSizeLabel(freed)}`);
   }
 
   async function loadAll() {
@@ -21951,7 +22057,38 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       ${extra || ''}
     </div>`;
   }
+  // 儲存空間量表：讓使用者「看得到」自己離爆掉還有多遠
+  function renderStorageMeter() {
+    const el = document.getElementById('storageMeter');
+    if (!el) return;
+    const used = storageUsedBytes();
+    const pct = Math.min(100, used / STORAGE_SOFT_LIMIT * 100);
+    const rows = storageBreakdown();
+    const purgeable = rows.filter(r => r.可清).reduce((a, r) => a + r.bytes, 0);
+    const top = rows.filter(r => r.bytes > 20 * 1024).slice(0, 3);
+    const color = pct >= 85 ? 'var(--danger)' : pct >= 60 ? 'var(--accent-warm)' : 'var(--accent)';
+    const advice = pct >= 85
+      ? '<strong style="color:var(--danger);">快滿了。</strong>請先下載備份，再按「🧹 清理快取」。空間滿了之後新資料會存不進去。'
+      : pct >= 60 ? '用量偏高，可以先清一下快取。'
+      : '空間充足。';
+    el.innerHTML = `
+      <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:11px 14px;">
+        <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+          <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">瀏覽器儲存空間</span>
+          <span style="font-family:var(--serif); font-size:16px; color:${color};">${storageSizeLabel(used)}</span>
+          <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">/ 約 5 MB（${pct.toFixed(0)}%）</span>
+          <button class="btn btn-sm" type="button" onclick="purgeStorageCaches()" style="margin-left:auto;" title="清掉可重新產生的暫存，不會掉資料">🧹 清理快取${purgeable > 0 ? '（可釋放 ' + storageSizeLabel(purgeable) + '）' : ''}</button>
+        </div>
+        <div style="height:6px; background:var(--bg-card); border:1px solid var(--line); border-radius:3px; overflow:hidden;">
+          <div style="height:100%; width:${pct.toFixed(1)}%; background:${color};"></div>
+        </div>
+        <div style="font-size:11px; color:var(--ink-secondary); margin-top:6px; line-height:1.5;">${advice}</div>
+        ${top.length ? `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px;">最佔空間：${top.map(r => escape(r.key) + ' ' + storageSizeLabel(r.bytes)).join('　·　')}</div>` : ''}
+      </div>`;
+  }
+
   function renderBackupSummary() {
+    renderStorageMeter();
     const box = document.getElementById('backupSummary');
     if (!box) return;
     const withSecrets = document.getElementById('backupIncludeSecrets')?.checked;
@@ -22117,6 +22254,64 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'f_div',     name: '殖利率 ≥ 3%',    fund: true, hint: '有在配息，存股族會看這個',                    test: c => !!(c.fund && c.fund.dy >= 3) }
   ];
   const usScanAllConds = () => usScanUseFund ? US_SCAN_CONDS.concat(US_SCAN_FUND_CONDS) : US_SCAN_CONDS;
+  const usScanCondByKey = k => US_SCAN_CONDS.concat(US_SCAN_FUND_CONDS).find(c => c.key === k);
+
+  // ============================================================
+  // 策略模式：一次勾**好幾種策略**，看哪支股票同時符合幾種
+  //
+  // 跟「條件模式」的差別（這是使用者實際要的）：
+  //   條件模式 = 勾一堆條件，算「符合幾項」
+  //   策略模式 = 勾一堆**策略**（每個策略本身就是一組條件），算「符合幾種策略」
+  //   → 一支股票同時符合「黃金交叉突破」＋「便宜好公司」，比只符合一種更值得看
+  // need: 'all' = 該策略的條件要全中；數字 = 至少中幾項
+  // fund: true 代表這個策略含基本面條件，勾了會自動打開基本面開關
+  // ============================================================
+  const US_STRATEGY_LIST = [
+    { key: 's_golden', icon: '✨', name: '黃金交叉突破', fund: false, need: 'all',
+      desc: '短均線剛穿過長均線、且站在季線上、短線還沒過熱 —— 轉強的起點',
+      conds: ['golden', 'above_ma60', 'not_hot'] },
+    { key: 's_momentum', icon: '🚀', name: '多頭排列追強', fund: false, need: 'all',
+      desc: '均線由上往下排好、貼近兩個月高點、有量進場 —— 強勢股續強',
+      conds: ['bull_stack', 'near_high', 'vol_up', 'not_hot'] },
+    { key: 's_pullback', icon: '📉', name: '回檔買點', fund: false, need: 'all',
+      desc: '長線還是多頭，但從高點回檔 5-15%、KD 開始翻上來 —— 打折買強勢股',
+      conds: ['bull_stack', 'above_ma60', 'pullback', 'kd_turn'] },
+    { key: 's_rebound', icon: '🔄', name: '超跌反彈', fund: false, need: 3,
+      desc: 'RSI 超賣、貼近布林下軌、KD 與 MACD 開始轉正 —— 跌深搶反彈（風險高）',
+      conds: ['rsi_low', 'boll_low', 'kd_turn', 'macd_pos'] },
+    { key: 's_trend', icon: '📈', name: '穩健趨勢', fund: false, need: 'all',
+      desc: '同時站上月線與季線、MACD 為正 —— 沒有花招，就是趨勢向上',
+      conds: ['above_ma20', 'above_ma60', 'macd_pos'] },
+    { key: 's_value', icon: '💎', name: '便宜好公司', fund: true, need: 'all',
+      desc: '有在賺錢、本益比低於 20、ROE 超過 15% —— 價值投資的基本盤',
+      conds: ['f_profit', 'f_pe_low', 'f_roe'] },
+    { key: 's_income', icon: '🏦', name: '存股收息', fund: true, need: 'all',
+      desc: '殖利率 3% 以上、估值不貴、趨勢沒壞 —— 領息為主',
+      conds: ['f_div', 'f_pe_ok', 'f_pb', 'above_ma60'] },
+    { key: 's_turnaround', icon: '🔧', name: '價值＋轉強', fund: true, need: 'all',
+      desc: '便宜的好公司，而且技術面剛開始轉多 —— 基本面與技術面同時到位',
+      conds: ['f_profit', 'f_pe_low', 'above_ma60', 'kd_turn'] }
+  ];
+  let usScanMode = 'cond';       // 'cond' 條件模式 | 'strategy' 策略模式
+  let usScanStrategies = ['s_golden', 's_pullback', 's_value'];
+
+  // 這支股票符合這個策略嗎
+  function usStrategyHit(ctx, st) {
+    let hit = 0, total = 0, missing = [];
+    st.conds.forEach(k => {
+      const c = usScanCondByKey(k);
+      if (!c) return;
+      total++;
+      let ok = false;
+      try { ok = !!c.test(ctx); } catch (e) { ok = false; }
+      if (ok) hit++; else missing.push(c.name);
+    });
+    const need = st.need === 'all' ? total : Math.min(st.need, total);
+    return { pass: total > 0 && hit >= need, hit, total, need, missing };
+  }
+  // 策略模式需不需要基本面資料
+  const usScanStrategyNeedsFund = () =>
+    US_STRATEGY_LIST.some(s => usScanStrategies.includes(s.key) && s.fund);
 
   const US_SCAN_PRESETS = {
     breakout: ['bull_stack', 'above_ma60', 'near_high', 'vol_up', 'not_hot'],
@@ -22231,7 +22426,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     const btn = document.getElementById('usScanRunBtn');
     if (btn) btn.textContent = '▶ 開始掃描';
-    renderUsScanConds();
+    setUsScanMode(usScanMode);   // 會一併重畫策略清單與條件清單
     onUsScanScopeChange();
     renderUsScanResults();
     document.getElementById('usScanModal').classList.add('active');
@@ -22259,6 +22454,66 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             : '⚠ 美股基本面需要 Finnhub 金鑰，請先到工具列「🔑 金鑰」設定。<strong>沒設定的話勾了也抓不到。</strong>');
     }
   }
+  // ===== 策略模式 UI =====
+  function setUsScanMode(m) {
+    usScanMode = m === 'strategy' ? 'strategy' : 'cond';
+    const sb = document.getElementById('usScanStrategyBox');
+    const cb = document.getElementById('usScanCondBox');
+    if (sb) sb.style.display = usScanMode === 'strategy' ? '' : 'none';
+    if (cb) cb.style.display = usScanMode === 'cond' ? '' : 'none';
+    const bs = document.getElementById('usScanModeStrategy');
+    const bc = document.getElementById('usScanModeCond');
+    const on = 'background:var(--accent); color:var(--bg-base); border-color:var(--accent);';
+    if (bs) bs.style.cssText = usScanMode === 'strategy' ? on : '';
+    if (bc) bc.style.cssText = usScanMode === 'cond' ? on : '';
+    const hint = document.getElementById('usScanModeHint');
+    if (hint) hint.textContent = usScanMode === 'strategy'
+      ? '勾幾種策略，看哪支股票同時符合最多種'
+      : '自己組合單項技術／基本面條件';
+    // 策略含基本面就自動打開基本面開關（否則那些策略永遠不會成立）
+    if (usScanMode === 'strategy' && usScanStrategyNeedsFund()) usScanUseFund = true;
+    renderUsScanStrategies();
+    renderUsScanConds();
+    renderUsScanResults();
+  }
+  function renderUsScanStrategies() {
+    const box = document.getElementById('usScanStrategyList');
+    if (!box) return;
+    box.innerHTML = US_STRATEGY_LIST.map(s => {
+      const names = s.conds.map(k => (usScanCondByKey(k) || {}).name).filter(Boolean);
+      const rule = s.need === 'all' ? '全部符合' : `至少符合 ${s.need} 項`;
+      return `
+      <label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; cursor:pointer; border-bottom:1px solid var(--line);">
+        <input type="checkbox" data-us-strategy="${escape(s.key)}" ${usScanStrategies.includes(s.key) ? 'checked' : ''} onchange="onUsStrategyChangePick()" style="margin-top:3px;">
+        <span style="min-width:0;">
+          <span style="font-size:13px; color:${s.fund ? 'var(--accent-warm)' : 'var(--ink-primary)'};">${s.icon} ${escape(s.name)}${s.fund ? ' <span style="font-size:9.5px; color:var(--ink-tertiary);">（需基本面）</span>' : ''}</span>
+          <span style="display:block; font-size:11px; color:var(--ink-secondary); line-height:1.5; margin-top:2px;">${escape(s.desc)}</span>
+          <span style="display:block; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); line-height:1.45; margin-top:3px;">${escape(names.join(' ＋ '))}　·　${rule}</span>
+        </span>
+      </label>`;
+    }).join('');
+    const n = usScanStrategies.length;
+    const el = document.getElementById('usScanStrategyCount');
+    if (el) el.textContent = `已選 ${n} / ${US_STRATEGY_LIST.length} 種策略`;
+  }
+  function onUsStrategyChangePick() {
+    usScanStrategies = [...document.querySelectorAll('[data-us-strategy]:checked')].map(cb => cb.getAttribute('data-us-strategy'));
+    if (usScanStrategyNeedsFund() && !usScanUseFund) {
+      usScanUseFund = true;
+      renderUsScanConds();
+      showToast('選到的策略需要基本面，已自動開啟（下次掃描才會抓）');
+    }
+    renderUsScanStrategies();
+    renderUsScanResults();
+  }
+  function toggleAllUsStrategies(on) {
+    usScanStrategies = on ? US_STRATEGY_LIST.map(s => s.key) : [];
+    if (on) usScanUseFund = true;
+    renderUsScanStrategies();
+    renderUsScanConds();
+    renderUsScanResults();
+  }
+
   function onUsScanFundToggle() {
     usScanUseFund = !!document.getElementById('usScanUseFund').checked;
     if (!usScanUseFund) {
@@ -22350,6 +22605,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const universe = usScanUniverse();
     if (!universe.length) { showToast('掃描範圍是空的'); return; }
     usScanRunning = true;
+    // 條件模式看開關；策略模式只要選到含基本面的策略就要抓
+    const needFund = usScanMode === 'strategy' ? usScanStrategyNeedsFund() : usScanUseFund;
     const btn = document.getElementById('usScanRunBtn');
     const prog = document.getElementById('usScanProgress');
     const bar = document.getElementById('usScanBar');
@@ -22377,7 +22634,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           else { bars = await scanFetch(usScanMarket, item.symbol); usScanCache[ck] = { bars, ts: Date.now() }; }
           const ctx = usScanCtx(item, bars);
           if (ctx) {
-            if (usScanUseFund) { try { ctx.fund = await scanFetchFund(usScanMarket, item.symbol); } catch (e) { ctx.fund = null; } }
+            // 策略模式時，只要有選到含基本面的策略就一定要抓
+            if (needFund) { try { ctx.fund = await scanFetchFund(usScanMarket, item.symbol); } catch (e) { ctx.fund = null; } }
             rows.push(ctx);
           } else failed++;
         } catch (e) { failed++; }
@@ -22415,6 +22673,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       </div>`;
       return;
     }
+    // ── 策略模式：算每支股票「符合幾種策略」 ──
+    if (usScanMode === 'strategy') { renderUsScanStrategyResults(box); return; }
+
     if (!usScanPicked.length) {
       box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px;">請至少勾一個技術條件。</div>`;
       return;
@@ -22490,6 +22751,102 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; padding-top:7px; border-top:1px solid var(--line);">
             📖 ${escape(c.sig.summary || '')}
           </div>
+          <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="closeUsScanModal(); ${usScanMarket === 'tw' ? `openTvChartModal('${escape(c.symbol)}','${escape(c.name || '')}','TWSE')` : `openUsAnalysis('${escape(c.symbol)}')`};">📊 詳細分析</button>
+            <span style="margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); align-self:center;">資料至 ${escape(c.lastDate || '')}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // 策略模式的結果：依「符合幾種策略」排名
+  function renderUsScanStrategyResults(box) {
+    const picked = US_STRATEGY_LIST.filter(s => usScanStrategies.includes(s.key));
+    if (!picked.length) {
+      box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px;">請至少勾一種策略。</div>`;
+      return;
+    }
+    const cur = scanCur();
+    const f = v => cur + Number(v).toFixed(2);
+    const scored = usScanRows.map(ctx => {
+      const hits = picked.map(s => ({ s, ...usStrategyHit(ctx, s) }));
+      return { ctx, hits, passed: hits.filter(h => h.pass) };
+    }).filter(r => r.passed.length > 0)
+      .sort((a, b) => b.passed.length - a.passed.length || b.ctx.sig.score - a.ctx.sig.score);
+
+    if (!scored.length) {
+      // 沒中也要有用：告訴他「差一點就中」的是哪些
+      const near = usScanRows.map(ctx => {
+        const best = picked.map(s => ({ s, ...usStrategyHit(ctx, s) })).sort((x, y) => (y.hit / y.total) - (x.hit / x.total))[0];
+        return { ctx, best };
+      }).filter(x => x.best && x.best.hit > 0)
+        .sort((a, b) => (b.best.hit / b.best.total) - (a.best.hit / a.best.total)).slice(0, 3);
+      box.innerHTML = `<div style="padding:20px 10px; color:var(--ink-tertiary); font-size:13px; line-height:1.9;">
+        <div style="text-align:center; margin-bottom:10px;">掃了 ${usScanRows.length} 檔，<strong>沒有一檔完整符合你選的策略</strong>。</div>
+        <div style="text-align:center; font-size:11.5px; margin-bottom:14px;">（這也是資訊——代表目前這批股票裡，沒有符合這些策略的機會。可以換策略或擴大掃描範圍。）</div>
+        ${near.length ? `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px;">
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:6px;">最接近的三檔（還差什麼）</div>
+          ${near.map(n => `<div style="font-size:12px; color:var(--ink-secondary); padding:5px 0; border-bottom:1px solid var(--line);">
+            <strong style="font-family:var(--mono); color:var(--accent);">${escape(n.ctx.symbol)}</strong>
+            ${escape(n.ctx.zh || n.ctx.name || '')} —— ${escape(n.best.s.name)} ${n.best.hit}/${n.best.total}，
+            還差：<span style="color:var(--danger);">${escape(n.best.missing.join('、'))}</span>
+          </div>`).join('')}
+        </div>` : ''}
+      </div>`;
+      return;
+    }
+
+    box.innerHTML = `
+      <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px;">
+        共 ${scored.length} 檔至少符合 1 種策略（掃了 ${usScanRows.length} 檔 · 選了 ${picked.length} 種策略）· 依符合策略數排序
+      </div>` + scored.map((r, i) => {
+      const c = r.ctx;
+      const stop = c.lv && c.lv.stops[0];
+      const sup = c.lv && c.lv.supports[0];
+      const res = c.lv && c.lv.resists[0];
+      const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
+      const many = r.passed.length >= 2;
+      return `
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid ${many ? 'var(--accent)' : 'var(--accent-deep)'}; border-radius:4px; padding:12px 14px; margin-bottom:8px;">
+          <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+            <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); min-width:20px;">#${i + 1}</span>
+            <span style="font-family:var(--mono); font-size:16px; color:var(--accent); font-weight:600;">${escape(c.symbol)}</span>
+            ${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? `<span style="font-family:var(--serif); font-size:14px; color:var(--ink-primary);">${escape(c.zh || c.name)}</span>` : ''}
+            <span class="${cls}" style="font-family:var(--mono); font-size:11px;">${escape(c.sig.overall)}</span>
+            <span style="margin-left:auto; font-family:var(--mono); font-size:12px; color:${many ? 'var(--accent)' : 'var(--ink-secondary)'};">符合 ${r.passed.length} 種策略</span>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px;">
+            ${r.passed.map(h => `<span style="font-family:var(--mono); font-size:11px; color:var(--bg-base); background:${h.s.fund ? 'var(--accent-warm)' : 'var(--accent)'}; border-radius:2px; padding:3px 9px;">${h.s.icon} ${escape(h.s.name)}</span>`).join('')}
+            ${r.hits.filter(h => !h.pass && h.hit > 0).map(h => `<span style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); border:1px solid var(--line); border-radius:2px; padding:3px 8px;" title="還差：${escape(h.missing.join('、'))}">${h.s.icon} ${escape(h.s.name)} ${h.hit}/${h.total}</span>`).join('')}
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; margin-bottom:8px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目前價（收盤）</div>
+              <div style="font-family:var(--serif); font-size:15px;">${f(c.price)}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損參考</div>
+              <div style="font-family:var(--serif); font-size:15px; color:var(--danger);">${stop ? f(stop.v) : '—'}</div>
+              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? stop.pct.toFixed(1) + '%' : ''}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目標（賠率2:1）</div>
+              <div style="font-family:var(--serif); font-size:15px; color:var(--accent);">${stop ? f(stop.target2r) : '—'}</div>
+              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? '+' + stop.target2rPct.toFixed(1) + '%' : ''}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">下方支撐 / 上方壓力</div>
+              <div style="font-family:var(--mono); font-size:12px;">${sup ? f(sup.v) : '—'} / ${res ? f(res.v) : '—'}</div>
+            </div>
+          </div>
+          ${c.fund ? `<div style="display:flex; flex-wrap:wrap; gap:4px 14px; font-family:var(--mono); font-size:10.5px; margin-bottom:7px; padding:5px 9px; background:rgba(232,184,138,0.07); border-left:2px solid var(--accent-warm); border-radius:3px;">
+            <span style="color:var(--accent-warm);">◆ 基本面</span>
+            <span style="color:var(--ink-tertiary);">本益比</span> <strong>${c.fund.pe == null ? '—' : c.fund.pe.toFixed(2)}</strong>
+            <span style="color:var(--ink-tertiary);">股價淨值比</span> <strong>${c.fund.pb == null ? '—' : c.fund.pb.toFixed(2)}</strong>
+            <span style="color:var(--ink-tertiary);">ROE</span> <strong>${c.fund.roe == null ? '—' : c.fund.roe.toFixed(1) + '%'}</strong>
+            <span style="color:var(--ink-tertiary);">殖利率</span> <strong>${c.fund.dy == null ? '—' : c.fund.dy.toFixed(2) + '%'}</strong>
+          </div>` : ''}
+          <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; padding-top:7px; border-top:1px solid var(--line);">📖 ${escape(c.sig.summary || '')}</div>
           <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
             <button class="btn btn-sm" onclick="closeUsScanModal(); ${usScanMarket === 'tw' ? `openTvChartModal('${escape(c.symbol)}','${escape(c.name || '')}','TWSE')` : `openUsAnalysis('${escape(c.symbol)}')`};">📊 詳細分析</button>
             <span style="margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); align-self:center;">資料至 ${escape(c.lastDate || '')}</span>
