@@ -22997,6 +22997,39 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     throw new Error('回應無法解析為 JSON：' + text.slice(0, 200));
   }
 
+  // === Worker 呼叫共用：自動重試 ===
+  // Google News 偶爾會擋一下（worker 就回 502），實測 10 次會中 1 次。
+  // 這種暫時性失敗如果直接跳「測試失敗」，使用者會誤以為設定錯了 → 這裡自動重試幾次。
+  // 只重試「暫時性」的狀態碼；404/400 這種設定問題重試也沒用，直接回報。
+  const NEWS_RETRY_STATUS = [429, 500, 502, 503, 504];
+  async function newsWorkerFetch(finalUrl, tries = 3) {
+    let lastErr = null, lastResp = null, lastBody = null;
+    for (let i = 0; i < tries; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 700 * i)); // 0.7s、1.4s backoff
+      try {
+        const resp = await fetch(finalUrl, { cache: 'no-store' });
+        let body = null;
+        try { body = await resp.json(); } catch (e) {}
+        if (resp.ok && !body?.error) return { resp, body };
+        lastResp = resp; lastBody = body;
+        // 設定問題（400/404 等）重試無意義，直接跳出
+        if (!NEWS_RETRY_STATUS.includes(resp.status)) break;
+      } catch (e) { lastErr = e; }   // 網路 / CORS 失敗 → 值得再試
+    }
+    if (lastResp) {
+      const upstream = lastBody?.upstreamStatus ? ` · 上游 ${lastBody.upstreamStatus}` : '';
+      const errMsg = lastBody?.error || `HTTP ${lastResp.status}`;
+      console.error('[news.fail]', { status: lastResp.status, body: lastBody, url: finalUrl });
+      // 把「你設定錯」和「對方暫時擋住」講清楚，不要讓使用者亂改設定
+      const hint = lastResp.status === 404 ? '　→ 找不到這個 Worker，請檢查網址是否正確、Cloudflare 上是否已 Deploy'
+        : lastResp.status === 400 ? '　→ Worker 有回應但參數不對'
+        : NEWS_RETRY_STATUS.includes(lastResp.status) ? `　→ 這是 Google News 暫時擋住，${tries} 次都沒過。**不是你的設定有問題**，過 1-2 分鐘再試一次通常就好了`
+        : '';
+      throw new Error(errMsg + upstream + hint);
+    }
+    throw new Error((lastErr?.message || '連線失敗') + '　→ 連不到這個網址。請確認 Worker 已在 Cloudflare Deploy、網址開頭是 https://');
+  }
+
   // 抓單一股票新聞 — A 方案：Cloudflare Worker + Google News RSS（免費，無需 API key）
   // Fallback：若無 worker URL 但有 API key，仍走 Anthropic web_search
   async function fetchStockNews(symbol, name) {
@@ -23010,17 +23043,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       try { url = new URL(workerUrl); }
       catch (e) { throw new Error('Worker URL 格式錯誤：' + workerUrl); }
       url.searchParams.set('q', q);
-      const finalUrl = url.toString();
-      const resp = await fetch(finalUrl, { cache: 'no-store' });
-      let body;
-      try { body = await resp.json(); } catch (e) { body = null; }
-      if (!resp.ok) {
-        const upstream = body?.upstreamStatus ? ` · 上游 ${body.upstreamStatus}` : '';
-        const errMsg = body?.error || `HTTP ${resp.status}`;
-        console.error('[news.fail]', { status: resp.status, body, url: finalUrl });
-        throw new Error(`Worker ${resp.status} · ${errMsg}${upstream}（query: ${q}）`);
-      }
-      if (body?.error) throw new Error('Worker: ' + body.error);
+      const { body } = await newsWorkerFetch(url.toString());
       return { items: body?.items || [] };
     }
     // Fallback: API 模式（沒設 worker 才走這條）
@@ -23165,21 +23188,12 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       try { url = new URL(v); }
       catch (e) { throw new Error('URL 格式錯誤 · ' + v); }
       url.searchParams.set('q', '台積電');
-      const finalUrl = url.toString();
-      const resp = await fetch(finalUrl, { cache: 'no-store' });
-      let data;
-      try { data = await resp.json(); } catch (e) { data = null; }
-      if (!resp.ok) {
-        const upstream = data?.upstreamStatus ? ` · 上游 ${data.upstreamStatus}` : '';
-        const errMsg = data?.error || `HTTP ${resp.status}`;
-        console.error('[news.test.fail]', { status: resp.status, data, url: finalUrl });
-        throw new Error(errMsg + upstream);
-      }
-      if (data?.error) throw new Error(data.error);
-      const n = (data?.items || []).length;
+      const { body } = await newsWorkerFetch(url.toString(), 3);  // 會自動重試 3 次
+      const n = (body?.items || []).length;
       showToast(`✓ 測試成功 · 抓到 ${n} 則新聞`);
     } catch (e) {
-      showToast('✗ 測試失敗：' + e.message);
+      // 訊息可能很長（含排查提示），用可複製的錯誤視窗而不是一閃即逝的 toast
+      showCopiableError('新聞來源測試失敗', e.message + '\n\nWorker URL：' + v);
     } finally {
       btn.disabled = false; btn.textContent = '測試';
     }
