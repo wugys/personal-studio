@@ -785,35 +785,43 @@
     letter-spacing: 0.05em;
   }
 
-  /* === 台股 stat-card 手機版：4 個欄位全擠進 1 列 === */
+  /* === 統計卡手機版：一律 2 欄 ===
+     ⚠ 這裡以前是 `#twStockStats { grid-template-columns: repeat(4,1fr) }`
+        ＋ `word-break: break-all`，想把 4 張卡擠進一列。
+        結果每格只剩 88px，NT$3,237,000 這種數字會被**從中間切斷**成
+        「NT$3,237,00」＋「0」，完全看不懂（實測 iPhone 393px 寬）。
+        改成 2 欄（每格約 175px）就放得下，也不必再 break-all。
+        其他模組原本吃預設的 minmax(200px,1fr) → 手機上變成 1 欄，
+        5 張卡就佔滿整個螢幕，一樣不好用，所以這裡統一處理。 */
   @media (max-width: 768px) {
-    #twStockStats {
-      grid-template-columns: repeat(4, 1fr) !important;
-      gap: 4px !important;
-      margin-bottom: 14px !important;
+    .stats-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+      margin-bottom: 18px !important;
     }
-    #twStockStats .stat-card {
-      padding: 8px 4px !important;
-      text-align: center;
-      min-width: 0;
-      overflow: hidden;
-    }
-    #twStockStats .stat-label {
-      font-size: 8.5px !important;
-      letter-spacing: 0.03em !important;
-      margin-bottom: 4px !important;
-      white-space: nowrap;
-    }
-    #twStockStats .stat-value {
-      font-size: 13px !important;
-      line-height: 1.15 !important;
+    .stat-card { padding: 11px 10px !important; min-width: 0; overflow: hidden; }
+    .stat-label { font-size: 9px !important; letter-spacing: 0.05em !important; margin-bottom: 3px !important; }
+    .stat-value {
+      font-size: 18px !important;
+      line-height: 1.2 !important;
       letter-spacing: -0.02em !important;
-      word-break: break-all;
+      /* 絕對不要 break-all —— 金額會被從中間切開 */
+      word-break: normal !important;
+      overflow-wrap: normal !important;
     }
-    #twStockStats .stat-sub,
-    #twStockStats .stat-pct {
-      display: none !important;
-    }
+    .stat-sub, .stat-card .stat-pct { font-size: 9.5px !important; line-height: 1.35 !important; }
+    /* 奇數張卡時，最後一張補滿整列，不要留一半空白 */
+    .stats-row > .stat-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  }
+
+  /* === 手機點擊目標：至少 40px（實測原本只有 26-30px，手指按不準）=== */
+  @media (max-width: 768px) {
+    .btn { min-height: 40px; padding: 10px 16px; }
+    .btn-sm { min-height: 38px; padding: 8px 12px; font-size: 11.5px; }
+    .hc-mini-btn { min-height: 36px; padding: 8px 12px; font-size: 11px; }
+    .hc-actions { gap: 7px; }
+    .form-select, .form-input { min-height: 40px; }
+    .bc-back, .bc-item { min-height: 34px; display: inline-flex; align-items: center; }
   }
 
   /* === 台股動態新聞區塊 === */
@@ -7951,7 +7959,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.7 · θ</div>
+    <div>v 8.8 · θ</div>
   </footer>
 </div>
 
