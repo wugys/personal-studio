@@ -4173,6 +4173,8 @@
             <select class="form-select" id="dcaPlanTarget" onchange="onDcaPlanTargetChange()">
               <option value="mketf">市值型 ETF</option>
               <option value="hdetf">高股息 ETF</option>
+              <option value="fund">主動式基金</option>
+              <option value="metal">貴金屬（黃金存摺等）</option>
               <option value="tw">台股個股</option>
               <option value="us">美股個股</option>
               <option value="crypto">加密貨幣</option>
@@ -5165,6 +5167,612 @@
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" onclick="closeFxDepSyncModal()">取消</button>
         <button class="btn btn-primary" onclick="saveFxDepSyncSettings()">儲存 + 立即同步</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ============ 主動式基金 VIEW ============ -->
+  <div id="fundView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">δ ACTIVE · FUND</div>
+        <h1>主動式 <em>基金</em></h1>
+        <p>境內／境外主動式基金部位。台幣／美元混合計價，統計自動換算台幣；重點看兩件事——<strong>有沒有贏過指標</strong>，以及<strong>內扣費用每年吃掉多少</strong>。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="openFundTxnModal()">+ 新交易</button>
+        <button class="btn btn-primary" onclick="openFundHoldingModal()">+ 新增持有</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="fundStats"></div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.15em;">SORT BY</span>
+      <select id="fundSortBy" class="form-select" onchange="renderFundHoldings()" style="width:auto;">
+        <option value="value">現值（高→低）</option>
+        <option value="alpha">超越指標（多→少）</option>
+        <option value="pnl_pct">報酬率（高→低）</option>
+        <option value="expense">內扣費用（低→高）</option>
+        <option value="pnl_abs">損益金額（高→低）</option>
+        <option value="symbol">名稱</option>
+        <option value="date">買入日期（新→舊）</option>
+      </select>
+      <span id="fundSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
+      <button class="btn btn-sm" id="fundSyncBtn" onclick="syncFundNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
+      <button class="btn btn-sm" onclick="openFundSyncModal()" title="跨裝置同步設定">⚙</button>
+      <button class="btn btn-sm" onclick="openFundBatchPriceModal()">⟳ 批次更新淨值</button>
+      <button class="btn btn-sm" onclick="exportFundData()" title="備份所有基金資料">↓ 匯出</button>
+      <button class="btn btn-sm" onclick="document.getElementById('fundImport').click()" title="從備份還原">↑ 匯入</button>
+      <input type="file" id="fundImport" accept=".json" style="display:none" onchange="importFundData(event)">
+    </div>
+
+    <div id="fundHoldingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ 主動式基金 持有 Modal ============ -->
+  <div class="modal-backdrop" id="fundHoldingModal">
+    <div class="modal">
+      <h2 id="fundHoldingModalTitle">新增 <em>持有</em></h2>
+      <form onsubmit="saveFundHolding(event)">
+        <input type="hidden" id="fundHoldingEditId">
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label">⌕ 搜尋（輸入基金簡稱或公司）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="fundHoldingSearchBox" placeholder="例如 安聯、聯博、貝萊德、收益成長、高收益債..." autocomplete="off" oninput="onFundHoldingSearch(this.value)" onfocus="onFundHoldingSearch(this.value)" onblur="setTimeout(()=>document.getElementById('fundHoldingSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="fundHoldingSearchResults" style="display:none;"></div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:4px; letter-spacing:0.05em;">內建常見境內／境外基金（費用率為參考值，請以最新公開說明書為準）· 找不到可手動填下方欄位</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">簡稱 / 代碼</label>
+            <input type="text" class="form-input" id="fundHoldingSymbol" required placeholder="安聯收益成長" style="font-family:var(--mono);">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">基金全名</label>
+            <input type="text" class="form-input" id="fundHoldingName" required placeholder="安聯收益成長基金 AM 累積類股">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">計價幣別</label>
+            <select class="form-select" id="fundHoldingCcy" onchange="onFundHoldingCcyChange()">
+              <option value="TWD">台幣 TWD（境內基金）</option>
+              <option value="USD">美元 USD（境外基金）</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">基金類型</label>
+            <select class="form-select" id="fundHoldingFtype">
+              <option value="股票型">股票型</option>
+              <option value="債券型">債券型</option>
+              <option value="平衡型">平衡型</option>
+              <option value="多元資產">多元資產</option>
+              <option value="組合型">組合型（基金中的基金）</option>
+              <option value="產業主題型">產業主題型</option>
+              <option value="貨幣市場型">貨幣市場型（類現金）</option>
+              <option value="不動產證券化">不動產證券化 REITs</option>
+            </select>
+            <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">債券型／貨幣型會自動歸到「債券／現金」那一格</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">基金公司</label>
+            <input type="text" class="form-input" id="fundHoldingCompany" placeholder="安聯 / 聯博 / 貝萊德 / 富蘭克林">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">投資區域</label>
+            <input type="text" class="form-input" id="fundHoldingRegion" placeholder="全球 / 美國 / 台灣 / 亞太 / 新興市場">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">持有單位數</label>
+            <input type="number" step="any" min="0" class="form-input" id="fundHoldingShares" required placeholder="1234.5678">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="fundHoldingAvgCostLabel">平均申購淨值 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="fundHoldingAvgCost" required placeholder="12.3456">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="fundHoldingCurrentPriceLabel">目前淨值 NAV (NT$)</label>
+            <input type="number" step="any" class="form-input" id="fundHoldingCurrentPrice" placeholder="13.5678">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">買入日期</label>
+            <input type="date" class="form-input" id="fundHoldingBuyDate">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">申購管道</label>
+            <select class="form-select" id="fundHoldingMarket">
+              <option value="基富通">基富通</option>
+              <option value="鉅亨買基金">鉅亨買基金</option>
+              <option value="中租基富通">中租投顧</option>
+              <option value="國泰世華">國泰世華</option>
+              <option value="玉山銀行">玉山銀行</option>
+              <option value="台新銀行">台新銀行</option>
+              <option value="富邦銀行">富邦銀行</option>
+              <option value="投信直銷">投信直銷</option>
+              <option value="複委託">複委託</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">總費用率（%／年）</label>
+            <input type="number" step="any" min="0" class="form-input" id="fundHoldingExpense" placeholder="1.90（經理費＋保管費＋其他）">
+            <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">這是每年從淨值裡直接扣掉的，不會另外跟你收</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">比較基準（指標）</label>
+            <input type="text" class="form-input" id="fundHoldingBenchName" placeholder="S&amp;P 500 / 台灣加權指數 / MSCI 世界">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">指標同期報酬（%）</label>
+            <input type="number" step="any" class="form-input" id="fundHoldingBench" placeholder="18.5">
+            <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">填了才能比「有沒有贏過大盤」· 請用跟你持有期間相同的區間</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">配息方式</label>
+          <select class="form-select" id="fundHoldingDivType">
+            <option value="累積型">累積型（不配息，滾入淨值）</option>
+            <option value="月配息">月配息</option>
+            <option value="季配息">季配息</option>
+            <option value="半年配">半年配</option>
+            <option value="年配息">年配息</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">筆記</label>
+          <textarea class="form-textarea" id="fundHoldingNotes" placeholder="為什麼買這檔、經理人是誰、什麼情況要換掉..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="fundHoldingDeleteBtn" onclick="deleteFundHolding()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除這筆</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeFundHoldingModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 主動式基金 交易 Modal ============ -->
+  <div class="modal-backdrop" id="fundTxnModal">
+    <div class="modal">
+      <h2 id="fundTxnModalTitle">新增 <em>交易</em></h2>
+      <form onsubmit="saveFundTxn(event)">
+        <input type="hidden" id="fundTxnEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="fundTxnType" onchange="onFundTxnTypeChange()">
+              <option value="buy">申購（買進）</option>
+              <option value="sell">贖回（賣出）</option>
+              <option value="dividend">現金配息（領息）</option>
+              <option value="stock_div">配息再投資（增加單位數）</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="fundTxnDateLabel">日期</label>
+            <input type="date" class="form-input" id="fundTxnDate" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">⌕ 搜尋基金（簡稱或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="fundTxnSearchBox" placeholder="例如 安聯收益成長、聯博全高收..." autocomplete="off" oninput="onFundTxnSearch(this.value)" onfocus="onFundTxnSearch(this.value)" onblur="setTimeout(()=>document.getElementById('fundTxnSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="fundTxnSearchResults" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">簡稱 / 代碼</label>
+            <input type="text" class="form-input" id="fundTxnSymbol" required placeholder="安聯收益成長" style="font-family:var(--mono);" oninput="onFundTxnSymbolChange()">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">基金全名</label>
+            <input type="text" class="form-input" id="fundTxnSymbolName" placeholder="例如 安聯收益成長基金">
+          </div>
+        </div>
+        <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.05em; margin:-6px 0 12px;" id="fundTxnCcyHint">此筆以 台幣 TWD 計價（跟著該檔的幣別）</div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="fundTxnSharesLabel">單位數</label>
+            <input type="number" step="any" min="0" class="form-input" id="fundTxnShares" required placeholder="1234.5678">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="fundTxnPriceLabel">申購淨值 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="fundTxnPrice" required placeholder="12.3456">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="fundTxnFeeLabel">申購手續費 (NT$)</label>
+          <input type="number" step="any" class="form-input" id="fundTxnFee" placeholder="前收手續費、信託管理費（可留空）">
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="fundTxnNotes" placeholder="">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="fundTxnDeleteBtn" onclick="deleteFundTxn()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeFundTxnModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 主動式基金 批次淨值 Modal ============ -->
+  <div class="modal-backdrop" id="fundBatchPriceModal">
+    <div class="modal">
+      <h2>批次 <em>更新淨值</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
+        手動填入各基金最新淨值（NAV），按「全部儲存」一次更新。<strong>請用該檔自己的幣別</strong>（境內填 NT$、境外填 US$，右邊有標）。
+      </div>
+      <div id="fundBatchPriceList" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="form-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn" onclick="closeFundBatchPriceModal()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="saveFundBatchPrices()">全部儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 主動式基金 雲端同步設定 Modal（Supabase）============ -->
+  <div class="modal-backdrop" id="fundSyncModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>☁ 跨裝置<em>雲端同步</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        透過你自己的 <strong>Supabase 專案</strong>同步基金持有與交易記錄。可重用旅遊／台股／美股／加密貨幣用的 Supabase，無需另開。
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:0.1em;">
+          <input type="checkbox" id="fundSyncEnabled"> 啟用雲端同步
+        </label>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="fundSyncSupabaseUrl" class="form-input" placeholder="https://xxx.supabase.co" style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillFundSyncFromTrv()" title="從台股／旅遊設定帶入">↓ 用現有的</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <input type="text" id="fundSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">User ID（多裝置要相同）</label>
+        <input type="text" id="fundSyncUserId" class="form-input" placeholder="kevin-personal（建議跟台股/美股用同一個）">
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px;">相同 ID 的裝置才會互通資料；不同 ID 等於不同帳號。</div>
+      </div>
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 建表 SQL（複製到 Supabase 跑一次）</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">到 Supabase Dashboard → 左側 <strong>SQL Editor</strong> → 點下方按鈕複製 SQL → 貼上 → Run。</div>
+        <button class="btn btn-sm" type="button" onclick="copyFundSyncSql()" style="margin-top:10px;">📋 複製建表 SQL</button>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.5;">💡 會建 2 張表：<code>fund_holdings</code>、<code>fund_transactions</code>，用 RLS Allow-All policy（適合個人用）。</div>
+      </details>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">⚠ 衝突策略：last-write-wins。後寫入雲端的版本會贏。建議短時間內不要兩台同步編輯。</div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeFundSyncModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveFundSyncSettings()">儲存 + 立即同步</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ============ 貴金屬 VIEW ============ -->
+  <div id="metalView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">☼ PRECIOUS · METALS</div>
+        <h1>貴 <em>金屬</em></h1>
+        <p>黃金存摺、實體金條、金幣、白銀與黃金 ETF。可用公克／台錢／盎司任意單位記錄，系統自動換算總重量與台幣現值；買賣價差也一起算給你看。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="openMetalTxnModal()">+ 新交易</button>
+        <button class="btn btn-primary" onclick="openMetalHoldingModal()">+ 新增持有</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="metalStats"></div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.15em;">SORT BY</span>
+      <select id="metalSortBy" class="form-select" onchange="renderMetalHoldings()" style="width:auto;">
+        <option value="value">現值（高→低）</option>
+        <option value="weight">重量（重→輕）</option>
+        <option value="pnl_pct">報酬率（高→低）</option>
+        <option value="pnl_abs">損益金額（高→低）</option>
+        <option value="symbol">名稱</option>
+        <option value="date">買入日期（新→舊）</option>
+      </select>
+      <span id="metalSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
+      <button class="btn btn-sm" id="metalSyncBtn" onclick="syncMetalNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
+      <button class="btn btn-sm" onclick="openMetalSyncModal()" title="跨裝置同步設定">⚙</button>
+      <button class="btn btn-sm" onclick="openMetalBatchPriceModal()">⟳ 批次更新牌價</button>
+      <button class="btn btn-sm" onclick="exportMetalData()" title="備份所有貴金屬資料">↓ 匯出</button>
+      <button class="btn btn-sm" onclick="document.getElementById('metalImport').click()" title="從備份還原">↑ 匯入</button>
+      <input type="file" id="metalImport" accept=".json" style="display:none" onchange="importMetalData(event)">
+    </div>
+
+    <div id="metalHoldingsGrid" class="opp-grid"></div>
+  </div>
+
+  <!-- ============ 貴金屬 持有 Modal ============ -->
+  <div class="modal-backdrop" id="metalHoldingModal">
+    <div class="modal">
+      <h2 id="metalHoldingModalTitle">新增 <em>持有</em></h2>
+      <form onsubmit="saveMetalHolding(event)">
+        <input type="hidden" id="metalHoldingEditId">
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label">⌕ 搜尋（輸入黃金、白銀、存摺、GLD...）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="metalHoldingSearchBox" placeholder="例如 黃金存摺、金條、金幣、白銀、GLD、00635U..." autocomplete="off" oninput="onMetalHoldingSearch(this.value)" onfocus="onMetalHoldingSearch(this.value)" onblur="setTimeout(()=>document.getElementById('metalHoldingSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="metalHoldingSearchResults" style="display:none;"></div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:4px; letter-spacing:0.05em;">內建常見管道（自動帶單位／幣別／買賣價差）· 找不到可手動填下方欄位</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號 / 簡稱</label>
+            <input type="text" class="form-input" id="metalHoldingSymbol" required placeholder="黃金存摺" style="font-family:var(--mono);">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="metalHoldingName" required placeholder="台銀黃金存摺">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">金屬種類</label>
+            <select class="form-select" id="metalHoldingMtype">
+              <option value="黃金">黃金</option>
+              <option value="白銀">白銀</option>
+              <option value="白金">白金（鉑）</option>
+              <option value="鈀金">鈀金</option>
+              <option value="綜合">綜合／其他</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">持有形式</label>
+            <select class="form-select" id="metalHoldingForm">
+              <option value="銀行存摺">銀行存摺（帳面）</option>
+              <option value="實體金條">實體金條 / 金塊</option>
+              <option value="金幣">金幣 / 銀幣</option>
+              <option value="飾金">飾金 / 金飾</option>
+              <option value="ETF">ETF / 受益憑證</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">計價幣別</label>
+            <select class="form-select" id="metalHoldingCcy" onchange="onMetalHoldingCcyChange()">
+              <option value="TWD">台幣 TWD</option>
+              <option value="USD">美元 USD</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">計價單位</label>
+            <select class="form-select" id="metalHoldingUnit" onchange="onMetalHoldingCcyChange()">
+              <option value="公克">公克 g</option>
+              <option value="台錢">台錢（＝3.75 公克）</option>
+              <option value="兩">台兩（＝37.5 公克）</option>
+              <option value="盎司">金衡盎司 oz（＝31.1035 公克）</option>
+              <option value="公斤">公斤 kg</option>
+              <option value="股">股 / 受益權單位（ETF）</option>
+              <option value="枚">枚 / 個（金幣，不換算重量）</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="metalHoldingSharesLabel">持有數量（公克）</label>
+            <input type="number" step="any" min="0" class="form-input" id="metalHoldingShares" required placeholder="100">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="metalHoldingAvgCostLabel">平均成本 (NT$ / 公克)</label>
+            <input type="number" step="any" class="form-input" id="metalHoldingAvgCost" required placeholder="2850">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="metalHoldingCurrentPriceLabel">目前牌價 (NT$ / 公克)</label>
+            <input type="number" step="any" class="form-input" id="metalHoldingCurrentPrice" placeholder="3120">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">買入日期</label>
+            <input type="date" class="form-input" id="metalHoldingBuyDate">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">管道 / 保管</label>
+            <select class="form-select" id="metalHoldingMarket">
+              <option value="台灣銀行">台灣銀行</option>
+              <option value="玉山銀行">玉山銀行</option>
+              <option value="第一銀行">第一銀行</option>
+              <option value="兆豐銀行">兆豐銀行</option>
+              <option value="永豐銀行">永豐銀行</option>
+              <option value="銀樓">銀樓 / 金飾店</option>
+              <option value="自行保管">自行保管（保險箱）</option>
+              <option value="券商">券商 / 複委託</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">買賣價差（%）</label>
+            <input type="number" step="any" min="0" class="form-input" id="metalHoldingSpread" placeholder="1.0（黃金存摺）／ 5-8（飾金）">
+            <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">賣回去會比牌價少領這個 %，這才是真正的成本</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">純度</label>
+          <input type="text" class="form-input" id="metalHoldingPurity" placeholder="999.9 / 9999 / 24K / 18K / 925 銀">
+        </div>
+        <div class="form-group">
+          <label class="form-label">筆記</label>
+          <textarea class="form-textarea" id="metalHoldingNotes" placeholder="買進理由、避險用途、放在哪裡、發票收據編號..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="metalHoldingDeleteBtn" onclick="deleteMetalHolding()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除這筆</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeMetalHoldingModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 貴金屬 交易 Modal ============ -->
+  <div class="modal-backdrop" id="metalTxnModal">
+    <div class="modal">
+      <h2 id="metalTxnModalTitle">新增 <em>交易</em></h2>
+      <form onsubmit="saveMetalTxn(event)">
+        <input type="hidden" id="metalTxnEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="metalTxnType" onchange="onMetalTxnTypeChange()">
+              <option value="buy">買進</option>
+              <option value="sell">賣出</option>
+              <option value="dividend">配息 / 利息（黃金 ETF 少數有）</option>
+              <option value="stock_div">贈與 / 增加數量（不花錢）</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="metalTxnDateLabel">日期</label>
+            <input type="date" class="form-input" id="metalTxnDate" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">⌕ 搜尋（代號或名稱）</label>
+          <div style="position:relative;">
+            <input type="text" class="form-input" id="metalTxnSearchBox" placeholder="例如 黃金存摺、金條、GLD..." autocomplete="off" oninput="onMetalTxnSearch(this.value)" onfocus="onMetalTxnSearch(this.value)" onblur="setTimeout(()=>document.getElementById('metalTxnSearchResults').style.display='none', 200);">
+            <div class="stock-search-results" id="metalTxnSearchResults" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">代號 / 簡稱</label>
+            <input type="text" class="form-input" id="metalTxnSymbol" required placeholder="黃金存摺" style="font-family:var(--mono);" oninput="onMetalTxnSymbolChange()">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">名稱</label>
+            <input type="text" class="form-input" id="metalTxnSymbolName" placeholder="例如 台銀黃金存摺">
+          </div>
+        </div>
+        <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:0.05em; margin:-6px 0 12px;" id="metalTxnCcyHint">此筆以 台幣 TWD · 公克 計價（跟著該檔的設定）</div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="metalTxnSharesLabel">數量</label>
+            <input type="number" step="any" min="0" class="form-input" id="metalTxnShares" required placeholder="100">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="metalTxnPriceLabel">單價 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="metalTxnPrice" required placeholder="2850">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="metalTxnFeeLabel">手續費 / 加工費 (NT$)</label>
+          <input type="number" step="any" class="form-input" id="metalTxnFee" placeholder="銀樓工錢、券商手續費（可留空）">
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="metalTxnNotes" placeholder="">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="metalTxnDeleteBtn" onclick="deleteMetalTxn()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeMetalTxnModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 貴金屬 批次牌價 Modal ============ -->
+  <div class="modal-backdrop" id="metalBatchPriceModal">
+    <div class="modal">
+      <h2>批次 <em>更新牌價</em></h2>
+      <div style="font-size:13px; color:var(--ink-secondary); margin-bottom:14px; line-height:1.6;">
+        手動填入各項目最新牌價，按「全部儲存」一次更新。<strong>請用該檔自己的幣別與單位</strong>（右邊有標）。台銀黃金存摺牌價可在台銀官網「黃金存摺」頁查到。
+      </div>
+      <div id="metalBatchPriceList" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="form-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn" onclick="closeMetalBatchPriceModal()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="saveMetalBatchPrices()">全部儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 貴金屬 雲端同步設定 Modal（Supabase）============ -->
+  <div class="modal-backdrop" id="metalSyncModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>☁ 跨裝置<em>雲端同步</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        透過你自己的 <strong>Supabase 專案</strong>同步貴金屬持有與交易記錄。可重用旅遊／台股／美股／加密貨幣用的 Supabase，無需另開。
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:0.1em;">
+          <input type="checkbox" id="metalSyncEnabled"> 啟用雲端同步
+        </label>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="metalSyncSupabaseUrl" class="form-input" placeholder="https://xxx.supabase.co" style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillMetalSyncFromTrv()" title="從台股／旅遊設定帶入">↓ 用現有的</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <input type="text" id="metalSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">User ID（多裝置要相同）</label>
+        <input type="text" id="metalSyncUserId" class="form-input" placeholder="kevin-personal（建議跟台股/美股用同一個）">
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px;">相同 ID 的裝置才會互通資料；不同 ID 等於不同帳號。</div>
+      </div>
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 建表 SQL（複製到 Supabase 跑一次）</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">到 Supabase Dashboard → 左側 <strong>SQL Editor</strong> → 點下方按鈕複製 SQL → 貼上 → Run。</div>
+        <button class="btn btn-sm" type="button" onclick="copyMetalSyncSql()" style="margin-top:10px;">📋 複製建表 SQL</button>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.5;">💡 會建 2 張表：<code>metal_holdings</code>、<code>metal_transactions</code>，用 RLS Allow-All policy（適合個人用）。</div>
+      </details>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">⚠ 衝突策略：last-write-wins。後寫入雲端的版本會贏。建議短時間內不要兩台同步編輯。</div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeMetalSyncModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveMetalSyncSettings()">儲存 + 立即同步</button>
       </div>
     </div>
   </div>
@@ -6401,7 +7009,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 7.0 · η</div>
+    <div>v 7.1 · η</div>
   </footer>
 </div>
 
@@ -6716,12 +7324,12 @@ alter publication supabase_realtime add table party_locations;</pre>
     { id: 'm_us_stock', name: '美股個股', nameEn: 'US · EQUITIES', icon: '★', desc: '持股管理、平均成本、損益計算、交易記錄（美元計價）。', status: 'active', groupId: 'g_invest', order: 5, builtin: true, target: 'usStockView' },
     { id: 'm_etf_market', name: '市值型 ETF', nameEn: 'INDEX · ETF', icon: '▣', desc: '0050、006208、VOO、VTI 等市值型追蹤。台幣/美元混合、追蹤指數與內扣費用率。長期被動配置主力。', status: 'active', groupId: 'g_invest', order: 6, builtin: true, target: 'mkEtfView' },
     { id: 'm_etf_dividend', name: '高股息 ETF', nameEn: 'DIVIDEND · ETF', icon: '◇', desc: '0056、00878 等現金流型。持股成本、配息追蹤、年化殖利率（台幣計價）。', status: 'active', groupId: 'g_invest', order: 7, builtin: true, target: 'hdEtfView' },
-    { id: 'm_active_fund', name: '主動式基金', nameEn: 'ACTIVE · FUND', icon: 'δ', desc: '個股型、主題型基金。績效比較、費用率追蹤。', status: 'soon', groupId: 'g_invest', order: 8 },
+    { id: 'm_active_fund', name: '主動式基金', nameEn: 'ACTIVE · FUND', icon: 'δ', desc: '境內／境外主動式基金。有沒有贏過指標、內扣費用每年吃掉多少，一眼看完。台幣/美元混合。', status: 'active', groupId: 'g_invest', order: 8, builtin: true, target: 'fundView' },
     { id: 'm_bond', name: '債券 · 債券 ETF', nameEn: 'BOND · FIXED INCOME', icon: '═', desc: '公債、公司債、高收益債、債券 ETF。配息率、存續期間（利率風險）、到期日。台幣/美元混合。', status: 'active', groupId: 'g_invest', order: 9, builtin: true, target: 'bondView' },
 
     // === 投資中心 · 另類資產（~30%）===
     { id: 'm_crypto', name: '加密貨幣', nameEn: 'CRYPTO · ASSETS', icon: '◆', desc: 'BTC / ETH / 穩定幣持倉、成本均價、交易記錄（美元計價）。', status: 'active', groupId: 'g_invest', order: 10, builtin: true, target: 'cryptoView' },
-    { id: 'm_metals', name: '貴金屬', nameEn: 'PRECIOUS · METALS', icon: '☼', desc: '黃金、白銀實體與紙黃金。對沖通膨、避險配置。', status: 'soon', groupId: 'g_invest', order: 11 },
+    { id: 'm_metals', name: '貴金屬', nameEn: 'PRECIOUS · METALS', icon: '☼', desc: '黃金存摺、實體金條、金幣、白銀與黃金 ETF。公克／台錢／盎司自動換算重量，買賣價差也算進去。', status: 'active', groupId: 'g_invest', order: 11, builtin: true, target: 'metalView' },
     { id: 'm_forex', name: '外幣存款', nameEn: 'FOREX · DEPOSIT', icon: '$', desc: '美元、日圓、人民幣等外幣定存與活存。匯兌損益、年利率、到期提醒，自動換算台幣。', status: 'active', groupId: 'g_invest', order: 12, builtin: true, target: 'fxDepView' },
 
     // === 投資中心 · 不動產 ===
@@ -6768,7 +7376,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '15';
+      const CURRENT_VERSION = '16';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -13111,6 +13719,20 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       recompute: s => recomputeCryptoHolding(s), saveT: () => saveCryptoTxns(), saveH: () => saveCryptoHoldings(), saveR: () => saveCryptoRealized(),
       pushT: (t, d) => pushCryptoTransactionToSupabase(t, d), pushH: (h, d) => pushCryptoHoldingToSupabase(h, d),
       render: () => { renderCryptoHoldings(); renderCryptoStats(); }
+    },
+    fund: {
+      name: '主動式基金', view: 'fundView', cur: 'MIXED', idp: 'ft2_', list: () => (typeof FUND_LIST !== 'undefined' ? FUND_LIST : []),
+      hKey: 'fund_holdings_v1', load: () => loadFund(), txns: () => fundTxns, holdings: () => fundHoldings,
+      recompute: s => recomputeFundHolding(s), saveT: () => saveFundTxns(), saveH: () => saveFundHoldings(), saveR: () => saveFundRealized(),
+      pushT: (t, d) => pushFundTransactionToSupabase(t, d), pushH: (h, d) => pushFundHoldingToSupabase(h, d),
+      render: () => { renderFundHoldings(); renderFundStats(); }
+    },
+    metal: {
+      name: '貴金屬', view: 'metalView', cur: 'MIXED', idp: 'mtx_', list: () => (typeof METAL_LIST !== 'undefined' ? METAL_LIST : []),
+      hKey: 'metal_holdings_v1', load: () => loadMetal(), txns: () => metalTxns, holdings: () => metalHoldings,
+      recompute: s => recomputeMetalHolding(s), saveT: () => saveMetalTxns(), saveH: () => saveMetalHoldings(), saveR: () => saveMetalRealized(),
+      pushT: (t, d) => pushMetalTransactionToSupabase(t, d), pushH: (h, d) => pushMetalHoldingToSupabase(h, d),
+      render: () => { renderMetalHoldings(); renderMetalStats(); }
     }
   };
   const DCA_DEFAULT_DAYS = [6, 16, 26];
@@ -13656,7 +14278,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     document.getElementById('dcaPlanName').value = s.name || s.symbol;
     document.getElementById('dcaPlanSearchBox').value = `${s.symbol} · ${s.name || ''}`;
     document.getElementById('dcaPlanSearchResults').style.display = 'none';
-    if (target === 'mketf' && s.ccy) { document.getElementById('dcaPlanCcy').value = s.ccy; onDcaPlanCcyChange(); }
+    if (t && t.cur === 'MIXED' && s.ccy) { document.getElementById('dcaPlanCcy').value = s.ccy; onDcaPlanCcyChange(); }
     if (s.market && !document.getElementById('dcaPlanBroker').value) document.getElementById('dcaPlanBroker').value = s.market;
     document.getElementById('dcaPlanAmount').focus();
   }
@@ -13918,7 +14540,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
       dcaExecId: exec.id,
       createdAt: Date.now(), updatedAt: Date.now()
     };
-    if (exec.target === 'mketf') txn.ccy = exec.ccy;
+    if (t.cur === 'MIXED') txn.ccy = exec.ccy;   // 混合幣別模組（市值型 ETF / 基金 / 貴金屬）要記下這筆的幣別
     txns.push(txn);
     t.recompute(exec.symbol);
     await t.saveT(); await t.saveH(); await t.saveR();
@@ -14321,7 +14943,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
       <div class="stat-card">
         <div class="stat-label">目前總資產</div>
         <div class="stat-value">${goalMoney(total)}</div>
-        <div class="stat-sub">五個資產模組自動加總</div>
+        <div class="stat-sub">所有資產模組自動加總</div>
       </div>
       <div class="stat-card ${avgPct >= 100 ? 'profit' : ''}">
         <div class="stat-label">平均達成率</div>
@@ -16408,6 +17030,1803 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
 
 
   // ============================================================
+  // 主動式基金 · Active Fund Module
+  // （鏡像市值型 ETF 的混合幣別；差異：基金類型、基金公司、比較基準報酬 → 超越指標 alpha）
+  // ============================================================
+  const FUND_STORAGE = {
+    holdings: 'fund_holdings_v1',
+    txns: 'fund_transactions_v1',
+    realized: 'fund_realized_v1',
+    sync: 'fund_sync_v1'
+  };
+  // expense = 總費用率（%／年，參考值，請以最新公開說明書為準）
+  const FUND_LIST = [
+    // === 境內基金（TWD）===
+    { symbol: '安聯台灣大壩', name: '安聯台灣大壩基金', company: '安聯投信', ftype: '股票型', region: '台灣', expense: 1.90, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '安聯台灣智慧', name: '安聯台灣智慧科技基金', company: '安聯投信', ftype: '產業主題型', region: '台灣科技', expense: 1.90, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '統一大滿貫', name: '統一大滿貫基金', company: '統一投信', ftype: '股票型', region: '台灣', expense: 1.85, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '統一奔騰', name: '統一奔騰基金', company: '統一投信', ftype: '股票型', region: '台灣', expense: 1.85, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '群益馬拉松', name: '群益馬拉松基金', company: '群益投信', ftype: '股票型', region: '台灣', expense: 1.85, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '野村優質', name: '野村優質基金', company: '野村投信', ftype: '股票型', region: '台灣', expense: 1.85, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '復華數位經濟', name: '復華全球物聯網科技基金', company: '復華投信', ftype: '產業主題型', region: '全球科技', expense: 1.90, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '元大高科技', name: '元大高科技基金', company: '元大投信', ftype: '產業主題型', region: '台灣科技', expense: 1.85, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '保德信高成長', name: '保德信高成長基金', company: '保德信投信', ftype: '股票型', region: '台灣', expense: 1.85, ccy: 'TWD', divType: '累積型', market: '基富通' },
+    { symbol: '復華全球短期收益', name: '復華全球短期收益基金', company: '復華投信', ftype: '債券型', region: '全球', expense: 1.00, ccy: 'TWD', divType: '月配息', market: '基富通' },
+    // === 境外基金（USD）===
+    { symbol: '安聯收益成長', name: '安聯收益成長基金（AM 類股）', company: 'Allianz 安聯', ftype: '多元資產', region: '美國', expense: 1.55, ccy: 'USD', divType: '月配息', market: '基富通' },
+    { symbol: '聯博全高收', name: '聯博全球高收益債券基金', company: 'AB 聯博', ftype: '債券型', region: '全球', expense: 1.65, ccy: 'USD', divType: '月配息', market: '基富通' },
+    { symbol: '聯博美國收益', name: '聯博美國收益基金', company: 'AB 聯博', ftype: '債券型', region: '美國', expense: 1.55, ccy: 'USD', divType: '月配息', market: '基富通' },
+    { symbol: '貝萊德世科', name: '貝萊德世界科技基金', company: 'BlackRock 貝萊德', ftype: '產業主題型', region: '全球科技', expense: 1.82, ccy: 'USD', divType: '累積型', market: '基富通' },
+    { symbol: '貝萊德世礦', name: '貝萊德世界礦業基金', company: 'BlackRock 貝萊德', ftype: '產業主題型', region: '全球', expense: 1.75, ccy: 'USD', divType: '累積型', market: '基富通' },
+    { symbol: '貝萊德環球配置', name: '貝萊德環球資產配置基金', company: 'BlackRock 貝萊德', ftype: '多元資產', region: '全球', expense: 1.80, ccy: 'USD', divType: '累積型', market: '基富通' },
+    { symbol: '富蘭克林美機會', name: '富蘭克林坦伯頓美國機會基金', company: 'Franklin 富蘭克林', ftype: '股票型', region: '美國', expense: 1.80, ccy: 'USD', divType: '累積型', market: '鉅亨買基金' },
+    { symbol: '富蘭克林公用', name: '富蘭克林公用事業基金', company: 'Franklin 富蘭克林', ftype: '產業主題型', region: '美國', expense: 1.50, ccy: 'USD', divType: '季配息', market: '鉅亨買基金' },
+    { symbol: '摩根環球高收', name: '摩根環球高收益債券基金', company: 'JPMorgan 摩根', ftype: '債券型', region: '全球', expense: 1.40, ccy: 'USD', divType: '月配息', market: '基富通' },
+    { symbol: '摩根美科技', name: '摩根美國科技基金', company: 'JPMorgan 摩根', ftype: '產業主題型', region: '美國科技', expense: 1.75, ccy: 'USD', divType: '累積型', market: '基富通' },
+    { symbol: '富達全球科技', name: '富達全球科技基金', company: 'Fidelity 富達', ftype: '產業主題型', region: '全球科技', expense: 1.90, ccy: 'USD', divType: '累積型', market: '基富通' },
+    { symbol: '施羅德環球收息', name: '施羅德環球股息基金', company: 'Schroders 施羅德', ftype: '股票型', region: '全球', expense: 1.50, ccy: 'USD', divType: '季配息', market: '基富通' },
+    { symbol: 'PIMCO投等債', name: 'PIMCO 全球投資級債券基金', company: 'PIMCO', ftype: '債券型', region: '全球', expense: 1.09, ccy: 'USD', divType: '月配息', market: '基富通' },
+    { symbol: '晉達環球黃金', name: '晉達環球策略黃金基金', company: 'Ninety One 晉達', ftype: '產業主題型', region: '全球', expense: 1.75, ccy: 'USD', divType: '累積型', market: '基富通' }
+  ];
+  (function dedupFundList() {
+    const seen = new Set();
+    for (let i = 0; i < FUND_LIST.length; i++) {
+      if (seen.has(FUND_LIST[i].symbol)) { FUND_LIST.splice(i, 1); i--; }
+      else seen.add(FUND_LIST[i].symbol);
+    }
+  })();
+  function searchFundList(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    return FUND_LIST.filter(s =>
+      s.symbol.toLowerCase().includes(q) ||
+      s.name.toLowerCase().includes(q) ||
+      (s.company && s.company.toLowerCase().includes(q)) ||
+      (s.ftype && s.ftype.toLowerCase().includes(q)) ||
+      (s.region && s.region.toLowerCase().includes(q))
+    ).slice(0, 12);
+  }
+  // 哪些類型要算進「債券／現金」那一格（資產配置分析用）
+  const FUND_BONDISH = ['債券型', '貨幣市場型'];
+  const fundIsBondish = h => FUND_BONDISH.indexOf(h && h.ftype) > -1;
+
+  let fundHoldings = [];
+  let fundTxns = [];
+  let fundRealizedPnL = 0;   // 已換算台幣
+  let fundExpandedHoldingId = null;
+  let fundSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
+  let fundSyncClient = null;
+
+  // === 幣別（台幣 / 美元混合）· 匯率沿用現金流那份 ===
+  function fundFx() {
+    try { if (Number(cashflowFx.usdTwd) > 0) return Number(cashflowFx.usdTwd); } catch (e) {}
+    return 32;
+  }
+  const fundCcy = h => (h && h.ccy === 'USD') ? 'USD' : 'TWD';
+  const fundRate = h => fundCcy(h) === 'USD' ? fundFx() : 1;
+  const fundSym = h => fundCcy(h) === 'USD' ? 'US$' : 'NT$';
+  const fundMoneyC = (n, h) => fundSym(h) + Math.round(Number(n || 0)).toLocaleString('en-US');
+  const fundMoneySignC = (n, h) => (n >= 0 ? '+' : '-') + fundSym(h) + Math.round(Math.abs(Number(n || 0))).toLocaleString('en-US');
+  const fundMoney = n => 'NT$' + Math.round(Number(n || 0)).toLocaleString('en-US');
+  const fundMoneySign = n => (n >= 0 ? '+' : '-') + 'NT$' + Math.round(Math.abs(Number(n || 0))).toLocaleString('en-US');
+  const fundUnits = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 4 });
+  const fundNav = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const fundCostTwd = h => holdingCost(h) * fundRate(h);
+  const fundValueTwd = h => holdingValue(h) * fundRate(h);
+  // 超越指標多少（正＝贏過大盤）；沒填指標報酬回 null
+  function fundAlpha(h) {
+    const b = Number(h.bench);
+    if (!isFinite(b) || h.bench == null || h.bench === '') return null;
+    return holdingPnLPct(h) - b;
+  }
+
+  // === 配息 ===
+  function fundSymbolDividends(symbol, sinceTs) {
+    return fundTxns
+      .filter(t => t.type === 'dividend' && t.symbol === symbol)
+      .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
+      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+  }
+  function fundTotalDividends(sinceTs) {
+    return fundTxns
+      .filter(t => t.type === 'dividend')
+      .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
+      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * fundRate(t), 0);
+  }
+
+  async function loadFund() {
+    try { const h = await readKey(FUND_STORAGE.holdings); fundHoldings = h ? JSON.parse(h) : []; }
+    catch (e) { fundHoldings = []; }
+    try { const t = await readKey(FUND_STORAGE.txns); fundTxns = t ? JSON.parse(t) : []; }
+    catch (e) { fundTxns = []; }
+    try { const r = await readKey(FUND_STORAGE.realized); fundRealizedPnL = r ? Number(r) : 0; }
+    catch (e) { fundRealizedPnL = 0; }
+    try {
+      await loadCashflowFx();
+      if (!cashflowFx.updatedAt) await refreshCashflowFx();
+    } catch (e) {}
+    await loadFundSyncConfig();
+    renderFundStats();
+    renderFundHoldings();
+    renderFundSyncBadge();
+    if (fundSyncConfig.enabled) {
+      pullAllFundFromSupabase().then(r => {
+        if (r) {
+          renderFundStats();
+          renderFundHoldings();
+          renderFundSyncBadge();
+          if (r.hCount > 0 || r.tCount > 0) showToast(`☁ 已從雲端同步 · ${r.hCount} 持有 / ${r.tCount} 交易`);
+        }
+      }).catch(e => console.warn('fund auto pull fail', e));
+    }
+  }
+  async function saveFundHoldings() { await writeKey(FUND_STORAGE.holdings, JSON.stringify(fundHoldings)); }
+  async function saveFundTxns() { await writeKey(FUND_STORAGE.txns, JSON.stringify(fundTxns)); }
+  async function saveFundRealized() { await writeKey(FUND_STORAGE.realized, String(fundRealizedPnL)); }
+
+  // ===== Fund Supabase 同步 =====
+  async function loadFundSyncConfig() {
+    try { const v = await readKey(FUND_STORAGE.sync); if (v) fundSyncConfig = { ...fundSyncConfig, ...JSON.parse(v) }; } catch (e) {}
+  }
+  async function saveFundSyncConfig() { await writeKey(FUND_STORAGE.sync, JSON.stringify(fundSyncConfig)); }
+  async function initFundSyncClient() {
+    if (!fundSyncConfig.enabled || !fundSyncConfig.supabaseUrl || !fundSyncConfig.supabaseKey || !fundSyncConfig.userId) return null;
+    if (fundSyncClient) return fundSyncClient;
+    if (!window.supabase) {
+      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js', 'sdk-supabase');
+    }
+    fundSyncClient = window.supabase.createClient(fundSyncConfig.supabaseUrl, fundSyncConfig.supabaseKey);
+    return fundSyncClient;
+  }
+  async function pushFundHoldingToSupabase(h, deleted = false) {
+    try {
+      const sb = await initFundSyncClient();
+      if (!sb) return;
+      await sb.from('fund_holdings').upsert({ id: h.id, user_id: fundSyncConfig.userId, data: h, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push fund holding fail', e); }
+  }
+  async function pushFundTransactionToSupabase(t, deleted = false) {
+    try {
+      const sb = await initFundSyncClient();
+      if (!sb) return;
+      await sb.from('fund_transactions').upsert({ id: t.id, user_id: fundSyncConfig.userId, symbol: t.symbol || null, data: t, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push fund tx fail', e); }
+  }
+  async function pullAllFundFromSupabase() {
+    const sb = await initFundSyncClient();
+    if (!sb) return null;
+    const { data: hData, error: hErr } = await sb.from('fund_holdings').select('*').eq('user_id', fundSyncConfig.userId).eq('deleted', false);
+    if (hErr) throw new Error('拉持有失敗: ' + hErr.message);
+    const { data: tData, error: tErr } = await sb.from('fund_transactions').select('*').eq('user_id', fundSyncConfig.userId).eq('deleted', false);
+    if (tErr) throw new Error('拉交易失敗: ' + tErr.message);
+    const localHMap = new Map(fundHoldings.map(h => [h.id, h]));
+    (hData || []).forEach(row => {
+      const local = localHMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localHMap.set(row.id, row.data);
+    });
+    fundHoldings = Array.from(localHMap.values());
+    const localTMap = new Map(fundTxns.map(t => [t.id, t]));
+    (tData || []).forEach(row => {
+      const local = localTMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localTMap.set(row.id, row.data);
+    });
+    fundTxns = Array.from(localTMap.values());
+    fundRealizedPnL = recomputeAllFundRealized();
+    await saveFundHoldings();
+    await saveFundTxns();
+    await saveFundRealized();
+    fundSyncConfig.lastPullAt = Date.now();
+    await saveFundSyncConfig();
+    return { hCount: (hData || []).length, tCount: (tData || []).length };
+  }
+  async function pushAllFundToSupabase() {
+    let ok = 0;
+    for (const h of fundHoldings) { try { await pushFundHoldingToSupabase(h); ok++; } catch (e) {} }
+    for (const t of fundTxns) { try { await pushFundTransactionToSupabase(t); ok++; } catch (e) {} }
+    return ok;
+  }
+  async function syncFundNow() {
+    if (!fundSyncConfig.enabled) { openFundSyncModal(); return; }
+    const btn = document.getElementById('fundSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '☁ 同步中…'; }
+    try {
+      const r = await pullAllFundFromSupabase();
+      if (!r) throw new Error('Client 初始化失敗 · 請檢查設定');
+      await pushAllFundToSupabase();
+      renderFundHoldings();
+      renderFundStats();
+      renderFundSyncBadge();
+      showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持有 / ${r.tCount} 交易`);
+    } catch (e) {
+      showToast('☁ 同步失敗：' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
+    }
+  }
+  function renderFundSyncBadge() {
+    const el = document.getElementById('fundSyncBadge');
+    if (!el) return;
+    if (!fundSyncConfig.enabled) { el.textContent = '☁ 未啟用'; el.style.color = 'var(--ink-tertiary)'; return; }
+    const t = fundSyncConfig.lastPullAt;
+    el.textContent = t ? `☁ ${new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : '☁ 待同步';
+    el.style.color = 'var(--accent)';
+  }
+  async function openFundSyncModal() {
+    await loadFundSyncConfig();
+    document.getElementById('fundSyncEnabled').checked = !!fundSyncConfig.enabled;
+    document.getElementById('fundSyncSupabaseUrl').value = fundSyncConfig.supabaseUrl || '';
+    document.getElementById('fundSyncSupabaseKey').value = fundSyncConfig.supabaseKey || '';
+    document.getElementById('fundSyncUserId').value = fundSyncConfig.userId || '';
+    if (!fundSyncConfig.userId && typeof twSyncConfig !== 'undefined' && twSyncConfig.userId) {
+      document.getElementById('fundSyncUserId').placeholder = `（台股已設：${twSyncConfig.userId}，建議用同一個）`;
+    }
+    document.getElementById('fundSyncModal').classList.add('active');
+  }
+  function closeFundSyncModal() { document.getElementById('fundSyncModal').classList.remove('active'); }
+  function fillFundSyncFromTrv() {
+    const src = (typeof twSyncConfig !== 'undefined' && twSyncConfig.supabaseUrl) ? twSyncConfig
+              : (typeof cryptoSyncConfig !== 'undefined' && cryptoSyncConfig.supabaseUrl) ? cryptoSyncConfig
+              : trvMultiConfig;
+    if (src?.supabaseUrl) document.getElementById('fundSyncSupabaseUrl').value = src.supabaseUrl;
+    if (src?.supabaseKey) document.getElementById('fundSyncSupabaseKey').value = src.supabaseKey;
+    if (src?.userId) document.getElementById('fundSyncUserId').value = src.userId;
+    showToast(src?.supabaseUrl ? '已帶入現有設定' : '尚未在台股／加密貨幣／旅遊設定 Supabase');
+  }
+  async function saveFundSyncSettings() {
+    fundSyncConfig.enabled = document.getElementById('fundSyncEnabled').checked;
+    fundSyncConfig.supabaseUrl = document.getElementById('fundSyncSupabaseUrl').value.trim();
+    fundSyncConfig.supabaseKey = document.getElementById('fundSyncSupabaseKey').value.trim();
+    fundSyncConfig.userId = document.getElementById('fundSyncUserId').value.trim();
+    if (fundSyncConfig.enabled) {
+      if (!fundSyncConfig.supabaseUrl) return showToast('請填 Supabase URL');
+      if (!fundSyncConfig.supabaseKey) return showToast('請填 Supabase Anon Key');
+      if (!fundSyncConfig.userId) return showToast('請填 User ID（自取，多裝置要相同）');
+      if (!/^https:\/\/.+\.supabase\.co$/.test(fundSyncConfig.supabaseUrl)) return showToast('Supabase URL 格式錯（應為 https://xxx.supabase.co）');
+    }
+    fundSyncClient = null;
+    await saveFundSyncConfig();
+    renderFundSyncBadge();
+    showToast('☁ 設定已儲存');
+    closeFundSyncModal();
+    if (fundSyncConfig.enabled) syncFundNow();
+  }
+  function copyFundSyncSql() {
+    const sql = `-- 在 Supabase Dashboard → SQL Editor 跑一次（建表）
+CREATE TABLE IF NOT EXISTS fund_holdings (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_fund_holdings_user ON fund_holdings(user_id);
+ALTER TABLE fund_holdings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON fund_holdings;
+CREATE POLICY "Allow all" ON fund_holdings FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS fund_transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  symbol TEXT,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_fund_transactions_user ON fund_transactions(user_id);
+ALTER TABLE fund_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON fund_transactions;
+CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (true);`;
+    navigator.clipboard.writeText(sql).then(
+      () => showToast('SQL 已複製，貼到 Supabase SQL Editor 跑一次'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+
+  // === 統計卡片（統一台幣 · 含超越指標與費用率）===
+  function renderFundStats() {
+    const totalCost = fundHoldings.reduce((s, h) => s + fundCostTwd(h), 0);
+    const totalValue = fundHoldings.reduce((s, h) => s + fundValueTwd(h), 0);
+    const unrealized = totalValue - totalCost;
+    const unrealizedPct = totalCost > 0 ? (unrealized / totalCost) * 100 : 0;
+    const totalDiv = fundTotalDividends();
+    const oneYearAgo = Date.now() - 365 * 24 * 3600 * 1000;
+    const div12m = fundTotalDividends(oneYearAgo);
+    // 以「各檔現值（台幣）」加權：費用率、超越指標
+    let eNum = 0, eDen = 0, aNum = 0, aDen = 0, aCount = 0;
+    fundHoldings.forEach(h => {
+      const v = fundValueTwd(h);
+      if (!(v > 0)) return;
+      const e = Number(h.expense);
+      if (e > 0) { eNum += e * v; eDen += v; }
+      const a = fundAlpha(h);
+      if (a != null) { aNum += a * v; aDen += v; aCount++; }
+    });
+    const wExpense = eDen > 0 ? (eNum / eDen) : 0;
+    const yearFee = wExpense / 100 * eDen;
+    const wAlpha = aDen > 0 ? (aNum / aDen) : null;
+    const pnlClass = unrealized > 0 ? 'profit' : unrealized < 0 ? 'loss' : 'flat';
+    const alphaClass = wAlpha == null ? 'flat' : wAlpha > 0 ? 'profit' : wAlpha < 0 ? 'loss' : 'flat';
+    const hasUsd = fundHoldings.some(h => fundCcy(h) === 'USD');
+    document.getElementById('fundStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">總投入</div>
+        <div class="stat-value">${fundMoney(totalCost)}</div>
+        <div class="stat-sub">${fundHoldings.length} 檔 · 統一台幣</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">現值</div>
+        <div class="stat-value">${fundMoney(totalValue)}</div>
+        <div class="stat-sub">${hasUsd ? 'USD/TWD ' + fundFx().toFixed(2) : 'CURRENT · NET · VALUE'}</div>
+      </div>
+      <div class="stat-card ${pnlClass}">
+        <div class="stat-label">未實現損益</div>
+        <div class="stat-value">${fundMoneySign(unrealized)}</div>
+        <div class="stat-pct">${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%</div>
+      </div>
+      <div class="stat-card ${alphaClass}">
+        <div class="stat-label">有沒有贏過指標</div>
+        <div class="stat-value">${wAlpha == null ? '—' : (wAlpha >= 0 ? '+' : '') + wAlpha.toFixed(2) + '%'}</div>
+        <div class="stat-sub">${wAlpha == null ? '請在持有裡填「指標同期報酬」' : (aCount + ' 檔有比較 · ' + (wAlpha >= 0 ? '整體贏過大盤' : '整體輸給大盤'))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">加權內扣費用</div>
+        <div class="stat-value">${wExpense.toFixed(2)}%</div>
+        <div class="stat-sub">${eDen > 0 ? '每年約被扣 ' + fundMoney(yearFee) : '未填費用率'}${totalDiv > 0 ? ' · 已領息 ' + fundMoney(totalDiv) : ''}</div>
+      </div>
+    `;
+    // 有配息的話，把近一年配息塞進第 5 張卡的 title 方便對照
+    const cards = document.querySelectorAll('#fundStats .stat-card');
+    if (cards.length && div12m > 0) cards[cards.length - 1].title = `近一年配息 ${fundMoney(div12m)}`;
+  }
+
+  function renderFundHoldings() {
+    const grid = document.getElementById('fundHoldingsGrid');
+    if (fundHoldings.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">δ</span><h3>尚無基金部位</h3><p>點右上「+ 新增持有」或「+ 新交易」開始記錄。境內（台幣）與境外（美元）基金都可以放在這裡，統計會自動換算成台幣。</p></div>';
+      return;
+    }
+    const sortBy = document.getElementById('fundSortBy')?.value || 'value';
+    const sorted = fundHoldings.slice().sort((a, b) => {
+      if (sortBy === 'value') return fundValueTwd(b) - fundValueTwd(a);
+      if (sortBy === 'alpha') {
+        const aa = fundAlpha(a), bb = fundAlpha(b);
+        return (bb == null ? -9999 : bb) - (aa == null ? -9999 : aa);
+      }
+      if (sortBy === 'pnl_pct') return holdingPnLPct(b) - holdingPnLPct(a);
+      if (sortBy === 'expense') return (Number(a.expense) || 99) - (Number(b.expense) || 99);
+      if (sortBy === 'pnl_abs') return (holdingPnL(b) * fundRate(b)) - (holdingPnL(a) * fundRate(a));
+      if (sortBy === 'symbol') return (a.symbol || '').localeCompare(b.symbol || '');
+      if (sortBy === 'date') return (b.buyDate || '').localeCompare(a.buyDate || '');
+      return 0;
+    });
+    grid.innerHTML = sorted.map(h => fundHoldingCardHtml(h)).join('');
+  }
+
+  function fundHoldingCardHtml(h) {
+    const pnl = holdingPnL(h);
+    const pnlPct = holdingPnLPct(h);
+    const cls = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat';
+    const expanded = fundExpandedHoldingId === h.id ? 'expanded' : '';
+    const totalDiv = fundSymbolDividends(h.symbol);
+    const isUsd = fundCcy(h) === 'USD';
+    const exp = Number(h.expense) || 0;
+    const alpha = fundAlpha(h);
+    const alphaColor = alpha == null ? 'var(--ink-tertiary)' : alpha >= 0 ? 'var(--accent)' : 'var(--danger)';
+    const txnsForHolding = fundTxns.filter(t => t.symbol === h.symbol).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const txnHtml = txnsForHolding.length === 0
+      ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
+      : txnsForHolding.map(t => {
+          const typeLabel = { buy: '申', sell: '贖', dividend: '息', stock_div: '增' }[t.type] || '?';
+          const right = t.type === 'dividend'
+            ? `${fundUnits(t.shares)} × ${fundNav(t.price)} = ${fundMoneyC((t.shares || 0) * (t.price || 0), h)}`
+            : `${fundUnits(t.shares)} 單位 × ${fundNav(t.price)}`;
+          return `
+            <div class="hc-txn-row" onclick="event.stopPropagation(); openFundTxnModal('${escape(t.id)}')">
+              <span class="hc-txn-type ${escape(t.type)}">${typeLabel}</span>
+              <span style="flex:1; padding:0 8px;">${escape(t.date || '')}</span>
+              <span>${right}</span>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div class="holding-card ${cls} ${expanded}" data-hid="${escape(h.id)}" onclick="toggleFundHoldingExpand('${escape(h.id)}')">
+        <div class="hc-top">
+          <div class="hc-symbol-wrap">
+            <div class="hc-symbol">${escape(h.symbol)}</div>
+            <div class="hc-name">${escape(h.name)}</div>
+            <div class="hc-meta">
+              <span style="color:${isUsd ? 'var(--accent-warm)' : 'var(--ink-tertiary)'};">${isUsd ? 'USD' : 'TWD'}</span>
+              <span>${escape(h.company || h.market || '基金')}</span>
+              ${h.region ? `<span>${escape(h.region)}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${fundMoneySignC(pnl, h)}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin:10px 0; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12px; flex-wrap:wrap;">
+          <span style="color:var(--accent); font-family:var(--mono); letter-spacing:0.1em; white-space:nowrap;">δ 基金</span>
+          <span style="color:var(--ink-primary);">${escape(h.ftype || '未填類型')}</span>
+          <span style="color:var(--ink-tertiary); font-size:11px;">${escape(h.divType || '')}</span>
+          <span style="margin-left:auto; color:var(--ink-secondary); white-space:nowrap;">${alpha == null ? '未填指標' : (alpha >= 0 ? '贏指標 ' : '輸指標 ')}<strong style="color:${alphaColor};">${alpha == null ? '—' : (alpha >= 0 ? '+' : '') + alpha.toFixed(2) + '%'}</strong></span>
+          ${exp > 0 ? `<span style="color:var(--ink-tertiary); font-family:var(--mono); font-size:10px; white-space:nowrap;">內扣 ${exp.toFixed(2)}%</span>` : ''}
+        </div>
+        <div class="hc-prices">
+          <div class="hc-price-cell">
+            <div class="hc-price-label">申購淨值</div>
+            <div class="hc-price-val">${fundNav(h.avgCost || 0)}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">目前淨值</div>
+            <div class="hc-price-val ${cls}">${h.currentPrice ? fundNav(h.currentPrice) : '—'}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現值</div>
+            <div class="hc-price-val">${fundMoneyC(holdingValue(h), h)}</div>
+          </div>
+        </div>
+        <div class="hc-shares-cost" style="flex-wrap:wrap; row-gap:4px;">
+          <span style="white-space:nowrap;"><strong>${fundUnits(h.shares)}</strong> 單位</span>
+          <span style="color:var(--ink-tertiary);">×</span>
+          <span style="white-space:nowrap;">成本 <strong>${fundMoneyC(holdingCost(h), h)}</strong></span>
+          ${isUsd ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">≈ ${fundMoney(fundValueTwd(h))}</span>` : ''}
+          ${totalDiv > 0 ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--accent);">已領息 ${fundMoneyC(totalDiv, h)}</span>` : ''}
+          ${h.benchName ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">vs ${escape(h.benchName)}</span>` : ''}
+          ${h.buyDate ? `<span style="margin-left:auto; white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(h.buyDate)}</span>` : ''}
+        </div>
+        ${h.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(h.notes)}</div>` : ''}
+        <div class="hc-actions" onclick="event.stopPropagation();">
+          <button class="hc-mini-btn" onclick="openFundHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
+          <button class="hc-mini-btn" onclick="openFundTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
+          <button class="hc-mini-btn" onclick="openFundTxnModal(null, '${escape(h.symbol)}', 'dividend'); event.stopPropagation();">+ 配息</button>
+          <button class="hc-mini-btn" onclick="toggleFundHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
+        </div>
+        <div class="hc-txn-list">${txnHtml}</div>
+      </div>
+    `;
+  }
+  function toggleFundHoldingExpand(id) {
+    fundExpandedHoldingId = (fundExpandedHoldingId === id) ? null : id;
+    renderFundHoldings();
+  }
+
+  function onFundHoldingSearch(q) {
+    const box = document.getElementById('fundHoldingSearchResults');
+    const results = searchFundList(q);
+    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = results.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickFundHoldingItem('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape((s.ccy === 'USD' ? 'USD · ' : '') + (s.ftype || ''))}${s.expense ? ' · 內扣 ' + s.expense + '%' : ''}</span>
+      </div>
+    `).join('');
+  }
+  function pickFundHoldingItem(symbol) {
+    const s = FUND_LIST.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('fundHoldingSymbol').value = s.symbol;
+    document.getElementById('fundHoldingName').value = s.name;
+    document.getElementById('fundHoldingCcy').value = s.ccy || 'TWD';
+    const ftSel = document.getElementById('fundHoldingFtype');
+    if (ftSel) ftSel.value = [...ftSel.options].some(o => o.value === s.ftype) ? s.ftype : '股票型';
+    document.getElementById('fundHoldingCompany').value = s.company || '';
+    document.getElementById('fundHoldingRegion').value = s.region || '';
+    document.getElementById('fundHoldingExpense').value = s.expense != null ? s.expense : '';
+    const dvSel = document.getElementById('fundHoldingDivType');
+    if (dvSel) dvSel.value = [...dvSel.options].some(o => o.value === s.divType) ? s.divType : '累積型';
+    const mkSel = document.getElementById('fundHoldingMarket');
+    if (mkSel) mkSel.value = [...mkSel.options].some(o => o.value === s.market) ? s.market : '其他';
+    document.getElementById('fundHoldingSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('fundHoldingSearchResults').style.display = 'none';
+    onFundHoldingCcyChange();
+    document.getElementById('fundHoldingShares').focus();
+  }
+  function onFundHoldingCcyChange() {
+    const ccy = document.getElementById('fundHoldingCcy')?.value === 'USD' ? 'US$' : 'NT$';
+    const a = document.getElementById('fundHoldingAvgCostLabel');
+    const b = document.getElementById('fundHoldingCurrentPriceLabel');
+    if (a) a.textContent = `平均申購淨值 (${ccy})`;
+    if (b) b.textContent = `目前淨值 NAV (${ccy})`;
+  }
+  function onFundTxnSearch(q) {
+    const box = document.getElementById('fundTxnSearchResults');
+    const local = fundHoldings.filter(h =>
+      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
+    ).map(h => ({ symbol: h.symbol, name: h.name, ftype: '我的持有', ccy: fundCcy(h) }));
+    const builtIn = searchFundList(q);
+    const seen = new Set(local.map(x => x.symbol));
+    const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
+    if (combined.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = combined.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickFundTxnItem('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape((s.ccy === 'USD' ? 'USD · ' : '') + (s.ftype || ''))}</span>
+      </div>
+    `).join('');
+  }
+  function pickFundTxnItem(symbol) {
+    const h = fundHoldings.find(x => x.symbol === symbol);
+    const s = h || FUND_LIST.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('fundTxnSymbol').value = s.symbol;
+    document.getElementById('fundTxnSymbolName').value = s.name;
+    document.getElementById('fundTxnSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('fundTxnSearchResults').style.display = 'none';
+    document.getElementById('fundTxnShares').focus();
+    if (h && h.currentPrice) document.getElementById('fundTxnPrice').value = h.currentPrice;
+    onFundTxnTypeChange();
+  }
+  function fundCcyOfSymbol(symbol) {
+    const h = fundHoldings.find(x => x.symbol === symbol);
+    if (h) return fundCcy(h);
+    const s = FUND_LIST.find(x => x.symbol === symbol);
+    return (s && s.ccy === 'USD') ? 'USD' : 'TWD';
+  }
+
+  // === Holding CRUD ===
+  function openFundHoldingModal(id) {
+    const isEdit = !!id;
+    document.getElementById('fundHoldingEditId').value = id || '';
+    document.getElementById('fundHoldingDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('fundHoldingModalTitle').innerHTML = isEdit ? '編輯 <em>持有</em>' : '新增 <em>持有</em>';
+    if (isEdit) {
+      const h = fundHoldings.find(x => x.id === id);
+      document.getElementById('fundHoldingSymbol').value = h.symbol;
+      document.getElementById('fundHoldingName').value = h.name;
+      document.getElementById('fundHoldingCcy').value = fundCcy(h);
+      document.getElementById('fundHoldingFtype').value = h.ftype || '股票型';
+      document.getElementById('fundHoldingCompany').value = h.company || '';
+      document.getElementById('fundHoldingRegion').value = h.region || '';
+      document.getElementById('fundHoldingShares').value = h.shares;
+      document.getElementById('fundHoldingAvgCost').value = h.avgCost;
+      document.getElementById('fundHoldingCurrentPrice').value = h.currentPrice || '';
+      document.getElementById('fundHoldingBuyDate').value = h.buyDate || '';
+      document.getElementById('fundHoldingMarket').value = h.market || '基富通';
+      document.getElementById('fundHoldingExpense').value = h.expense != null ? h.expense : '';
+      document.getElementById('fundHoldingBenchName').value = h.benchName || '';
+      document.getElementById('fundHoldingBench').value = h.bench != null ? h.bench : '';
+      document.getElementById('fundHoldingDivType').value = h.divType || '累積型';
+      document.getElementById('fundHoldingNotes').value = h.notes || '';
+      document.getElementById('fundHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
+    } else {
+      ['fundHoldingSymbol','fundHoldingName','fundHoldingCompany','fundHoldingRegion','fundHoldingShares','fundHoldingAvgCost','fundHoldingCurrentPrice','fundHoldingExpense','fundHoldingBenchName','fundHoldingBench','fundHoldingNotes','fundHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('fundHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fundHoldingCcy').value = 'TWD';
+      document.getElementById('fundHoldingFtype').value = '股票型';
+      document.getElementById('fundHoldingMarket').value = '基富通';
+      document.getElementById('fundHoldingDivType').value = '累積型';
+    }
+    onFundHoldingCcyChange();
+    document.getElementById('fundHoldingSearchResults').style.display = 'none';
+    document.getElementById('fundHoldingModal').classList.add('active');
+  }
+  function closeFundHoldingModal() { document.getElementById('fundHoldingModal').classList.remove('active'); }
+  async function saveFundHolding(e) {
+    e.preventDefault();
+    const id = document.getElementById('fundHoldingEditId').value;
+    const benchRaw = document.getElementById('fundHoldingBench').value.trim();
+    const data = {
+      symbol: document.getElementById('fundHoldingSymbol').value.trim().toUpperCase(),
+      name: document.getElementById('fundHoldingName').value.trim(),
+      ccy: document.getElementById('fundHoldingCcy').value === 'USD' ? 'USD' : 'TWD',
+      ftype: document.getElementById('fundHoldingFtype').value,
+      company: document.getElementById('fundHoldingCompany').value.trim(),
+      region: document.getElementById('fundHoldingRegion').value.trim(),
+      shares: Number(document.getElementById('fundHoldingShares').value),
+      avgCost: Number(document.getElementById('fundHoldingAvgCost').value),
+      currentPrice: Number(document.getElementById('fundHoldingCurrentPrice').value) || null,
+      buyDate: document.getElementById('fundHoldingBuyDate').value,
+      market: document.getElementById('fundHoldingMarket').value,
+      expense: Number(document.getElementById('fundHoldingExpense').value) || null,
+      benchName: document.getElementById('fundHoldingBenchName').value.trim(),
+      bench: benchRaw === '' ? null : Number(benchRaw),   // 可以是負數，不能用 || null
+      divType: document.getElementById('fundHoldingDivType').value,
+      notes: document.getElementById('fundHoldingNotes').value.trim()
+    };
+    let saved;
+    if (id) {
+      const i = fundHoldings.findIndex(h => h.id === id);
+      if (i > -1) { fundHoldings[i] = { ...fundHoldings[i], ...data, updatedAt: Date.now() }; saved = fundHoldings[i]; }
+    } else {
+      const exist = fundHoldings.find(h => h.symbol === data.symbol);
+      if (exist) { showToast(`已有持有 ${exist.name}，請改點編輯。`); return; }
+      saved = { id: 'fu_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      fundHoldings.push(saved);
+    }
+    // 幣別改了，這檔的舊交易也一起跟著改，避免混幣算錯
+    if (saved) fundTxns.forEach(t => { if (t.symbol === saved.symbol && t.ccy !== saved.ccy) { t.ccy = saved.ccy; t.updatedAt = Date.now(); pushFundTransactionToSupabase(t); } });
+    fundRealizedPnL = recomputeAllFundRealized();
+    await saveFundHoldings();
+    await saveFundTxns();
+    await saveFundRealized();
+    closeFundHoldingModal();
+    renderFundHoldings();
+    renderFundStats();
+    showToast(id ? '持有已更新' : '已新增持有');
+    if (saved) pushFundHoldingToSupabase(saved);
+  }
+  async function deleteFundHolding() {
+    const id = document.getElementById('fundHoldingEditId').value;
+    if (!id) return;
+    const h = fundHoldings.find(x => x.id === id);
+    if (!h) return;
+    const relTxns = fundTxns.filter(t => t.symbol === h.symbol).length;
+    const msg = relTxns > 0
+      ? `確定刪除 ${h.name}（${h.symbol}）？此持有有 ${relTxns} 筆交易紀錄不會被刪除（保留作為歷史）。`
+      : `確定刪除 ${h.name}（${h.symbol}）？`;
+    if (!confirm(msg)) return;
+    fundHoldings = fundHoldings.filter(x => x.id !== id);
+    await saveFundHoldings();
+    closeFundHoldingModal();
+    renderFundHoldings();
+    renderFundStats();
+    pushFundHoldingToSupabase(h, true);
+  }
+
+  // === Transaction CRUD ===
+  function openFundTxnModal(id, presetSymbol, presetType) {
+    const isEdit = !!id;
+    document.getElementById('fundTxnEditId').value = id || '';
+    document.getElementById('fundTxnDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('fundTxnModalTitle').innerHTML = isEdit ? '編輯 <em>交易</em>' : '新增 <em>交易</em>';
+    document.getElementById('fundTxnSearchResults').style.display = 'none';
+    if (isEdit) {
+      const t = fundTxns.find(x => x.id === id);
+      document.getElementById('fundTxnType').value = t.type;
+      document.getElementById('fundTxnDate').value = t.date || '';
+      document.getElementById('fundTxnSymbol').value = t.symbol;
+      document.getElementById('fundTxnSymbolName').value = t.symbolName || '';
+      document.getElementById('fundTxnShares').value = t.shares;
+      document.getElementById('fundTxnPrice').value = t.price;
+      document.getElementById('fundTxnFee').value = t.fee || '';
+      document.getElementById('fundTxnNotes').value = t.notes || '';
+      document.getElementById('fundTxnSearchBox').value = `${t.symbol} · ${t.symbolName || ''}`;
+    } else {
+      ['fundTxnSymbolName','fundTxnShares','fundTxnPrice','fundTxnFee','fundTxnNotes','fundTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('fundTxnType').value = presetType || 'buy';
+      document.getElementById('fundTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fundTxnSymbol').value = presetSymbol || '';
+      if (presetSymbol) {
+        const h = fundHoldings.find(x => x.symbol === presetSymbol);
+        if (h) {
+          document.getElementById('fundTxnSymbolName').value = h.name;
+          document.getElementById('fundTxnSearchBox').value = `${h.symbol} · ${h.name}`;
+          if (presetType === 'dividend') document.getElementById('fundTxnShares').value = h.shares || '';
+        }
+      }
+    }
+    onFundTxnTypeChange();
+    document.getElementById('fundTxnModal').classList.add('active');
+  }
+  function closeFundTxnModal() { document.getElementById('fundTxnModal').classList.remove('active'); }
+  function onFundTxnSymbolChange() {
+    const sym = document.getElementById('fundTxnSymbol').value.trim().toUpperCase();
+    const h = fundHoldings.find(x => x.symbol === sym);
+    if (h) document.getElementById('fundTxnSymbolName').value = h.name;
+    onFundTxnTypeChange();
+  }
+  function onFundTxnTypeChange() {
+    const type = document.getElementById('fundTxnType').value;
+    const sym = document.getElementById('fundTxnSymbol').value.trim().toUpperCase();
+    const cur = fundCcyOfSymbol(sym) === 'USD' ? 'US$' : 'NT$';
+    const sharesLabel = document.getElementById('fundTxnSharesLabel');
+    const priceLabel = document.getElementById('fundTxnPriceLabel');
+    const feeLabel = document.getElementById('fundTxnFeeLabel');
+    const dateLabel = document.getElementById('fundTxnDateLabel');
+    const ccyHint = document.getElementById('fundTxnCcyHint');
+    if (ccyHint) ccyHint.textContent = `此筆以 ${cur === 'US$' ? '美元 USD' : '台幣 TWD'} 計價（跟著該檔的幣別）`;
+    if (type === 'dividend') {
+      sharesLabel.textContent = '領息單位數'; priceLabel.textContent = `每單位配息 (${cur})`;
+      feeLabel.textContent = `稅費 / 匯費 (${cur})`; dateLabel.textContent = '配息發放日';
+    } else if (type === 'stock_div') {
+      sharesLabel.textContent = '增加單位數'; priceLabel.textContent = '當日淨值（可估）';
+      feeLabel.textContent = `費用 (${cur})`; dateLabel.textContent = '日期';
+    } else if (type === 'sell') {
+      sharesLabel.textContent = '贖回單位數'; priceLabel.textContent = `贖回淨值 (${cur})`;
+      feeLabel.textContent = `贖回 / 短線交易費 (${cur})`; dateLabel.textContent = '日期';
+    } else {
+      sharesLabel.textContent = '單位數'; priceLabel.textContent = `申購淨值 (${cur})`;
+      feeLabel.textContent = `申購手續費 (${cur})`; dateLabel.textContent = '日期';
+    }
+  }
+  async function saveFundTxn(e) {
+    e.preventDefault();
+    const id = document.getElementById('fundTxnEditId').value;
+    const type = document.getElementById('fundTxnType').value;
+    const symbol = document.getElementById('fundTxnSymbol').value.trim().toUpperCase();
+    const symbolName = document.getElementById('fundTxnSymbolName').value.trim();
+    const shares = Number(document.getElementById('fundTxnShares').value);
+    const price = Number(document.getElementById('fundTxnPrice').value);
+    const fee = Number(document.getElementById('fundTxnFee').value) || 0;
+    const data = {
+      type, date: document.getElementById('fundTxnDate').value,
+      symbol, symbolName, shares, price,
+      ccy: fundCcyOfSymbol(symbol),
+      fee, tax: 0,
+      notes: document.getElementById('fundTxnNotes').value.trim()
+    };
+    const isEdit = !!id;
+    let savedTxn;
+    if (isEdit) {
+      const i = fundTxns.findIndex(t => t.id === id);
+      if (i > -1) { fundTxns[i] = { ...fundTxns[i], ...data, updatedAt: Date.now() }; savedTxn = fundTxns[i]; }
+    } else {
+      savedTxn = { id: 'ft2_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      fundTxns.push(savedTxn);
+    }
+    recomputeFundHolding(symbol);
+    await saveFundTxns();
+    await saveFundHoldings();
+    await saveFundRealized();
+    closeFundTxnModal();
+    renderFundHoldings();
+    renderFundStats();
+    showToast(isEdit ? '交易已更新' : '已新增交易');
+    if (savedTxn) pushFundTransactionToSupabase(savedTxn);
+    const affected = fundHoldings.find(h => h.symbol === symbol);
+    if (affected) pushFundHoldingToSupabase(affected);
+  }
+  async function deleteFundTxn() {
+    const id = document.getElementById('fundTxnEditId').value;
+    if (!id) return;
+    const t = fundTxns.find(x => x.id === id);
+    if (!t || !confirm('刪除這筆交易？對應持有的成本/單位數與配息統計會重新計算。')) return;
+    fundTxns = fundTxns.filter(x => x.id !== id);
+    recomputeFundHolding(t.symbol);
+    await saveFundTxns();
+    await saveFundHoldings();
+    await saveFundRealized();
+    closeFundTxnModal();
+    renderFundHoldings();
+    renderFundStats();
+    pushFundTransactionToSupabase(t, true);
+    const affected = fundHoldings.find(h => h.symbol === t.symbol);
+    if (affected) pushFundHoldingToSupabase(affected);
+  }
+
+  function recomputeFundHolding(symbol) {
+    const txns = fundTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    fundRealizedPnL = recomputeAllFundRealized();
+    if (txns.length === 0) return;
+    let shares = 0, totalCost = 0, avgCost = 0;
+    txns.forEach(t => {
+      if (t.type === 'buy') {
+        const cost = t.shares * t.price + (t.fee || 0);
+        shares += t.shares; totalCost += cost;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      } else if (t.type === 'sell') {
+        if (shares === 0) return;
+        const sellQty = Math.min(t.shares, shares);
+        const sellCost = sellQty * avgCost;
+        shares -= sellQty; totalCost -= sellCost;
+        if (shares <= 0) { shares = 0; totalCost = 0; }
+      } else if (t.type === 'stock_div') {
+        shares += t.shares;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      }
+      // dividend 不影響單位數／成本
+    });
+    let h = fundHoldings.find(x => x.symbol === symbol);
+    if (h) {
+      h.shares = Number(shares.toFixed(4));
+      h.avgCost = shares > 0 ? Number((totalCost / shares).toFixed(4)) : 0;
+      if (!h.name && txns[0].symbolName) h.name = txns[0].symbolName;
+      h.updatedAt = Date.now();
+    } else if (shares > 0) {
+      const ref = FUND_LIST.find(x => x.symbol === symbol) || {};
+      fundHoldings.push({
+        id: 'fu_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        symbol, name: txns[0].symbolName || ref.name || symbol,
+        ccy: (txns[0].ccy === 'USD' || ref.ccy === 'USD') ? 'USD' : 'TWD',
+        ftype: ref.ftype || '股票型', company: ref.company || '', region: ref.region || '',
+        expense: ref.expense != null ? ref.expense : null, benchName: '', bench: null,
+        shares: Number(shares.toFixed(4)),
+        avgCost: Number((totalCost / shares).toFixed(4)),
+        currentPrice: null, buyDate: txns[0].date, market: ref.market || '基富通',
+        divType: ref.divType || '累積型',
+        createdAt: Date.now(), updatedAt: Date.now()
+      });
+    }
+  }
+  function recomputeAllFundRealized() {
+    // 混幣：每檔各自用自己的幣別算完，再乘匯率換台幣加總（存進 storage 的已是台幣）
+    const symbols = [...new Set(fundTxns.map(t => t.symbol))];
+    let total = 0;
+    symbols.forEach(sym => {
+      const symRate = fundCcyOfSymbol(sym) === 'USD' ? fundFx() : 1;
+      let symTotal = 0;
+      const txns = fundTxns.filter(t => t.symbol === sym).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      let shares = 0, totalCost = 0, avgCost = 0;
+      txns.forEach(t => {
+        if (t.type === 'buy') {
+          const cost = t.shares * t.price + (t.fee || 0);
+          shares += t.shares; totalCost += cost;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'sell') {
+          if (shares === 0) return;
+          const sellQty = Math.min(t.shares, shares);
+          const sellCost = sellQty * avgCost;
+          const sellRevenue = sellQty * t.price - (t.fee || 0);
+          symTotal += sellRevenue - sellCost;
+          shares -= sellQty; totalCost -= sellCost;
+          if (shares <= 0) { shares = 0; totalCost = 0; }
+        } else if (t.type === 'stock_div') {
+          shares += t.shares;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        }
+      });
+      total += symTotal * symRate;
+    });
+    return Number(total.toFixed(2));
+  }
+
+  // === 匯出 / 匯入 ===
+  function exportFundData() {
+    const data = { holdings: fundHoldings, transactions: fundTxns, realized: fundRealizedPnL, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `fund-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function importFundData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!confirm(`匯入備份？\n持有 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有基金資料。`)) return;
+        if (d.holdings) fundHoldings = d.holdings;
+        if (d.transactions) fundTxns = d.transactions;
+        fundRealizedPnL = recomputeAllFundRealized();
+        await saveFundHoldings();
+        await saveFundTxns();
+        await saveFundRealized();
+        renderFundHoldings();
+        renderFundStats();
+        showToast(`已匯入 ${fundHoldings.length} 檔基金`);
+      } catch (err) {
+        alert('匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  // === 批次淨值更新 ===
+  function openFundBatchPriceModal() {
+    if (fundHoldings.length === 0) { showToast('還沒有持有可更新'); return; }
+    const list = document.getElementById('fundBatchPriceList');
+    list.innerHTML = fundHoldings.map(h => `
+      <div style="display:flex; gap:10px; align-items:center; padding:10px 12px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px;">
+        <span style="font-family:var(--mono); color:var(--accent); font-weight:600; min-width:60px;">${escape(h.symbol)}</span>
+        <span style="flex:1; font-family:var(--serif);">${escape(h.name)}</span>
+        <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${fundCcy(h)}</span>
+        <input type="number" step="any" data-fund-batch-id="${escape(h.id)}" value="${h.currentPrice || ''}" placeholder="淨值 ${fundSym(h)}" class="form-input" style="width:130px; font-family:var(--mono);">
+      </div>
+    `).join('');
+    document.getElementById('fundBatchPriceModal').classList.add('active');
+  }
+  function closeFundBatchPriceModal() { document.getElementById('fundBatchPriceModal').classList.remove('active'); }
+  async function saveFundBatchPrices() {
+    document.querySelectorAll('[data-fund-batch-id]').forEach(input => {
+      const id = input.getAttribute('data-fund-batch-id');
+      const v = Number(input.value);
+      const h = fundHoldings.find(x => x.id === id);
+      if (h && v > 0) { h.currentPrice = v; h.priceUpdatedAt = Date.now(); }
+    });
+    await saveFundHoldings();
+    closeFundBatchPriceModal();
+    renderFundHoldings();
+    renderFundStats();
+    showToast('淨值已更新');
+  }
+
+
+  // ============================================================
+  // 貴金屬 · Precious Metals Module
+  // （鏡像市值型 ETF 的混合幣別；差異：計價單位可換算重量、買賣價差＝真實成本）
+  // ============================================================
+  const METAL_STORAGE = {
+    holdings: 'metal_holdings_v1',
+    txns: 'metal_transactions_v1',
+    realized: 'metal_realized_v1',
+    sync: 'metal_sync_v1'
+  };
+  // 各單位換算成「公克」的係數；0 = 不換算（股 / 枚）
+  const METAL_UNIT_G = { '公克': 1, '台錢': 3.75, '兩': 37.5, '盎司': 31.1035, '公斤': 1000, '股': 0, '枚': 0 };
+  // spread = 買賣價差（%，賣回去會少領這麼多，參考值）
+  const METAL_LIST = [
+    // === 台幣 ===
+    { symbol: '黃金存摺', name: '台銀黃金存摺', mtype: '黃金', form: '銀行存摺', unit: '公克', ccy: 'TWD', spread: 1.0, purity: '999.9', market: '台灣銀行' },
+    { symbol: '玉山黃金存摺', name: '玉山銀行黃金存摺', mtype: '黃金', form: '銀行存摺', unit: '公克', ccy: 'TWD', spread: 1.2, purity: '999.9', market: '玉山銀行' },
+    { symbol: '一銀黃金存摺', name: '第一銀行黃金存摺', mtype: '黃金', form: '銀行存摺', unit: '公克', ccy: 'TWD', spread: 1.2, purity: '999.9', market: '第一銀行' },
+    { symbol: '金條', name: '實體金條 / 金塊', mtype: '黃金', form: '實體金條', unit: '台錢', ccy: 'TWD', spread: 3.0, purity: '9999', market: '銀樓' },
+    { symbol: '金幣', name: '金幣（楓葉 / 鷹揚 / 龍銀）', mtype: '黃金', form: '金幣', unit: '枚', ccy: 'TWD', spread: 5.0, purity: '999.9', market: '銀樓' },
+    { symbol: '飾金', name: '金飾 / 首飾（工錢另計）', mtype: '黃金', form: '飾金', unit: '台錢', ccy: 'TWD', spread: 8.0, purity: '24K', market: '銀樓' },
+    { symbol: '白銀存摺', name: '台銀白銀存摺', mtype: '白銀', form: '銀行存摺', unit: '公克', ccy: 'TWD', spread: 3.0, purity: '999', market: '台灣銀行' },
+    { symbol: '銀條', name: '實體銀條 / 銀塊', mtype: '白銀', form: '實體金條', unit: '公克', ccy: 'TWD', spread: 5.0, purity: '999', market: '銀樓' },
+    { symbol: '白金存摺', name: '台銀白金存摺', mtype: '白金', form: '銀行存摺', unit: '公克', ccy: 'TWD', spread: 3.0, purity: '999.5', market: '台灣銀行' },
+    { symbol: '00635U', name: '期元大S&P黃金', mtype: '黃金', form: 'ETF', unit: '股', ccy: 'TWD', spread: 0.3, purity: '', market: '券商' },
+    // === 美元 ===
+    { symbol: 'XAU', name: '國際金價 現貨（每盎司）', mtype: '黃金', form: '其他', unit: '盎司', ccy: 'USD', spread: 0.5, purity: '999.9', market: '其他' },
+    { symbol: 'XAG', name: '國際銀價 現貨（每盎司）', mtype: '白銀', form: '其他', unit: '盎司', ccy: 'USD', spread: 2.0, purity: '999', market: '其他' },
+    { symbol: 'GLD', name: 'SPDR 黃金 ETF', mtype: '黃金', form: 'ETF', unit: '股', ccy: 'USD', spread: 0.1, purity: '', market: '券商' },
+    { symbol: 'GLDM', name: 'SPDR 黃金迷你 ETF', mtype: '黃金', form: 'ETF', unit: '股', ccy: 'USD', spread: 0.1, purity: '', market: '券商' },
+    { symbol: 'IAU', name: 'iShares 黃金信託', mtype: '黃金', form: 'ETF', unit: '股', ccy: 'USD', spread: 0.1, purity: '', market: '券商' },
+    { symbol: 'SLV', name: 'iShares 白銀信託', mtype: '白銀', form: 'ETF', unit: '股', ccy: 'USD', spread: 0.1, purity: '', market: '券商' },
+    { symbol: 'PPLT', name: 'abrdn 實體白金 ETF', mtype: '白金', form: 'ETF', unit: '股', ccy: 'USD', spread: 0.2, purity: '', market: '券商' },
+    { symbol: 'GDX', name: 'VanEck 金礦股 ETF（間接持有）', mtype: '黃金', form: 'ETF', unit: '股', ccy: 'USD', spread: 0.1, purity: '', market: '券商' }
+  ];
+  (function dedupMetalList() {
+    const seen = new Set();
+    for (let i = 0; i < METAL_LIST.length; i++) {
+      if (seen.has(METAL_LIST[i].symbol)) { METAL_LIST.splice(i, 1); i--; }
+      else seen.add(METAL_LIST[i].symbol);
+    }
+  })();
+  function searchMetalList(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    return METAL_LIST.filter(s =>
+      s.symbol.toLowerCase().includes(q) ||
+      s.name.toLowerCase().includes(q) ||
+      (s.mtype && s.mtype.toLowerCase().includes(q)) ||
+      (s.form && s.form.toLowerCase().includes(q))
+    ).slice(0, 12);
+  }
+
+  let metalHoldings = [];
+  let metalTxns = [];
+  let metalRealizedPnL = 0;   // 已換算台幣
+  let metalExpandedHoldingId = null;
+  let metalSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
+  let metalSyncClient = null;
+
+  function metalFx() {
+    try { if (Number(cashflowFx.usdTwd) > 0) return Number(cashflowFx.usdTwd); } catch (e) {}
+    return 32;
+  }
+  const metalCcy = h => (h && h.ccy === 'USD') ? 'USD' : 'TWD';
+  const metalRate = h => metalCcy(h) === 'USD' ? metalFx() : 1;
+  const metalSym = h => metalCcy(h) === 'USD' ? 'US$' : 'NT$';
+  const metalUnit = h => (h && h.unit) || '公克';
+  const metalMoneyC = (n, h) => metalSym(h) + Math.round(Number(n || 0)).toLocaleString('en-US');
+  const metalMoneySignC = (n, h) => (n >= 0 ? '+' : '-') + metalSym(h) + Math.round(Math.abs(Number(n || 0))).toLocaleString('en-US');
+  const metalMoney = n => 'NT$' + Math.round(Number(n || 0)).toLocaleString('en-US');
+  const metalMoneySign = n => (n >= 0 ? '+' : '-') + 'NT$' + Math.round(Math.abs(Number(n || 0))).toLocaleString('en-US');
+  const metalQty = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 4 });
+  const metalPrice = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const metalCostTwd = h => holdingCost(h) * metalRate(h);
+  const metalValueTwd = h => holdingValue(h) * metalRate(h);
+  // 換算成公克（股 / 枚 不換算 → 0）
+  const metalWeightG = h => (Number(h.shares) || 0) * (METAL_UNIT_G[metalUnit(h)] || 0);
+  const metalGramFmt = g => Number(g || 0).toLocaleString('en-US', { maximumFractionDigits: 1 });
+
+  function metalTotalDividends(sinceTs) {
+    return metalTxns
+      .filter(t => t.type === 'dividend')
+      .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
+      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * metalRate(t), 0);
+  }
+
+  async function loadMetal() {
+    try { const h = await readKey(METAL_STORAGE.holdings); metalHoldings = h ? JSON.parse(h) : []; }
+    catch (e) { metalHoldings = []; }
+    try { const t = await readKey(METAL_STORAGE.txns); metalTxns = t ? JSON.parse(t) : []; }
+    catch (e) { metalTxns = []; }
+    try { const r = await readKey(METAL_STORAGE.realized); metalRealizedPnL = r ? Number(r) : 0; }
+    catch (e) { metalRealizedPnL = 0; }
+    try {
+      await loadCashflowFx();
+      if (!cashflowFx.updatedAt) await refreshCashflowFx();
+    } catch (e) {}
+    await loadMetalSyncConfig();
+    renderMetalStats();
+    renderMetalHoldings();
+    renderMetalSyncBadge();
+    if (metalSyncConfig.enabled) {
+      pullAllMetalFromSupabase().then(r => {
+        if (r) {
+          renderMetalStats();
+          renderMetalHoldings();
+          renderMetalSyncBadge();
+          if (r.hCount > 0 || r.tCount > 0) showToast(`☁ 已從雲端同步 · ${r.hCount} 持有 / ${r.tCount} 交易`);
+        }
+      }).catch(e => console.warn('metal auto pull fail', e));
+    }
+  }
+  async function saveMetalHoldings() { await writeKey(METAL_STORAGE.holdings, JSON.stringify(metalHoldings)); }
+  async function saveMetalTxns() { await writeKey(METAL_STORAGE.txns, JSON.stringify(metalTxns)); }
+  async function saveMetalRealized() { await writeKey(METAL_STORAGE.realized, String(metalRealizedPnL)); }
+
+  // ===== Metal Supabase 同步 =====
+  async function loadMetalSyncConfig() {
+    try { const v = await readKey(METAL_STORAGE.sync); if (v) metalSyncConfig = { ...metalSyncConfig, ...JSON.parse(v) }; } catch (e) {}
+  }
+  async function saveMetalSyncConfig() { await writeKey(METAL_STORAGE.sync, JSON.stringify(metalSyncConfig)); }
+  async function initMetalSyncClient() {
+    if (!metalSyncConfig.enabled || !metalSyncConfig.supabaseUrl || !metalSyncConfig.supabaseKey || !metalSyncConfig.userId) return null;
+    if (metalSyncClient) return metalSyncClient;
+    if (!window.supabase) {
+      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js', 'sdk-supabase');
+    }
+    metalSyncClient = window.supabase.createClient(metalSyncConfig.supabaseUrl, metalSyncConfig.supabaseKey);
+    return metalSyncClient;
+  }
+  async function pushMetalHoldingToSupabase(h, deleted = false) {
+    try {
+      const sb = await initMetalSyncClient();
+      if (!sb) return;
+      await sb.from('metal_holdings').upsert({ id: h.id, user_id: metalSyncConfig.userId, data: h, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push metal holding fail', e); }
+  }
+  async function pushMetalTransactionToSupabase(t, deleted = false) {
+    try {
+      const sb = await initMetalSyncClient();
+      if (!sb) return;
+      await sb.from('metal_transactions').upsert({ id: t.id, user_id: metalSyncConfig.userId, symbol: t.symbol || null, data: t, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push metal tx fail', e); }
+  }
+  async function pullAllMetalFromSupabase() {
+    const sb = await initMetalSyncClient();
+    if (!sb) return null;
+    const { data: hData, error: hErr } = await sb.from('metal_holdings').select('*').eq('user_id', metalSyncConfig.userId).eq('deleted', false);
+    if (hErr) throw new Error('拉持有失敗: ' + hErr.message);
+    const { data: tData, error: tErr } = await sb.from('metal_transactions').select('*').eq('user_id', metalSyncConfig.userId).eq('deleted', false);
+    if (tErr) throw new Error('拉交易失敗: ' + tErr.message);
+    const localHMap = new Map(metalHoldings.map(h => [h.id, h]));
+    (hData || []).forEach(row => {
+      const local = localHMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localHMap.set(row.id, row.data);
+    });
+    metalHoldings = Array.from(localHMap.values());
+    const localTMap = new Map(metalTxns.map(t => [t.id, t]));
+    (tData || []).forEach(row => {
+      const local = localTMap.get(row.id);
+      const remoteUpdated = new Date(row.updated_at).getTime();
+      const localUpdated = local?.updatedAt || local?.createdAt || 0;
+      if (!local || remoteUpdated > localUpdated) localTMap.set(row.id, row.data);
+    });
+    metalTxns = Array.from(localTMap.values());
+    metalRealizedPnL = recomputeAllMetalRealized();
+    await saveMetalHoldings();
+    await saveMetalTxns();
+    await saveMetalRealized();
+    metalSyncConfig.lastPullAt = Date.now();
+    await saveMetalSyncConfig();
+    return { hCount: (hData || []).length, tCount: (tData || []).length };
+  }
+  async function pushAllMetalToSupabase() {
+    let ok = 0;
+    for (const h of metalHoldings) { try { await pushMetalHoldingToSupabase(h); ok++; } catch (e) {} }
+    for (const t of metalTxns) { try { await pushMetalTransactionToSupabase(t); ok++; } catch (e) {} }
+    return ok;
+  }
+  async function syncMetalNow() {
+    if (!metalSyncConfig.enabled) { openMetalSyncModal(); return; }
+    const btn = document.getElementById('metalSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '☁ 同步中…'; }
+    try {
+      const r = await pullAllMetalFromSupabase();
+      if (!r) throw new Error('Client 初始化失敗 · 請檢查設定');
+      await pushAllMetalToSupabase();
+      renderMetalHoldings();
+      renderMetalStats();
+      renderMetalSyncBadge();
+      showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持有 / ${r.tCount} 交易`);
+    } catch (e) {
+      showToast('☁ 同步失敗：' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
+    }
+  }
+  function renderMetalSyncBadge() {
+    const el = document.getElementById('metalSyncBadge');
+    if (!el) return;
+    if (!metalSyncConfig.enabled) { el.textContent = '☁ 未啟用'; el.style.color = 'var(--ink-tertiary)'; return; }
+    const t = metalSyncConfig.lastPullAt;
+    el.textContent = t ? `☁ ${new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : '☁ 待同步';
+    el.style.color = 'var(--accent)';
+  }
+  async function openMetalSyncModal() {
+    await loadMetalSyncConfig();
+    document.getElementById('metalSyncEnabled').checked = !!metalSyncConfig.enabled;
+    document.getElementById('metalSyncSupabaseUrl').value = metalSyncConfig.supabaseUrl || '';
+    document.getElementById('metalSyncSupabaseKey').value = metalSyncConfig.supabaseKey || '';
+    document.getElementById('metalSyncUserId').value = metalSyncConfig.userId || '';
+    if (!metalSyncConfig.userId && typeof twSyncConfig !== 'undefined' && twSyncConfig.userId) {
+      document.getElementById('metalSyncUserId').placeholder = `（台股已設：${twSyncConfig.userId}，建議用同一個）`;
+    }
+    document.getElementById('metalSyncModal').classList.add('active');
+  }
+  function closeMetalSyncModal() { document.getElementById('metalSyncModal').classList.remove('active'); }
+  function fillMetalSyncFromTrv() {
+    const src = (typeof twSyncConfig !== 'undefined' && twSyncConfig.supabaseUrl) ? twSyncConfig
+              : (typeof cryptoSyncConfig !== 'undefined' && cryptoSyncConfig.supabaseUrl) ? cryptoSyncConfig
+              : trvMultiConfig;
+    if (src?.supabaseUrl) document.getElementById('metalSyncSupabaseUrl').value = src.supabaseUrl;
+    if (src?.supabaseKey) document.getElementById('metalSyncSupabaseKey').value = src.supabaseKey;
+    if (src?.userId) document.getElementById('metalSyncUserId').value = src.userId;
+    showToast(src?.supabaseUrl ? '已帶入現有設定' : '尚未在台股／加密貨幣／旅遊設定 Supabase');
+  }
+  async function saveMetalSyncSettings() {
+    metalSyncConfig.enabled = document.getElementById('metalSyncEnabled').checked;
+    metalSyncConfig.supabaseUrl = document.getElementById('metalSyncSupabaseUrl').value.trim();
+    metalSyncConfig.supabaseKey = document.getElementById('metalSyncSupabaseKey').value.trim();
+    metalSyncConfig.userId = document.getElementById('metalSyncUserId').value.trim();
+    if (metalSyncConfig.enabled) {
+      if (!metalSyncConfig.supabaseUrl) return showToast('請填 Supabase URL');
+      if (!metalSyncConfig.supabaseKey) return showToast('請填 Supabase Anon Key');
+      if (!metalSyncConfig.userId) return showToast('請填 User ID（自取，多裝置要相同）');
+      if (!/^https:\/\/.+\.supabase\.co$/.test(metalSyncConfig.supabaseUrl)) return showToast('Supabase URL 格式錯（應為 https://xxx.supabase.co）');
+    }
+    metalSyncClient = null;
+    await saveMetalSyncConfig();
+    renderMetalSyncBadge();
+    showToast('☁ 設定已儲存');
+    closeMetalSyncModal();
+    if (metalSyncConfig.enabled) syncMetalNow();
+  }
+  function copyMetalSyncSql() {
+    const sql = `-- 在 Supabase Dashboard → SQL Editor 跑一次（建表）
+CREATE TABLE IF NOT EXISTS metal_holdings (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_metal_holdings_user ON metal_holdings(user_id);
+ALTER TABLE metal_holdings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON metal_holdings;
+CREATE POLICY "Allow all" ON metal_holdings FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS metal_transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  symbol TEXT,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_metal_transactions_user ON metal_transactions(user_id);
+ALTER TABLE metal_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON metal_transactions;
+CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK (true);`;
+    navigator.clipboard.writeText(sql).then(
+      () => showToast('SQL 已複製，貼到 Supabase SQL Editor 跑一次'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+
+  // === 統計卡片（統一台幣 · 含總重量與買賣價差）===
+  function renderMetalStats() {
+    const totalCost = metalHoldings.reduce((s, h) => s + metalCostTwd(h), 0);
+    const totalValue = metalHoldings.reduce((s, h) => s + metalValueTwd(h), 0);
+    const unrealized = totalValue - totalCost;
+    const unrealizedPct = totalCost > 0 ? (unrealized / totalCost) * 100 : 0;
+    // 依金屬種類加總重量（公克）
+    const byMetal = {};
+    let noWeight = 0;
+    metalHoldings.forEach(h => {
+      const g = metalWeightG(h);
+      if (g > 0) byMetal[h.mtype || '其他'] = (byMetal[h.mtype || '其他'] || 0) + g;
+      else if ((Number(h.shares) || 0) > 0) noWeight++;
+    });
+    const goldG = byMetal['黃金'] || 0;
+    const otherLines = Object.keys(byMetal).filter(k => k !== '黃金').map(k => `${k} ${metalGramFmt(byMetal[k])}g`).join(' · ');
+    // 以現值加權的買賣價差 → 現在全賣掉大概少領多少
+    let sNum = 0, sDen = 0;
+    metalHoldings.forEach(h => {
+      const v = metalValueTwd(h);
+      if (!(v > 0)) return;
+      const sp = Number(h.spread);
+      if (sp > 0) { sNum += sp * v; sDen += v; }
+    });
+    const wSpread = sDen > 0 ? (sNum / sDen) : 0;
+    const spreadCost = wSpread / 100 * sDen;
+    const pnlClass = unrealized > 0 ? 'profit' : unrealized < 0 ? 'loss' : 'flat';
+    const hasUsd = metalHoldings.some(h => metalCcy(h) === 'USD');
+    document.getElementById('metalStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">總投入</div>
+        <div class="stat-value">${metalMoney(totalCost)}</div>
+        <div class="stat-sub">${metalHoldings.length} 項 · 統一台幣</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">現值</div>
+        <div class="stat-value">${metalMoney(totalValue)}</div>
+        <div class="stat-sub">${hasUsd ? 'USD/TWD ' + metalFx().toFixed(2) : 'CURRENT · MARKET · VALUE'}</div>
+      </div>
+      <div class="stat-card ${pnlClass}">
+        <div class="stat-label">未實現損益</div>
+        <div class="stat-value">${metalMoneySign(unrealized)}</div>
+        <div class="stat-pct">${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">持有黃金</div>
+        <div class="stat-value">${goldG > 0 ? metalGramFmt(goldG) + 'g' : '—'}</div>
+        <div class="stat-sub">${goldG > 0 ? '約 ' + (goldG / 3.75).toFixed(2) + ' 台錢' : '尚未記錄黃金'}${otherLines ? ' · ' + otherLines : ''}${noWeight > 0 ? ' · 另 ' + noWeight + ' 項未計重' : ''}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">加權買賣價差</div>
+        <div class="stat-value">${wSpread.toFixed(2)}%</div>
+        <div class="stat-sub">${sDen > 0 ? '現在全賣約少領 ' + metalMoney(spreadCost) : '未填買賣價差'}</div>
+      </div>
+    `;
+  }
+
+  function renderMetalHoldings() {
+    const grid = document.getElementById('metalHoldingsGrid');
+    if (metalHoldings.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">☼</span><h3>尚無貴金屬部位</h3><p>點右上「+ 新增持有」開始記錄。黃金存摺（公克）、實體金條（台錢）、金幣（枚）、黃金 ETF（股）都可以放在這裡，重量會自動換算加總。</p></div>';
+      return;
+    }
+    const sortBy = document.getElementById('metalSortBy')?.value || 'value';
+    const sorted = metalHoldings.slice().sort((a, b) => {
+      if (sortBy === 'value') return metalValueTwd(b) - metalValueTwd(a);
+      if (sortBy === 'weight') return metalWeightG(b) - metalWeightG(a);
+      if (sortBy === 'pnl_pct') return holdingPnLPct(b) - holdingPnLPct(a);
+      if (sortBy === 'pnl_abs') return (holdingPnL(b) * metalRate(b)) - (holdingPnL(a) * metalRate(a));
+      if (sortBy === 'symbol') return (a.symbol || '').localeCompare(b.symbol || '');
+      if (sortBy === 'date') return (b.buyDate || '').localeCompare(a.buyDate || '');
+      return 0;
+    });
+    grid.innerHTML = sorted.map(h => metalHoldingCardHtml(h)).join('');
+  }
+
+  // 有真實市場代號的才給圖表按鈕（存摺 / 實體金條沒有報價來源）
+  function metalChartBtnHtml(h) {
+    const sym = (h.symbol || '').trim();
+    if (metalCcy(h) === 'USD' && /^[A-Z]{2,5}$/.test(sym)) {
+      return `<button class="hc-mini-btn" onclick="openUsAnalysis('${escape(sym)}'); event.stopPropagation();">📈 分析</button>`;
+    }
+    if (metalCcy(h) === 'TWD' && /^[0-9]{4,6}[A-Z]?$/.test(sym)) {
+      return `<button class="hc-mini-btn" onclick="openTvChartModal('${escape(sym)}','${escape(h.name)}','TWSE'); event.stopPropagation();">📈 圖表</button>`;
+    }
+    return '';
+  }
+
+  function metalHoldingCardHtml(h) {
+    const pnl = holdingPnL(h);
+    const pnlPct = holdingPnLPct(h);
+    const cls = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat';
+    const expanded = metalExpandedHoldingId === h.id ? 'expanded' : '';
+    const isUsd = metalCcy(h) === 'USD';
+    const unit = metalUnit(h);
+    const g = metalWeightG(h);
+    const sp = Number(h.spread) || 0;
+    const txnsForHolding = metalTxns.filter(t => t.symbol === h.symbol).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const txnHtml = txnsForHolding.length === 0
+      ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
+      : txnsForHolding.map(t => {
+          const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '增' }[t.type] || '?';
+          const right = t.type === 'dividend'
+            ? `${metalQty(t.shares)} × ${metalPrice(t.price)} = ${metalMoneyC((t.shares || 0) * (t.price || 0), h)}`
+            : `${metalQty(t.shares)} ${escape(unit)} × ${metalPrice(t.price)}`;
+          return `
+            <div class="hc-txn-row" onclick="event.stopPropagation(); openMetalTxnModal('${escape(t.id)}')">
+              <span class="hc-txn-type ${escape(t.type)}">${typeLabel}</span>
+              <span style="flex:1; padding:0 8px;">${escape(t.date || '')}</span>
+              <span>${right}</span>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div class="holding-card ${cls} ${expanded}" data-hid="${escape(h.id)}" onclick="toggleMetalHoldingExpand('${escape(h.id)}')">
+        <div class="hc-top">
+          <div class="hc-symbol-wrap">
+            <div class="hc-symbol">${escape(h.symbol)}</div>
+            <div class="hc-name">${escape(h.name)}</div>
+            <div class="hc-meta">
+              <span style="color:${isUsd ? 'var(--accent-warm)' : 'var(--ink-tertiary)'};">${isUsd ? 'USD' : 'TWD'}</span>
+              <span>${escape(h.market || '管道')}</span>
+              ${h.purity ? `<span>${escape(h.purity)}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
+            <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${metalMoneySignC(pnl, h)}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin:10px 0; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12px; flex-wrap:wrap;">
+          <span style="color:var(--accent); font-family:var(--mono); letter-spacing:0.1em; white-space:nowrap;">☼ ${escape(h.mtype || '金屬')}</span>
+          <span style="color:var(--ink-primary);">${escape(h.form || '未填形式')}</span>
+          <span style="margin-left:auto; color:var(--ink-secondary); white-space:nowrap;">${g > 0 ? `重量 <strong style="color:var(--accent);">${metalGramFmt(g)}g</strong>` : `<span style="color:var(--ink-tertiary);">以「${escape(unit)}」計，不換算重量</span>`}</span>
+          ${sp > 0 ? `<span style="color:var(--ink-tertiary); font-family:var(--mono); font-size:10px; white-space:nowrap;">價差 ${sp.toFixed(1)}%</span>` : ''}
+        </div>
+        <div class="hc-prices">
+          <div class="hc-price-cell">
+            <div class="hc-price-label">成本／${escape(unit)}</div>
+            <div class="hc-price-val">${metalPrice(h.avgCost || 0)}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">牌價／${escape(unit)}</div>
+            <div class="hc-price-val ${cls}">${h.currentPrice ? metalPrice(h.currentPrice) : '—'}</div>
+          </div>
+          <div class="hc-price-cell">
+            <div class="hc-price-label">現值</div>
+            <div class="hc-price-val">${metalMoneyC(holdingValue(h), h)}</div>
+          </div>
+        </div>
+        <div class="hc-shares-cost" style="flex-wrap:wrap; row-gap:4px;">
+          <span style="white-space:nowrap;"><strong>${metalQty(h.shares)}</strong> ${escape(unit)}</span>
+          <span style="color:var(--ink-tertiary);">×</span>
+          <span style="white-space:nowrap;">成本 <strong>${metalMoneyC(holdingCost(h), h)}</strong></span>
+          ${isUsd ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">≈ ${metalMoney(metalValueTwd(h))}</span>` : ''}
+          ${g > 0 && unit !== '台錢' && h.mtype === '黃金' ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">≈ ${(g / 3.75).toFixed(2)} 台錢</span>` : ''}
+          ${sp > 0 ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--danger);">現賣約 ${metalMoneyC(holdingValue(h) * (1 - sp / 100), h)}</span>` : ''}
+          ${h.buyDate ? `<span style="margin-left:auto; white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(h.buyDate)}</span>` : ''}
+        </div>
+        ${h.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(h.notes)}</div>` : ''}
+        <div class="hc-actions" onclick="event.stopPropagation();">
+          <button class="hc-mini-btn" onclick="openMetalHoldingModal('${escape(h.id)}'); event.stopPropagation();">編輯</button>
+          ${metalChartBtnHtml(h)}
+          <button class="hc-mini-btn" onclick="openMetalTxnModal(null, '${escape(h.symbol)}'); event.stopPropagation();">+ 交易</button>
+          <button class="hc-mini-btn" onclick="toggleMetalHoldingExpand('${escape(h.id)}'); event.stopPropagation();">${expanded ? '收起紀錄' : `交易紀錄 (${txnsForHolding.length})`}</button>
+        </div>
+        <div class="hc-txn-list">${txnHtml}</div>
+      </div>
+    `;
+  }
+  function toggleMetalHoldingExpand(id) {
+    metalExpandedHoldingId = (metalExpandedHoldingId === id) ? null : id;
+    renderMetalHoldings();
+  }
+
+  function onMetalHoldingSearch(q) {
+    const box = document.getElementById('metalHoldingSearchResults');
+    const results = searchMetalList(q);
+    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = results.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickMetalHoldingItem('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape((s.ccy === 'USD' ? 'USD · ' : '') + (s.form || ''))} · ${escape(s.unit)}</span>
+      </div>
+    `).join('');
+  }
+  function pickMetalHoldingItem(symbol) {
+    const s = METAL_LIST.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('metalHoldingSymbol').value = s.symbol;
+    document.getElementById('metalHoldingName').value = s.name;
+    document.getElementById('metalHoldingCcy').value = s.ccy || 'TWD';
+    const setSel = (elId, val, fallback) => {
+      const el = document.getElementById(elId);
+      if (el) el.value = [...el.options].some(o => o.value === val) ? val : fallback;
+    };
+    setSel('metalHoldingMtype', s.mtype, '黃金');
+    setSel('metalHoldingForm', s.form, '其他');
+    setSel('metalHoldingUnit', s.unit, '公克');
+    setSel('metalHoldingMarket', s.market, '其他');
+    document.getElementById('metalHoldingSpread').value = s.spread != null ? s.spread : '';
+    document.getElementById('metalHoldingPurity').value = s.purity || '';
+    document.getElementById('metalHoldingSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('metalHoldingSearchResults').style.display = 'none';
+    onMetalHoldingCcyChange();
+    document.getElementById('metalHoldingShares').focus();
+  }
+  // 幣別／單位切換 → 三個欄位標籤跟著換
+  function onMetalHoldingCcyChange() {
+    const ccy = document.getElementById('metalHoldingCcy')?.value === 'USD' ? 'US$' : 'NT$';
+    const unit = document.getElementById('metalHoldingUnit')?.value || '公克';
+    const s = document.getElementById('metalHoldingSharesLabel');
+    const a = document.getElementById('metalHoldingAvgCostLabel');
+    const b = document.getElementById('metalHoldingCurrentPriceLabel');
+    if (s) s.textContent = `持有數量（${unit}）`;
+    if (a) a.textContent = `平均成本 (${ccy} / ${unit})`;
+    if (b) b.textContent = `目前牌價 (${ccy} / ${unit})`;
+  }
+  function onMetalTxnSearch(q) {
+    const box = document.getElementById('metalTxnSearchResults');
+    const local = metalHoldings.filter(h =>
+      !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
+    ).map(h => ({ symbol: h.symbol, name: h.name, form: '我的持有', unit: metalUnit(h), ccy: metalCcy(h) }));
+    const builtIn = searchMetalList(q);
+    const seen = new Set(local.map(x => x.symbol));
+    const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
+    if (combined.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = combined.map(s => `
+      <div class="stock-search-item" onmousedown="event.preventDefault(); pickMetalTxnItem('${escape(s.symbol)}')">
+        <span class="ss-symbol">${escape(s.symbol)}</span>
+        <span class="ss-name">${escape(s.name)}</span>
+        <span class="ss-industry">${escape((s.ccy === 'USD' ? 'USD · ' : '') + (s.form || ''))} · ${escape(s.unit || '')}</span>
+      </div>
+    `).join('');
+  }
+  function pickMetalTxnItem(symbol) {
+    const h = metalHoldings.find(x => x.symbol === symbol);
+    const s = h || METAL_LIST.find(x => x.symbol === symbol);
+    if (!s) return;
+    document.getElementById('metalTxnSymbol').value = s.symbol;
+    document.getElementById('metalTxnSymbolName').value = s.name;
+    document.getElementById('metalTxnSearchBox').value = `${s.symbol} · ${s.name}`;
+    document.getElementById('metalTxnSearchResults').style.display = 'none';
+    document.getElementById('metalTxnShares').focus();
+    if (h && h.currentPrice) document.getElementById('metalTxnPrice').value = h.currentPrice;
+    onMetalTxnTypeChange();
+  }
+  function metalCcyOfSymbol(symbol) {
+    const h = metalHoldings.find(x => x.symbol === symbol);
+    if (h) return metalCcy(h);
+    const s = METAL_LIST.find(x => x.symbol === symbol);
+    return (s && s.ccy === 'USD') ? 'USD' : 'TWD';
+  }
+  function metalUnitOfSymbol(symbol) {
+    const h = metalHoldings.find(x => x.symbol === symbol);
+    if (h) return metalUnit(h);
+    const s = METAL_LIST.find(x => x.symbol === symbol);
+    return (s && s.unit) || '公克';
+  }
+
+  // === Holding CRUD ===
+  function openMetalHoldingModal(id) {
+    const isEdit = !!id;
+    document.getElementById('metalHoldingEditId').value = id || '';
+    document.getElementById('metalHoldingDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('metalHoldingModalTitle').innerHTML = isEdit ? '編輯 <em>持有</em>' : '新增 <em>持有</em>';
+    if (isEdit) {
+      const h = metalHoldings.find(x => x.id === id);
+      document.getElementById('metalHoldingSymbol').value = h.symbol;
+      document.getElementById('metalHoldingName').value = h.name;
+      document.getElementById('metalHoldingCcy').value = metalCcy(h);
+      document.getElementById('metalHoldingMtype').value = h.mtype || '黃金';
+      document.getElementById('metalHoldingForm').value = h.form || '銀行存摺';
+      document.getElementById('metalHoldingUnit').value = metalUnit(h);
+      document.getElementById('metalHoldingShares').value = h.shares;
+      document.getElementById('metalHoldingAvgCost').value = h.avgCost;
+      document.getElementById('metalHoldingCurrentPrice').value = h.currentPrice || '';
+      document.getElementById('metalHoldingBuyDate').value = h.buyDate || '';
+      document.getElementById('metalHoldingMarket').value = h.market || '台灣銀行';
+      document.getElementById('metalHoldingSpread').value = h.spread != null ? h.spread : '';
+      document.getElementById('metalHoldingPurity').value = h.purity || '';
+      document.getElementById('metalHoldingNotes').value = h.notes || '';
+      document.getElementById('metalHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
+    } else {
+      ['metalHoldingSymbol','metalHoldingName','metalHoldingShares','metalHoldingAvgCost','metalHoldingCurrentPrice','metalHoldingSpread','metalHoldingPurity','metalHoldingNotes','metalHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('metalHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('metalHoldingCcy').value = 'TWD';
+      document.getElementById('metalHoldingMtype').value = '黃金';
+      document.getElementById('metalHoldingForm').value = '銀行存摺';
+      document.getElementById('metalHoldingUnit').value = '公克';
+      document.getElementById('metalHoldingMarket').value = '台灣銀行';
+    }
+    onMetalHoldingCcyChange();
+    document.getElementById('metalHoldingSearchResults').style.display = 'none';
+    document.getElementById('metalHoldingModal').classList.add('active');
+  }
+  function closeMetalHoldingModal() { document.getElementById('metalHoldingModal').classList.remove('active'); }
+  async function saveMetalHolding(e) {
+    e.preventDefault();
+    const id = document.getElementById('metalHoldingEditId').value;
+    const data = {
+      symbol: document.getElementById('metalHoldingSymbol').value.trim().toUpperCase(),
+      name: document.getElementById('metalHoldingName').value.trim(),
+      ccy: document.getElementById('metalHoldingCcy').value === 'USD' ? 'USD' : 'TWD',
+      mtype: document.getElementById('metalHoldingMtype').value,
+      form: document.getElementById('metalHoldingForm').value,
+      unit: document.getElementById('metalHoldingUnit').value,
+      shares: Number(document.getElementById('metalHoldingShares').value),
+      avgCost: Number(document.getElementById('metalHoldingAvgCost').value),
+      currentPrice: Number(document.getElementById('metalHoldingCurrentPrice').value) || null,
+      buyDate: document.getElementById('metalHoldingBuyDate').value,
+      market: document.getElementById('metalHoldingMarket').value,
+      spread: Number(document.getElementById('metalHoldingSpread').value) || null,
+      purity: document.getElementById('metalHoldingPurity').value.trim(),
+      notes: document.getElementById('metalHoldingNotes').value.trim()
+    };
+    let saved;
+    if (id) {
+      const i = metalHoldings.findIndex(h => h.id === id);
+      if (i > -1) { metalHoldings[i] = { ...metalHoldings[i], ...data, updatedAt: Date.now() }; saved = metalHoldings[i]; }
+    } else {
+      const exist = metalHoldings.find(h => h.symbol === data.symbol);
+      if (exist) { showToast(`已有持有 ${exist.name}，請改點編輯。`); return; }
+      saved = { id: 'mh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      metalHoldings.push(saved);
+    }
+    // 幣別改了，這檔的舊交易也一起跟著改，避免混幣算錯
+    if (saved) metalTxns.forEach(t => { if (t.symbol === saved.symbol && t.ccy !== saved.ccy) { t.ccy = saved.ccy; t.updatedAt = Date.now(); pushMetalTransactionToSupabase(t); } });
+    metalRealizedPnL = recomputeAllMetalRealized();
+    await saveMetalHoldings();
+    await saveMetalTxns();
+    await saveMetalRealized();
+    closeMetalHoldingModal();
+    renderMetalHoldings();
+    renderMetalStats();
+    showToast(id ? '持有已更新' : '已新增持有');
+    if (saved) pushMetalHoldingToSupabase(saved);
+  }
+  async function deleteMetalHolding() {
+    const id = document.getElementById('metalHoldingEditId').value;
+    if (!id) return;
+    const h = metalHoldings.find(x => x.id === id);
+    if (!h) return;
+    const relTxns = metalTxns.filter(t => t.symbol === h.symbol).length;
+    const msg = relTxns > 0
+      ? `確定刪除 ${h.name}（${h.symbol}）？此持有有 ${relTxns} 筆交易紀錄不會被刪除（保留作為歷史）。`
+      : `確定刪除 ${h.name}（${h.symbol}）？`;
+    if (!confirm(msg)) return;
+    metalHoldings = metalHoldings.filter(x => x.id !== id);
+    await saveMetalHoldings();
+    closeMetalHoldingModal();
+    renderMetalHoldings();
+    renderMetalStats();
+    pushMetalHoldingToSupabase(h, true);
+  }
+
+  // === Transaction CRUD ===
+  function openMetalTxnModal(id, presetSymbol, presetType) {
+    const isEdit = !!id;
+    document.getElementById('metalTxnEditId').value = id || '';
+    document.getElementById('metalTxnDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('metalTxnModalTitle').innerHTML = isEdit ? '編輯 <em>交易</em>' : '新增 <em>交易</em>';
+    document.getElementById('metalTxnSearchResults').style.display = 'none';
+    if (isEdit) {
+      const t = metalTxns.find(x => x.id === id);
+      document.getElementById('metalTxnType').value = t.type;
+      document.getElementById('metalTxnDate').value = t.date || '';
+      document.getElementById('metalTxnSymbol').value = t.symbol;
+      document.getElementById('metalTxnSymbolName').value = t.symbolName || '';
+      document.getElementById('metalTxnShares').value = t.shares;
+      document.getElementById('metalTxnPrice').value = t.price;
+      document.getElementById('metalTxnFee').value = t.fee || '';
+      document.getElementById('metalTxnNotes').value = t.notes || '';
+      document.getElementById('metalTxnSearchBox').value = `${t.symbol} · ${t.symbolName || ''}`;
+    } else {
+      ['metalTxnSymbolName','metalTxnShares','metalTxnPrice','metalTxnFee','metalTxnNotes','metalTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+      document.getElementById('metalTxnType').value = presetType || 'buy';
+      document.getElementById('metalTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('metalTxnSymbol').value = presetSymbol || '';
+      if (presetSymbol) {
+        const h = metalHoldings.find(x => x.symbol === presetSymbol);
+        if (h) {
+          document.getElementById('metalTxnSymbolName').value = h.name;
+          document.getElementById('metalTxnSearchBox').value = `${h.symbol} · ${h.name}`;
+        }
+      }
+    }
+    onMetalTxnTypeChange();
+    document.getElementById('metalTxnModal').classList.add('active');
+  }
+  function closeMetalTxnModal() { document.getElementById('metalTxnModal').classList.remove('active'); }
+  function onMetalTxnSymbolChange() {
+    const sym = document.getElementById('metalTxnSymbol').value.trim().toUpperCase();
+    const h = metalHoldings.find(x => x.symbol === sym);
+    if (h) document.getElementById('metalTxnSymbolName').value = h.name;
+    onMetalTxnTypeChange();
+  }
+  function onMetalTxnTypeChange() {
+    const type = document.getElementById('metalTxnType').value;
+    const sym = document.getElementById('metalTxnSymbol').value.trim().toUpperCase();
+    const cur = metalCcyOfSymbol(sym) === 'USD' ? 'US$' : 'NT$';
+    const unit = metalUnitOfSymbol(sym);
+    const sharesLabel = document.getElementById('metalTxnSharesLabel');
+    const priceLabel = document.getElementById('metalTxnPriceLabel');
+    const feeLabel = document.getElementById('metalTxnFeeLabel');
+    const dateLabel = document.getElementById('metalTxnDateLabel');
+    const ccyHint = document.getElementById('metalTxnCcyHint');
+    if (ccyHint) ccyHint.textContent = `此筆以 ${cur === 'US$' ? '美元 USD' : '台幣 TWD'} · ${unit} 計價（跟著該檔的設定）`;
+    if (type === 'dividend') {
+      sharesLabel.textContent = `領息數量（${unit}）`; priceLabel.textContent = `每單位配息 (${cur})`;
+      feeLabel.textContent = `稅費 (${cur})`; dateLabel.textContent = '配息發放日';
+    } else if (type === 'stock_div') {
+      sharesLabel.textContent = `增加數量（${unit}）`; priceLabel.textContent = '當時牌價（可估）';
+      feeLabel.textContent = `費用 (${cur})`; dateLabel.textContent = '日期';
+    } else {
+      sharesLabel.textContent = `數量（${unit}）`; priceLabel.textContent = `單價 (${cur} / ${unit})`;
+      feeLabel.textContent = `手續費 / 加工費 (${cur})`; dateLabel.textContent = '日期';
+    }
+  }
+  async function saveMetalTxn(e) {
+    e.preventDefault();
+    const id = document.getElementById('metalTxnEditId').value;
+    const type = document.getElementById('metalTxnType').value;
+    const symbol = document.getElementById('metalTxnSymbol').value.trim().toUpperCase();
+    const symbolName = document.getElementById('metalTxnSymbolName').value.trim();
+    const shares = Number(document.getElementById('metalTxnShares').value);
+    const price = Number(document.getElementById('metalTxnPrice').value);
+    const fee = Number(document.getElementById('metalTxnFee').value) || 0;
+    const data = {
+      type, date: document.getElementById('metalTxnDate').value,
+      symbol, symbolName, shares, price,
+      ccy: metalCcyOfSymbol(symbol),
+      fee, tax: 0,
+      notes: document.getElementById('metalTxnNotes').value.trim()
+    };
+    const isEdit = !!id;
+    let savedTxn;
+    if (isEdit) {
+      const i = metalTxns.findIndex(t => t.id === id);
+      if (i > -1) { metalTxns[i] = { ...metalTxns[i], ...data, updatedAt: Date.now() }; savedTxn = metalTxns[i]; }
+    } else {
+      savedTxn = { id: 'mtx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      metalTxns.push(savedTxn);
+    }
+    recomputeMetalHolding(symbol);
+    await saveMetalTxns();
+    await saveMetalHoldings();
+    await saveMetalRealized();
+    closeMetalTxnModal();
+    renderMetalHoldings();
+    renderMetalStats();
+    showToast(isEdit ? '交易已更新' : '已新增交易');
+    if (savedTxn) pushMetalTransactionToSupabase(savedTxn);
+    const affected = metalHoldings.find(h => h.symbol === symbol);
+    if (affected) pushMetalHoldingToSupabase(affected);
+  }
+  async function deleteMetalTxn() {
+    const id = document.getElementById('metalTxnEditId').value;
+    if (!id) return;
+    const t = metalTxns.find(x => x.id === id);
+    if (!t || !confirm('刪除這筆交易？對應持有的成本/數量會重新計算。')) return;
+    metalTxns = metalTxns.filter(x => x.id !== id);
+    recomputeMetalHolding(t.symbol);
+    await saveMetalTxns();
+    await saveMetalHoldings();
+    await saveMetalRealized();
+    closeMetalTxnModal();
+    renderMetalHoldings();
+    renderMetalStats();
+    pushMetalTransactionToSupabase(t, true);
+    const affected = metalHoldings.find(h => h.symbol === t.symbol);
+    if (affected) pushMetalHoldingToSupabase(affected);
+  }
+
+  function recomputeMetalHolding(symbol) {
+    const txns = metalTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    metalRealizedPnL = recomputeAllMetalRealized();
+    if (txns.length === 0) return;
+    let shares = 0, totalCost = 0, avgCost = 0;
+    txns.forEach(t => {
+      if (t.type === 'buy') {
+        const cost = t.shares * t.price + (t.fee || 0);
+        shares += t.shares; totalCost += cost;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      } else if (t.type === 'sell') {
+        if (shares === 0) return;
+        const sellQty = Math.min(t.shares, shares);
+        const sellCost = sellQty * avgCost;
+        shares -= sellQty; totalCost -= sellCost;
+        if (shares <= 0) { shares = 0; totalCost = 0; }
+      } else if (t.type === 'stock_div') {
+        shares += t.shares;
+        avgCost = shares > 0 ? totalCost / shares : 0;
+      }
+    });
+    let h = metalHoldings.find(x => x.symbol === symbol);
+    if (h) {
+      h.shares = Number(shares.toFixed(4));
+      h.avgCost = shares > 0 ? Number((totalCost / shares).toFixed(4)) : 0;
+      if (!h.name && txns[0].symbolName) h.name = txns[0].symbolName;
+      h.updatedAt = Date.now();
+    } else if (shares > 0) {
+      const ref = METAL_LIST.find(x => x.symbol === symbol) || {};
+      metalHoldings.push({
+        id: 'mh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        symbol, name: txns[0].symbolName || ref.name || symbol,
+        ccy: (txns[0].ccy === 'USD' || ref.ccy === 'USD') ? 'USD' : 'TWD',
+        mtype: ref.mtype || '黃金', form: ref.form || '其他', unit: ref.unit || '公克',
+        spread: ref.spread != null ? ref.spread : null, purity: ref.purity || '',
+        shares: Number(shares.toFixed(4)),
+        avgCost: Number((totalCost / shares).toFixed(4)),
+        currentPrice: null, buyDate: txns[0].date, market: ref.market || '台灣銀行',
+        createdAt: Date.now(), updatedAt: Date.now()
+      });
+    }
+  }
+  function recomputeAllMetalRealized() {
+    const symbols = [...new Set(metalTxns.map(t => t.symbol))];
+    let total = 0;
+    symbols.forEach(sym => {
+      const symRate = metalCcyOfSymbol(sym) === 'USD' ? metalFx() : 1;
+      let symTotal = 0;
+      const txns = metalTxns.filter(t => t.symbol === sym).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      let shares = 0, totalCost = 0, avgCost = 0;
+      txns.forEach(t => {
+        if (t.type === 'buy') {
+          const cost = t.shares * t.price + (t.fee || 0);
+          shares += t.shares; totalCost += cost;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        } else if (t.type === 'sell') {
+          if (shares === 0) return;
+          const sellQty = Math.min(t.shares, shares);
+          const sellCost = sellQty * avgCost;
+          const sellRevenue = sellQty * t.price - (t.fee || 0);
+          symTotal += sellRevenue - sellCost;
+          shares -= sellQty; totalCost -= sellCost;
+          if (shares <= 0) { shares = 0; totalCost = 0; }
+        } else if (t.type === 'stock_div') {
+          shares += t.shares;
+          avgCost = shares > 0 ? totalCost / shares : 0;
+        }
+      });
+      total += symTotal * symRate;
+    });
+    return Number(total.toFixed(2));
+  }
+
+  // === 匯出 / 匯入 ===
+  function exportMetalData() {
+    const data = { holdings: metalHoldings, transactions: metalTxns, realized: metalRealizedPnL, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `metal-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function importMetalData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!confirm(`匯入備份？\n持有 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有貴金屬資料。`)) return;
+        if (d.holdings) metalHoldings = d.holdings;
+        if (d.transactions) metalTxns = d.transactions;
+        metalRealizedPnL = recomputeAllMetalRealized();
+        await saveMetalHoldings();
+        await saveMetalTxns();
+        await saveMetalRealized();
+        renderMetalHoldings();
+        renderMetalStats();
+        showToast(`已匯入 ${metalHoldings.length} 項貴金屬`);
+      } catch (err) {
+        alert('匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  // === 批次牌價更新 ===
+  function openMetalBatchPriceModal() {
+    if (metalHoldings.length === 0) { showToast('還沒有持有可更新'); return; }
+    const list = document.getElementById('metalBatchPriceList');
+    list.innerHTML = metalHoldings.map(h => `
+      <div style="display:flex; gap:10px; align-items:center; padding:10px 12px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px;">
+        <span style="font-family:var(--mono); color:var(--accent); font-weight:600; min-width:60px;">${escape(h.symbol)}</span>
+        <span style="flex:1; font-family:var(--serif);">${escape(h.name)}</span>
+        <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${metalCcy(h)} / ${escape(metalUnit(h))}</span>
+        <input type="number" step="any" data-metal-batch-id="${escape(h.id)}" value="${h.currentPrice || ''}" placeholder="牌價 ${metalSym(h)}" class="form-input" style="width:130px; font-family:var(--mono);">
+      </div>
+    `).join('');
+    document.getElementById('metalBatchPriceModal').classList.add('active');
+  }
+  function closeMetalBatchPriceModal() { document.getElementById('metalBatchPriceModal').classList.remove('active'); }
+  async function saveMetalBatchPrices() {
+    document.querySelectorAll('[data-metal-batch-id]').forEach(input => {
+      const id = input.getAttribute('data-metal-batch-id');
+      const v = Number(input.value);
+      const h = metalHoldings.find(x => x.id === id);
+      if (h && v > 0) { h.currentPrice = v; h.priceUpdatedAt = Date.now(); }
+    });
+    await saveMetalHoldings();
+    closeMetalBatchPriceModal();
+    renderMetalHoldings();
+    renderMetalStats();
+    showToast('牌價已更新');
+  }
+
+
+  // ============================================================
   // 現金流儀表板 · Cashflow Dashboard（聚合台股/美股/加密/ETF，統一台幣）
   // ============================================================
   const CF_STORAGE = { fx: 'cashflow_fx_v1' };
@@ -16421,7 +18840,9 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     { key: 'mketf', name: '市值型 ETF', nameEn: 'INDEX · ETF', cur: 'MIXED', hKey: 'mketf_holdings_v1', tKey: 'mketf_transactions_v1', rKey: 'mketf_realized_v1', view: 'mkEtfView', color: '#9aa06a' },
     { key: 'bond', name: '債券 · 債券 ETF', nameEn: 'BOND · FIXED INCOME', cur: 'MIXED', hKey: 'bond_holdings_v1', tKey: 'bond_transactions_v1', rKey: 'bond_realized_v1', view: 'bondView', color: '#7a8ba0' },
     // 外幣存款：shares=外幣金額、price=匯率，相乘本來就是台幣 → cur:'TWD'
-    { key: 'fxdep', name: '外幣存款', nameEn: 'FOREX · DEPOSIT', cur: 'TWD', hKey: 'fxdep_holdings_v1', tKey: 'fxdep_transactions_v1', rKey: 'fxdep_realized_v1', view: 'fxDepView', color: '#b0946a' }
+    { key: 'fxdep', name: '外幣存款', nameEn: 'FOREX · DEPOSIT', cur: 'TWD', hKey: 'fxdep_holdings_v1', tKey: 'fxdep_transactions_v1', rKey: 'fxdep_realized_v1', view: 'fxDepView', color: '#b0946a' },
+    { key: 'fund', name: '主動式基金', nameEn: 'ACTIVE · FUND', cur: 'MIXED', hKey: 'fund_holdings_v1', tKey: 'fund_transactions_v1', rKey: 'fund_realized_v1', view: 'fundView', color: '#a08b6a' },
+    { key: 'metal', name: '貴金屬', nameEn: 'PRECIOUS · METALS', cur: 'MIXED', hKey: 'metal_holdings_v1', tKey: 'metal_transactions_v1', rKey: 'metal_realized_v1', view: 'metalView', color: '#c2a34a' }
   ];
   // 哪些模組算「債券／現金」那一格（資產配置用）
   const CF_BOND_CASH_KEYS = ['bond', 'fxdep'];
@@ -16467,7 +18888,11 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
       const cost = holdings.reduce((a, h) => a + holdingCost(h) * cfItemRate(s, h, fx), 0);
       const value = holdings.reduce((a, h) => a + holdingValue(h) * cfItemRate(s, h, fx), 0);
       const div = txns.filter(t => t.type === 'dividend').reduce((a, t) => a + (Number(t.shares) || 0) * (Number(t.price) || 0) * cfItemRate(s, t, fx), 0);
-      rows.push({ ...s, count: holdings.length, cost, value, pnl: value - cost, pnlPct: cost > 0 ? ((value - cost) / cost * 100) : 0, div });
+      // 基金模組裡的債券型／貨幣型要歸到「債券／現金」那一格，不能算成股票
+      const bondish = s.key === 'fund'
+        ? holdings.filter(h => typeof fundIsBondish === 'function' && fundIsBondish(h)).reduce((a, h) => a + holdingValue(h) * cfItemRate(s, h, fx), 0)
+        : 0;
+      rows.push({ ...s, count: holdings.length, cost, value, pnl: value - cost, pnlPct: cost > 0 ? ((value - cost) / cost * 100) : 0, div, bondish });
     }
     return rows;
   }
@@ -16512,7 +18937,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
         <span style="flex:1; font-family:var(--serif);">${escape(r.name)} <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${r.cur === 'MIXED' ? 'TWD+USD' : r.cur}</span></span>
         <span style="font-family:var(--mono); font-size:12px;">${cfMoney(r.value)}</span>
         <span style="font-family:var(--mono); font-size:12px; color:var(--accent); min-width:48px; text-align:right;">${totalValue > 0 ? (r.value / totalValue * 100).toFixed(1) : '0.0'}%</span>
-      </div>`).join('') || '<div style="color:var(--ink-tertiary); padding:12px; font-size:12px;">五個資產模組目前都沒有持倉。先到各模組新增持股／持倉，這裡就會自動聚合。</div>';
+      </div>`).join('') || '<div style="color:var(--ink-tertiary); padding:12px; font-size:12px;">所有資產模組目前都沒有持倉。先到各模組新增持股／持倉，這裡就會自動聚合。</div>';
     const cards = rows.map(r => {
       const cls = r.pnl > 0 ? 'profit' : r.pnl < 0 ? 'loss' : 'flat';
       return `
@@ -16670,16 +19095,18 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
   }
   function renderAllocation(rows) {
     const byKey = {}; rows.forEach(r => byKey[r.key] = r.value);
-    const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0) + (byKey.mketf || 0);
-    const alt = (byKey.crypto || 0) + (Number(allocConfig.realEstate) || 0) + (Number(allocConfig.otherAlt) || 0);
+    // 基金模組中屬於債券型／貨幣型的部分，要從股票那格挪到債券／現金那格
+    const fundBondish = rows.reduce((a, r) => a + (Number(r.bondish) || 0), 0);
+    const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0) + (byKey.mketf || 0) + (byKey.fund || 0) - fundBondish;
+    const alt = (byKey.crypto || 0) + (byKey.metal || 0) + (Number(allocConfig.realEstate) || 0) + (Number(allocConfig.otherAlt) || 0);
     // 債券模組 + 外幣存款模組自動帶入，再加手動填的現金／其他債券
-    const bondCashAuto = CF_BOND_CASH_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0);
+    const bondCashAuto = CF_BOND_CASH_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + fundBondish;
     const bondCash = bondCashAuto + (Number(allocConfig.cash) || 0) + (Number(allocConfig.bond) || 0);
     const total = equity + bondCash + alt;
     const cats = [
-      { name: '公開市場股票', en: 'EQUITIES', color: '#d4a574', value: equity, target: Number(allocConfig.tEquity) || 0, note: '台股 + 美股 + 高股息 ETF + 市值型 ETF（自動）' },
-      { name: '債券／現金', en: 'BONDS · CASH', color: '#9aa06a', value: bondCash, target: Number(allocConfig.tBondCash) || 0, note: '債券 + 外幣存款（自動）+ 手動現金' },
-      { name: '另類資產', en: 'ALTERNATIVES', color: '#c97b6a', value: alt, target: Number(allocConfig.tAlt) || 0, note: '加密貨幣（自動）+ 不動產/其他' }
+      { name: '公開市場股票', en: 'EQUITIES', color: '#d4a574', value: equity, target: Number(allocConfig.tEquity) || 0, note: '台股 + 美股 + ETF + 股票型基金（自動）' },
+      { name: '債券／現金', en: 'BONDS · CASH', color: '#9aa06a', value: bondCash, target: Number(allocConfig.tBondCash) || 0, note: '債券 + 外幣存款 + 債券型基金（自動）+ 手動現金' },
+      { name: '另類資產', en: 'ALTERNATIVES', color: '#c97b6a', value: alt, target: Number(allocConfig.tAlt) || 0, note: '加密貨幣 + 貴金屬（自動）+ 不動產/其他' }
     ];
     const targetSum = cats.reduce((a, c) => a + c.target, 0);
     const statsEl = document.getElementById('allocStats');
@@ -21245,6 +23672,12 @@ ${daysBrief}
       closeMoreSheet();
     } else if (id === 'fxDepView') {
       loadFxDep();
+      closeMoreSheet();
+    } else if (id === 'fundView') {
+      loadFund();
+      closeMoreSheet();
+    } else if (id === 'metalView') {
+      loadMetal();
       closeMoreSheet();
     } else if (id === 'cashflowView') {
       loadCashflow();
