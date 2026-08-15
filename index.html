@@ -596,6 +596,35 @@
   .modal h2 { font-family: var(--serif); font-size: 26px; font-weight: 500; margin-bottom: 22px; letter-spacing: -0.01em; }
   .modal h2 em { font-style: italic; color: var(--accent); }
 
+  /* 長視窗（分析、走勢圖、記錄本…）的置頂標題列：標題不動，右邊常駐一顆 ✕，
+     不用捲到最下面才關得掉。.modal 本身就是捲動容器，所以 sticky 有效。
+     ⚠ 兩個一定要做的配套，少一個就會出事：
+     ① .modal 的 padding-top 要歸零。否則 sticky 停在捲動區頂端，
+        而那 36px 的 padding 也會跟著捲，內容就會從標題「上方」露出來（實測看得到）。
+        padding-top 改由這條列自己出。
+     ② 滿版底色用 ::before 撐，不要用負 margin。負 margin 會讓元素比容器寬，
+        而 .modal 是 overflow-y:auto（x 軸連帶變 auto），會生出橫向捲軸。
+        ::before 是絕對定位，完全不影響版面。 */
+  .modal:has(.modal-head) { padding-top: 0; }
+  .modal-head {
+    position: sticky; top: 0; z-index: 6;
+    display: flex; align-items: center; gap: 14px;
+    padding: 26px 0 13px; margin-bottom: 18px;
+    background: var(--bg-elevated);
+  }
+  .modal-head::before {
+    content: ''; position: absolute; top: 0; bottom: 0; left: -36px; right: -36px; z-index: -1;
+    background: var(--bg-elevated); border-bottom: 1px solid var(--line);
+  }
+  .modal-head h2 { margin-bottom: 0; flex: 1; min-width: 0; }
+  .modal-head-x {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 3px;
+    background: var(--bg-card); border: 1px solid var(--line); color: var(--ink-secondary);
+    font-family: var(--sans); font-size: 15px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all 0.25s;
+  }
+  .modal-head-x:hover { border-color: var(--danger); color: var(--danger); background: var(--bg-card-hover); }
+
   .form-group { margin-bottom: 18px; }
   .form-label {
     display: block; font-family: var(--mono); font-size: 10px;
@@ -1062,6 +1091,11 @@
     .control-right { justify-content: space-between; }
     .api-header { flex-direction: column; align-items: flex-start; }
     .modal { padding: 26px 20px; max-width: calc(100vw - 24px); }
+    /* 手機的 .modal 左右 padding 是 20px，::before 的外擴要跟著改 */
+    .modal-head { padding: 18px 0 11px; margin-bottom: 14px; }
+    .modal-head::before { left: -20px; right: -20px; }
+    .modal-head h2 { font-size: 21px; }
+    .modal-head-x { width: 40px; height: 40px; font-size: 16px; }
     .form-row { grid-template-columns: 1fr; gap: 14px; }
     /* emoji-input row 仍要橫向，否則圖示獨佔一行很怪 */
     .form-row:has(.emoji-input) { grid-template-columns: auto 1fr; }
@@ -3129,7 +3163,10 @@
   <!-- ============ 美股條件選股 Modal ============ -->
   <div class="modal-backdrop" id="usScreenerModal">
     <div class="modal" style="max-width:620px;">
-      <h2>🔎 條件<em>選股</em></h2>
+      <div class="modal-head">
+        <h2>🔎 條件<em>選股</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeUsScreener()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="font-size:12px; color:var(--ink-secondary); margin-bottom:12px; line-height:1.6;">從內建熱門美股清單，依條件篩選（可多選，取 <strong>AND 交集</strong>）。用 Finnhub 免費基本面，需先設金鑰。</div>
       <div id="usScreenerChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"></div>
       <button class="btn btn-primary btn-sm" id="usScreenerRunBtn" type="button" onclick="runUsScreener()" style="margin-bottom:14px;">🔎 開始篩選</button>
@@ -3144,7 +3181,10 @@
   <!-- ============ 美股個股分析 Modal ============ -->
   <div class="modal-backdrop" id="usAnalysisModal">
     <div class="modal" style="max-width:680px;">
-      <h2 id="usAnalysisTitle">個股 <em>分析</em></h2>
+      <div class="modal-head">
+        <h2 id="usAnalysisTitle">個股 <em>分析</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeUsAnalysisModal()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div class="form-group" style="margin-bottom:14px; position:relative;">
         <input type="text" class="form-input" id="usAnalysisSearchBox" placeholder="⌕ 查任何美股：輝達 / AAPL / 台積電 / SPY..." autocomplete="off" oninput="onUsAnalysisSearch(this.value)" onfocus="onUsAnalysisSearch(this.value)" onblur="setTimeout(()=>{const el=document.getElementById('usAnalysisSearchResults'); if(el) el.style.display='none';},200)">
         <div class="stock-search-results" id="usAnalysisSearchResults" style="display:none;"></div>
@@ -6574,7 +6614,10 @@
        純看 DOM 順序，而 tvChartModal 排在這之後會蓋住這個視窗（實測踩到）。 -->
   <div class="modal-backdrop" id="analysisLogModal" style="z-index:2100;">
     <div class="modal" style="max-width: 1040px;">
-      <h2>📓 <span id="alogTitle">分析策略</span> <em>記錄</em></h2>
+      <div class="modal-head">
+        <h2>📓 <span id="alogTitle">分析策略</span> <em>記錄</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeAnalysisLog()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:12px;">
         把系統分析、AI 回覆、還有你自己的判斷分開記，之後回來看得到「當初為什麼這樣決定」。<strong>資料存在本機，也會被全站備份收進去。</strong>
       </div>
@@ -6648,7 +6691,10 @@
   <!-- 我的下單計畫：把所有設過買賣價位的股票排在一起，看誰踩到停損/停利了 -->
   <div class="modal-backdrop" id="planWatchModal" style="z-index:2150;">
     <div class="modal" style="max-width: 980px;">
-      <h2>📋 我的<em>下單計畫</em></h2>
+      <div class="modal-head">
+        <h2>📋 我的<em>下單計畫</em></h2>
+        <button class="modal-head-x" type="button" onclick="closePlanWatch()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:6px;">
         每一檔你在「分析策略記錄」設過最低／最高價的股票都在這。現價會先抓你在各模組維護的價格，抓不到才用上次看盤的價。
       </div>
@@ -6709,7 +6755,10 @@
   <!-- ============ 全站備份 / 還原 Modal ============ -->
   <div class="modal-backdrop" id="backupModal">
     <div class="modal" style="max-width: 820px;">
-      <h2>💾 全站 <em>備份 / 還原</em></h2>
+      <div class="modal-head">
+        <h2>💾 全站 <em>備份 / 還原</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeBackupModal()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:16px;">
         以前每個模組要各自匯出，18 個模組要按 18 次。<strong>這裡一顆按鈕把全部資料存成一個檔</strong>——投資、不動產、協會、旅遊、歷史走勢，全部都在裡面。
       </div>
@@ -6750,7 +6799,10 @@
   <!-- ============ 美股 · 短線機會掃描 Modal ============ -->
   <div class="modal-backdrop" id="usScanModal">
     <div class="modal" style="max-width: 900px;">
-      <h2>🎯 <span id="usScanMarketLabel">短線</span> <em>機會掃描</em></h2>
+      <div class="modal-head">
+        <h2>🎯 <span id="usScanMarketLabel">短線</span> <em>機會掃描</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeUsScanModal()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
         勾好你要的技術條件，掃描一批股票，<strong>符合越多條件的排越前面</strong>。每一檔會直接給你現價、停損參考、目標價與符合了哪幾項。
         <br><strong>資料抓一次就會快取</strong>——之後改條件重新排名是<strong>秒出</strong>的，可以放心一直調。
@@ -6835,7 +6887,10 @@
   <!-- ============ 雲端同步總管 Modal（一次設定，全部模組通用）============ -->
   <div class="modal-backdrop" id="syncMasterModal">
     <div class="modal" style="max-width: 760px;">
-      <h2>☁ 雲端同步 <em>總管</em></h2>
+      <div class="modal-head">
+        <h2>☁ 雲端同步 <em>總管</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeSyncMasterModal()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
         以前每個模組都要各自填一次 Supabase，換手機要填十幾次。<strong>現在在這裡填一次，按「套用到全部模組」就好。</strong>
       </div>
@@ -6942,7 +6997,10 @@
   <!-- ============ 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF）============ -->
   <div class="modal-backdrop" id="tvChartModal">
     <div class="modal" style="max-width:680px;">
-      <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
+      <div class="modal-head">
+        <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeTvChartModal()" title="關閉" aria-label="關閉">✕</button>
+      </div>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
         <span style="font-size:10.5px; color:var(--ink-tertiary); font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 趨勢線 · 布林通道 · 成交量 · 來源 FinMind。</span>
         <span id="twPlanBadge" style="margin-left:auto;"></span>
@@ -8135,7 +8193,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.4 · ι</div>
+    <div>v 9.5 · ι</div>
   </footer>
 </div>
 
