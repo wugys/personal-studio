@@ -3141,7 +3141,8 @@
         <div class="stock-search-results" id="usAnalysisSearchResults" style="display:none;"></div>
       </div>
       <div id="usAnalysisBody"></div>
-      <div class="form-actions" style="justify-content:flex-end; margin-top:16px;">
+      <div class="form-actions" style="justify-content:space-between; margin-top:16px;">
+        <button class="btn btn-primary" type="button" onclick="openAnalysisLog()">📓 分析策略記錄</button>
         <button class="btn" type="button" onclick="closeUsAnalysisModal()">關閉</button>
       </div>
     </div>
@@ -6559,6 +6560,123 @@
 
 
 
+  <!-- ============ 分析策略記錄 Modal（三個活頁）============ -->
+  <!-- ⚠ z-index 要蓋過分析視窗：所有 .modal-backdrop 都是 z-index:100，
+       純看 DOM 順序，而 tvChartModal 排在這之後會蓋住這個視窗（實測踩到）。 -->
+  <div class="modal-backdrop" id="analysisLogModal" style="z-index:2100;">
+    <div class="modal" style="max-width: 1040px;">
+      <h2>📓 <span id="alogTitle">分析策略</span> <em>記錄</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:12px;">
+        把系統分析、AI 回覆、還有你自己的判斷分開記，之後回來看得到「當初為什麼這樣決定」。<strong>資料存在本機，也會被全站備份收進去。</strong>
+      </div>
+
+      <div class="travel-tabs" style="margin-bottom:14px;">
+        <button class="travel-tab active" data-alog-tab="system" onclick="setAlogTab('system')">⚙ 系統</button>
+        <button class="travel-tab" data-alog-tab="ai" onclick="setAlogTab('ai')">✦ AI 分析</button>
+        <button class="travel-tab" data-alog-tab="note" onclick="setAlogTab('note')">✎ 心得</button>
+        <span style="margin-left:auto; display:flex; align-items:center; gap:6px; padding-right:4px;">
+          <button class="btn btn-sm" id="alogImportBtn" onclick="alogImportFromSystem()" title="把目前這一檔的系統分析結果直接存成一筆">↓ 從系統帶入</button>
+          <button class="btn btn-sm btn-primary" onclick="openAlogEntry()">＋ 新增記錄</button>
+        </span>
+      </div>
+
+      <div style="overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--bg-elevated);">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:820px;">
+          <thead>
+            <tr style="background:var(--bg-card);">
+              <th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); width:48px;">項次</th>
+              <th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); width:94px;">日期</th>
+              <th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); width:104px;">記錄型態</th>
+              <th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line);">記錄內容</th>
+              <th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); width:180px;">心得</th>
+              <th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); width:130px;">備註</th>
+              <th style="padding:8px 6px; border-bottom:1px solid var(--line); width:76px;"></th>
+            </tr>
+          </thead>
+          <tbody id="alogTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 表格最下方：這次下單的決定 -->
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:12px 14px; margin-top:12px;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--accent); margin-bottom:8px;">這次下單的決定 · ORDER PLAN</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;">
+          <div>
+            <label class="form-label">當前價格</label>
+            <input type="number" step="any" class="form-input" id="alogPrice" placeholder="342.27" style="font-family:var(--mono);" oninput="renderAlogPlanHint()">
+          </div>
+          <div>
+            <label class="form-label">最高價（賣出／停利）</label>
+            <input type="number" step="any" class="form-input" id="alogHigh" placeholder="380.00" style="font-family:var(--mono);" oninput="renderAlogPlanHint()">
+          </div>
+          <div>
+            <label class="form-label">最低價（買進／停損）</label>
+            <input type="number" step="any" class="form-input" id="alogLow" placeholder="320.00" style="font-family:var(--mono);" oninput="renderAlogPlanHint()">
+          </div>
+          <div style="display:flex; align-items:flex-end; gap:6px;">
+            <button class="btn btn-sm" type="button" onclick="alogFillFromLevels()" title="用系統算出來的停損與目標填進去">↓ 用系統價位帶</button>
+            <button class="btn btn-sm btn-primary" type="button" onclick="saveAlogPlan()">儲存決定</button>
+          </div>
+        </div>
+        <div id="alogPlanHint" style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; margin-top:8px;"></div>
+      </div>
+
+      <div style="margin-top:12px; padding:8px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); border-radius:3px; font-size:11px; color:var(--ink-secondary); line-height:1.55;">
+        ⚠ 這裡只是你自己的筆記與計畫，<strong>不會幫你下單</strong>，也不構成投資建議。價格請以券商實際成交為準。
+      </div>
+
+      <div class="form-actions" style="justify-content:space-between; margin-top:12px;">
+        <span style="display:flex; gap:6px;">
+          <button class="btn btn-sm" onclick="exportAlogData()" title="只匯出這一檔的記錄">↓ 匯出這檔</button>
+          <button class="btn btn-sm" onclick="copyAlogSummary()" title="複製成文字，可貼到別的地方">📋 複製摘要</button>
+        </span>
+        <button class="btn" onclick="closeAnalysisLog()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 分析記錄 · 單筆編輯 Modal（疊在上面）============ -->
+  <div class="modal-backdrop" id="alogEntryModal" style="z-index:2200;">
+    <div class="modal" style="max-width: 640px;">
+      <h2 id="alogEntryTitle">新增 <em>記錄</em></h2>
+      <form onsubmit="saveAlogEntry(event)">
+        <input type="hidden" id="alogEntryId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">日期</label>
+            <input type="date" class="form-input" id="alogEntryDate" required>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">記錄型態</label>
+            <select class="form-select" id="alogEntryType"></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">記錄內容</label>
+          <textarea class="form-textarea" id="alogEntryContent" required placeholder="貼上 AI 回覆、或寫下系統訊號的重點…" style="min-height:150px;"></textarea>
+          <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">可以直接把 Gemini／Claude／ChatGPT 的整段回覆貼進來。</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">心得</label>
+          <textarea class="form-textarea" id="alogEntryInsight" placeholder="你看完這段之後怎麼想？哪裡認同、哪裡存疑？"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="alogEntryMemo" placeholder="例如：等財報後再看、跟 NVDA 一起比較…">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="alogEntryDeleteBtn" onclick="deleteAlogEntry()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeAlogEntry()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ============ 全站備份 / 還原 Modal ============ -->
   <div class="modal-backdrop" id="backupModal">
     <div class="modal" style="max-width: 820px;">
@@ -6813,7 +6931,8 @@
         <div id="tvChartAiResult" style="display:none; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px; font-size:13px; line-height:1.75; color:var(--ink-secondary); max-height:38vh; overflow-y:auto;"></div>
         <div style="margin-top:10px; font-size:10.5px; color:var(--ink-tertiary);">⚠ 僅為資訊整理，不構成投資建議。</div>
       </div>
-      <div class="form-actions" style="justify-content:flex-end; margin-top:14px;">
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-primary" type="button" onclick="openAnalysisLog()">📓 分析策略記錄</button>
         <button class="btn" type="button" onclick="closeTvChartModal()">關閉</button>
       </div>
     </div>
@@ -7984,7 +8103,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.0 · ι</div>
+    <div>v 9.1 · ι</div>
   </footer>
 </div>
 
@@ -11508,6 +11627,9 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
 
       // 新手體檢 + 參考價位帶（跟美股同一套，只是資料來源與幣別不同）
       const price = sig ? sig.last : (candles[candles.length - 1] || {}).close;
+      // 給「分析策略記錄」的「↓ 從系統帶入」用
+      lastAnalysisSnapshot = { symbol: code, name: name || code, market: 'tw', price: price || 0,
+        snap: `收盤 NT$${price}`, tech: '', techSummary: (sig && sig.summary) || '', check: '', levels: '' };
       const chk = document.getElementById('twCheckPanel');
       const lvl = document.getElementById('twLevelsPanel');
       if (chk) chk.innerHTML = renderUsBeginnerCheck(code, price, null, sig, 'tw');   // 先用技術面畫一次
@@ -11527,6 +11649,10 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         const c2 = document.getElementById('twCheckPanel');
         if (c2) c2.innerHTML = renderUsBeginnerCheck(code, price, synth, sig, 'tw');
         if (L) tvChartPrompt += '\n關鍵價位（規則算出，非預測）：' + usLevelsSummary(L, 'NT$');
+        if (lastAnalysisSnapshot && lastAnalysisSnapshot.symbol === code) {
+          lastAnalysisSnapshot.levels = L ? usLevelsSummary(L, 'NT$') : '';
+          lastAnalysisSnapshot.check = usCheckItems(price, synth, sig, 'tw').map(i => `${i.label}：${i.valText}（${i.verdict === 'green' ? '好' : i.verdict === 'amber' ? '普通' : i.verdict === 'red' ? '要注意' : '無資料'}）`).join('\n');
+        }
       }).catch(() => {
         const l2 = document.getElementById('twLevelsPanel');
         if (l2) l2.innerHTML = renderUsPriceLevels(usPriceLevels(price, null, sig, candles), 'NT$');
@@ -12321,6 +12447,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     if (mm.peTTM != null || mm.peBasicExclExtraTTM != null) snap += ` · P/E ${Number(mm.peTTM ?? mm.peBasicExclExtraTTM).toFixed(1)}`;
     if (mm['52WeekHigh'] != null) snap += ` · 52W ${mm['52WeekLow']}~${mm['52WeekHigh']}`;
     usAnalysisCtx = { symbol: h.symbol, name: h.name, snap, tech: '', levels: '' };
+    // 給「分析策略記錄」的「↓ 從系統帶入」用
+    lastAnalysisSnapshot = { symbol: h.symbol, name: h.name, market: 'us', price: (quote && quote.c) || 0, snap, tech: '', techSummary: '', check: '', levels: '' };
     usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap, 'general');
     // 新手體檢要用到：使用者先前填的答案 + 總資產（用來算「這筆佔你多少 %」）
     await loadUsCheckAnswers();
@@ -12352,6 +12480,13 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       }
       if (L) usAnalysisCtx.levels = usLevelsSummary(L);
       if (sig || L) rebuildUsPrompt();
+      if (lastAnalysisSnapshot && lastAnalysisSnapshot.symbol === h.symbol) {
+        lastAnalysisSnapshot.price = px || lastAnalysisSnapshot.price;
+        lastAnalysisSnapshot.tech = usAnalysisCtx.tech;
+        lastAnalysisSnapshot.techSummary = (sig && sig.summary) || '';
+        lastAnalysisSnapshot.levels = L ? usLevelsSummary(L) : '';
+        lastAnalysisSnapshot.check = usCheckItems(px, metric, sig).map(i => `${i.label}：${i.valText}（${i.verdict === 'green' ? '好' : i.verdict === 'amber' ? '普通' : i.verdict === 'red' ? '要注意' : '無資料'}）`).join('\n');
+      }
     }).catch(() => {
       if (seq !== usAnalysisSeq) return;
       const panel = document.getElementById('usSignalsPanel');
@@ -22153,6 +22288,275 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   // ============================================================
+  // 分析策略記錄 · Analysis Log
+  //
+  // 為什麼要有：使用者請 AI 分析完，那段內容看完就沒了；下次回來不記得
+  //   「當初為什麼決定買這個價位」。這裡把三種來源分開存：
+  //   系統（app 自己算的）／AI 分析（貼回覆）／心得（你自己的結論），
+  //   最後在表格下方決定這次下單的最高與最低價。
+  // ⚠ 依「代號」分開存，切到別檔就是另一本記錄。
+  // ============================================================
+  const ALOG_STORAGE = 'analysis_log_v1';
+  const ALOG_TABS = [
+    { key: 'system', name: '系統', types: ['技術訊號', '新手體檢', '參考價位帶', '掃描結果', '基本面', '其他'] },
+    { key: 'ai', name: 'AI 分析', types: ['Gemini', 'Claude', 'ChatGPT', '其他 AI'] },
+    { key: 'note', name: '心得', types: ['進場理由', '出場理由', '觀察', '檢討', '其他'] }
+  ];
+  let alogAll = {};            // { symbol: { entries: [], plan: {price,high,low,updatedAt} } }
+  let alogSymbol = '';         // 目前這本記錄是哪一檔
+  let alogName = '';
+  let alogMarket = 'us';
+  let alogTab = 'system';
+  // 讓「從系統帶入」拿得到最近一次分析的內容（美股與台股都會更新）
+  let lastAnalysisSnapshot = null;
+
+  async function loadAlog() {
+    try { const v = await readKey(ALOG_STORAGE); alogAll = v ? JSON.parse(v) : {}; }
+    catch (e) { alogAll = {}; }
+    if (!alogAll || typeof alogAll !== 'object') alogAll = {};
+    return alogAll;
+  }
+  async function saveAlog() { await writeKey(ALOG_STORAGE, JSON.stringify(alogAll)); }
+  function alogBook(sym) {
+    if (!alogAll[sym]) alogAll[sym] = { entries: [], plan: { price: null, high: null, low: null, updatedAt: 0 } };
+    if (!Array.isArray(alogAll[sym].entries)) alogAll[sym].entries = [];
+    if (!alogAll[sym].plan) alogAll[sym].plan = { price: null, high: null, low: null, updatedAt: 0 };
+    return alogAll[sym];
+  }
+  const alogCur = () => alogMarket === 'tw' ? 'NT$' : '$';
+
+  async function openAnalysisLog() {
+    // 從目前開著的分析視窗判斷是哪一檔
+    const snap = lastAnalysisSnapshot;
+    if (!snap || !snap.symbol) { showToast('請先打開一檔股票的分析畫面'); return; }
+    alogSymbol = snap.symbol; alogName = snap.name || ''; alogMarket = snap.market || 'us';
+    await loadAlog();
+    const b = alogBook(alogSymbol);
+    document.getElementById('alogTitle').textContent = `${alogSymbol}${alogName && alogName !== alogSymbol ? ' · ' + alogName : ''}`;
+    // 當前價格沒填過就用分析畫面上的收盤價帶入
+    document.getElementById('alogPrice').value = b.plan.price != null ? b.plan.price : (snap.price || '');
+    document.getElementById('alogHigh').value = b.plan.high != null ? b.plan.high : '';
+    document.getElementById('alogLow').value = b.plan.low != null ? b.plan.low : '';
+    setAlogTab(alogTab);
+    renderAlogPlanHint();
+    document.getElementById('analysisLogModal').classList.add('active');
+  }
+  function closeAnalysisLog() { document.getElementById('analysisLogModal').classList.remove('active'); }
+
+  function setAlogTab(tab) {
+    alogTab = ALOG_TABS.some(t => t.key === tab) ? tab : 'system';
+    document.querySelectorAll('[data-alog-tab]').forEach(b => b.classList.toggle('active', b.getAttribute('data-alog-tab') === alogTab));
+    const imp = document.getElementById('alogImportBtn');
+    if (imp) imp.style.display = alogTab === 'system' ? '' : 'none';
+    renderAlogTable();
+  }
+
+  function renderAlogTable() {
+    const body = document.getElementById('alogTableBody');
+    if (!body) return;
+    const b = alogBook(alogSymbol);
+    const rows = b.entries.filter(e => e.tab === alogTab)
+      .sort((a, c) => (a.date || '').localeCompare(c.date || '') || (a.createdAt || 0) - (c.createdAt || 0));
+    if (!rows.length) {
+      const tabName = (ALOG_TABS.find(t => t.key === alogTab) || {}).name || '';
+      const tip = alogTab === 'system' ? '按右上「↓ 從系統帶入」可以把目前的技術訊號、體檢與價位帶直接存成一筆。'
+        : alogTab === 'ai' ? '請 AI 分析完，把整段回覆用「＋ 新增記錄」貼進來。'
+        : '看完上面兩頁，把你覺得有道理的部分抄過來，然後在下面決定要買賣的價位。';
+      body.innerHTML = `<tr><td colspan="7" style="padding:26px 14px; text-align:center; color:var(--ink-tertiary); font-size:12.5px; line-height:1.8;">
+        「${escape(tabName)}」目前是空的。<br>${escape(tip)}</td></tr>`;
+      return;
+    }
+    const cell = (v, w) => `<td style="padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--ink-secondary); ${w || ''}">${v}</td>`;
+    const clip = (s, n) => {
+      const t = String(s || '').trim();
+      return t.length > n ? escape(t.slice(0, n)) + '…' : escape(t);
+    };
+    body.innerHTML = rows.map((e, i) => `
+      <tr>
+        ${cell(`<span style="font-family:var(--mono); color:var(--ink-tertiary);">${i + 1}</span>`)}
+        ${cell(`<span style="font-family:var(--mono); font-size:11.5px;">${escape(e.date || '')}</span>`)}
+        ${cell(`<span style="font-family:var(--mono); font-size:10.5px; color:var(--accent); border:1px solid var(--accent-deep); border-radius:2px; padding:2px 6px; white-space:nowrap;">${escape(e.type || '')}</span>`)}
+        ${cell(`<div style="white-space:pre-wrap; line-height:1.6; max-height:88px; overflow:hidden;">${clip(e.content, 260)}</div>`)}
+        ${cell(`<div style="white-space:pre-wrap; line-height:1.6; color:var(--ink-primary);">${clip(e.insight, 120)}</div>`)}
+        ${cell(`<div style="line-height:1.6; font-size:11.5px;">${clip(e.memo, 80)}</div>`)}
+        <td style="padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; white-space:nowrap;">
+          <button class="btn btn-sm" onclick="openAlogEntry('${escape(e.id)}')" style="padding:5px 9px;">編輯</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  // ===== 單筆記錄 CRUD =====
+  function openAlogEntry(id) {
+    const t = ALOG_TABS.find(x => x.key === alogTab) || ALOG_TABS[0];
+    const sel = document.getElementById('alogEntryType');
+    sel.innerHTML = t.types.map(x => `<option value="${escape(x)}">${escape(x)}</option>`).join('');
+    const isEdit = !!id;
+    document.getElementById('alogEntryId').value = id || '';
+    document.getElementById('alogEntryDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('alogEntryTitle').innerHTML = (isEdit ? '編輯 <em>記錄</em>' : '新增 <em>記錄</em>')
+      + ` <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">${escape(t.name)}</span>`;
+    if (isEdit) {
+      const e = alogBook(alogSymbol).entries.find(x => x.id === id);
+      if (!e) return;
+      document.getElementById('alogEntryDate').value = e.date || '';
+      if (t.types.includes(e.type)) sel.value = e.type;
+      document.getElementById('alogEntryContent').value = e.content || '';
+      document.getElementById('alogEntryInsight').value = e.insight || '';
+      document.getElementById('alogEntryMemo').value = e.memo || '';
+    } else {
+      document.getElementById('alogEntryDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('alogEntryContent').value = '';
+      document.getElementById('alogEntryInsight').value = '';
+      document.getElementById('alogEntryMemo').value = '';
+    }
+    document.getElementById('alogEntryModal').classList.add('active');
+  }
+  function closeAlogEntry() { document.getElementById('alogEntryModal').classList.remove('active'); }
+  async function saveAlogEntry(ev) {
+    ev.preventDefault();
+    const id = document.getElementById('alogEntryId').value;
+    const data = {
+      tab: alogTab,
+      date: document.getElementById('alogEntryDate').value,
+      type: document.getElementById('alogEntryType').value,
+      content: document.getElementById('alogEntryContent').value.trim(),
+      insight: document.getElementById('alogEntryInsight').value.trim(),
+      memo: document.getElementById('alogEntryMemo').value.trim()
+    };
+    const b = alogBook(alogSymbol);
+    if (id) {
+      const i = b.entries.findIndex(x => x.id === id);
+      if (i > -1) b.entries[i] = { ...b.entries[i], ...data, updatedAt: Date.now() };
+    } else {
+      b.entries.push({ id: 'al_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data });
+    }
+    await saveAlog();
+    closeAlogEntry();
+    renderAlogTable();
+    showToast(id ? '記錄已更新' : '已新增記錄');
+  }
+  async function deleteAlogEntry() {
+    const id = document.getElementById('alogEntryId').value;
+    if (!id || !confirm('刪除這筆記錄？')) return;
+    const b = alogBook(alogSymbol);
+    b.entries = b.entries.filter(x => x.id !== id);
+    await saveAlog();
+    closeAlogEntry();
+    renderAlogTable();
+  }
+
+  // ===== 從系統帶入：把 app 自己算的東西存成一筆 =====
+  async function alogImportFromSystem() {
+    const s = lastAnalysisSnapshot;
+    if (!s || s.symbol !== alogSymbol) { showToast('請先重新打開這一檔的分析畫面'); return; }
+    const parts = [];
+    if (s.snap) parts.push('【市場快照】\n' + s.snap);
+    if (s.tech) parts.push('【技術面】\n' + s.tech);
+    if (s.techSummary) parts.push('【白話判讀】\n' + s.techSummary);
+    if (s.check) parts.push('【新手體檢】\n' + s.check);
+    if (s.levels) parts.push('【參考價位帶】\n' + s.levels);
+    if (!parts.length) { showToast('目前分析畫面還沒算出內容，稍等一下再按'); return; }
+    const b = alogBook(alogSymbol);
+    b.entries.push({
+      id: 'al_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      tab: 'system', date: new Date().toISOString().slice(0, 10),
+      type: '技術訊號', content: parts.join('\n\n'), insight: '', memo: '自動帶入',
+      createdAt: Date.now(), updatedAt: Date.now()
+    });
+    await saveAlog();
+    setAlogTab('system');
+    showToast('✓ 已把系統分析存成一筆');
+  }
+
+  // ===== 下單決定 =====
+  function renderAlogPlanHint() {
+    const el = document.getElementById('alogPlanHint');
+    if (!el) return;
+    const p = Number(document.getElementById('alogPrice').value);
+    const hi = Number(document.getElementById('alogHigh').value);
+    const lo = Number(document.getElementById('alogLow').value);
+    const cur = alogCur();
+    if (!(p > 0)) { el.innerHTML = '<span style="color:var(--ink-tertiary);">填上當前價格之後，這裡會幫你算報酬與風險各多少 %、以及賠率划不划算。</span>'; return; }
+    const bits = [];
+    if (hi > 0) bits.push(`上檔 <strong style="color:var(--accent);">+${((hi - p) / p * 100).toFixed(1)}%</strong>（${cur}${p} → ${cur}${hi}）`);
+    if (lo > 0) bits.push(`下檔 <strong style="color:var(--danger);">${((lo - p) / p * 100).toFixed(1)}%</strong>（${cur}${p} → ${cur}${lo}）`);
+    let verdict = '';
+    if (hi > p && lo > 0 && lo < p) {
+      // ⚠ 用「顯示出來的那個數字」來判斷，不要用原始值。
+      //   否則 1.9999 會顯示成「1 : 2.00」卻標成「偏低」，前後矛盾。
+      const rr = Number(((hi - p) / (p - lo)).toFixed(2));
+      verdict = `　·　賠率 <strong style="color:${rr >= 2 ? 'var(--accent)' : 'var(--danger)'};">1 : ${rr.toFixed(2)}</strong>`
+        + (rr >= 2 ? '（賺的是賠的兩倍以上，划得來）' : rr >= 1 ? '（偏低，一般建議至少 1:2）' : '（<strong>賠的比賺的多</strong>，要想清楚）');
+    } else if (hi > 0 && hi <= p) {
+      verdict = '　·　⚠ 最高價低於當前價格，確認是不是填反了';
+    } else if (lo > 0 && lo >= p) {
+      verdict = '　·　⚠ 最低價高於當前價格，確認是不是填反了';
+    }
+    el.innerHTML = (bits.join('　·　') || '') + verdict;
+  }
+  function alogFillFromLevels() {
+    const L = usLevelsCache;
+    const s = lastAnalysisSnapshot;
+    if (!L || !s || s.symbol !== alogSymbol) { showToast('沒有可用的價位帶，請先重新打開這檔的分析畫面'); return; }
+    const stop = L.stops && L.stops[0];
+    if (!stop) { showToast('系統這次沒算出停損價'); return; }
+    document.getElementById('alogPrice').value = Number(L.c).toFixed(2);
+    document.getElementById('alogLow').value = Number(stop.v).toFixed(2);
+    document.getElementById('alogHigh').value = Number(stop.target2r).toFixed(2);
+    renderAlogPlanHint();
+    showToast('已帶入系統的停損與 2:1 目標，你可以再自己調');
+  }
+  async function saveAlogPlan() {
+    const b = alogBook(alogSymbol);
+    const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
+    b.plan = { price: num('alogPrice'), high: num('alogHigh'), low: num('alogLow'), updatedAt: Date.now() };
+    await saveAlog();
+    showToast('✓ 下單決定已儲存');
+  }
+
+  // ===== 匯出 / 複製 =====
+  function exportAlogData() {
+    const b = alogBook(alogSymbol);
+    const blob = new Blob([JSON.stringify({ symbol: alogSymbol, name: alogName, market: alogMarket, ...b, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `analysis-log-${alogSymbol}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function copyAlogSummary() {
+    const b = alogBook(alogSymbol);
+    const cur = alogCur();
+    const lines = [`【${alogSymbol}${alogName ? ' ' + alogName : ''} 分析記錄】`, ''];
+    ALOG_TABS.forEach(t => {
+      const rows = b.entries.filter(e => e.tab === t.key);
+      if (!rows.length) return;
+      lines.push(`── ${t.name} ──`);
+      rows.forEach((e, i) => {
+        lines.push(`${i + 1}. [${e.date}] ${e.type}`);
+        if (e.content) lines.push(String(e.content).split('\n').map(x => '   ' + x).join('\n'));
+        if (e.insight) lines.push('   心得：' + e.insight);
+        if (e.memo) lines.push('   備註：' + e.memo);
+        lines.push('');
+      });
+    });
+    const p = b.plan || {};
+    if (p.price || p.high || p.low) {
+      lines.push('── 這次下單的決定 ──');
+      lines.push(`當前價格：${p.price != null ? cur + p.price : '—'}`);
+      lines.push(`最高價（賣出／停利）：${p.high != null ? cur + p.high : '—'}`);
+      lines.push(`最低價（買進／停損）：${p.low != null ? cur + p.low : '—'}`);
+      if (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price) {
+        lines.push(`賠率：1 : ${((p.high - p.price) / (p.price - p.low)).toFixed(2)}`);
+      }
+    }
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(
+      () => showToast('分析記錄已複製'),
+      () => showCopiableError(`${alogSymbol} 分析記錄（請手動複製）`, text)
+    );
+  }
+
+  // ============================================================
   // 全站備份 / 還原 · Full Backup
   //
   // ⚠ 為什麼是掃 localStorage 而不是列一張固定的 key 清單：
@@ -22190,11 +22594,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'history', name: '資產歷史走勢',    test: k => k === 'studio_history_v1' },
     { key: 'cfg',     name: '匯率與配置設定',  test: k => k === 'cashflow_fx_v1' || k === 'alloc_config_v1' },
     { key: 'apis',    name: 'AI API 收藏館',   test: k => k === 'ai_apis_v1' },
+    { key: 'alog',    name: '分析策略記錄',    test: k => /^analysis_/.test(k) },
     { key: 'travel',  name: '旅遊規劃',        test: k => /^travel_/.test(k) },
     { key: 'secrets', name: '🔑 金鑰與雲端同步設定', test: BACKUP_SECRET_MATCH }
   ];
   // 前綴白名單：只有本 App 的資料才會被打包
-  const BACKUP_PREFIXES = ['studio_', 'ai_apis_', 'alloc_', 'assoc_', 'bond_', 'cashflow_', 'crypto_',
+  const BACKUP_PREFIXES = ['studio_', 'ai_apis_', 'alloc_', 'analysis_', 'assoc_', 'bond_', 'cashflow_', 'crypto_',
     'dca_', 'fund_', 'fxdep_', 'goals_', 'hdetf_', 'metal_', 'mketf_', 're_com_', 're_rental_', 're_sync',
     'travel_', 'tw_', 'us_'];
   const backupOwns = k => BACKUP_PREFIXES.some(p => k.startsWith(p));
