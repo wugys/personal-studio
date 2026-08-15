@@ -6601,8 +6601,16 @@
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('breakout')">🚀 突破追強</button>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('pullback')">📉 回檔布局</button>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('rebound')">🔄 超跌反彈</button>
+        <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('value')">💎 便宜又會賺</button>
+        <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('income')">🏦 存股收息</button>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('none')">✕ 全部取消</button>
       </div>
+      <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:10px;">
+        <input type="checkbox" id="usScanUseFund" onchange="onUsScanFundToggle()" style="margin-top:3px;">
+        <span>同時檢查<strong>基本面</strong>（本益比、ROE、股價淨值比、殖利率）
+          <span id="usScanFundNote" style="display:block; font-size:11px; color:var(--ink-tertiary); margin-top:2px;"></span>
+        </span>
+      </label>
       <div id="usScanConds" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:2px 16px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px; max-height:28vh; overflow-y:auto;"></div>
 
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
@@ -7943,7 +7951,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.6 · θ</div>
+    <div>v 8.7 · θ</div>
   </footer>
 </div>
 
@@ -22090,10 +22098,26 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'near_high',  name: '接近 60 日高',   hint: '距離兩個月來的高點 5% 以內，突破型',                test: c => c.fromHigh60 != null && c.fromHigh60 > -5 },
     { key: 'pullback',   name: '健康回檔',       hint: '從 60 日高回檔 5%~15%，不是崩盤但有折扣',           test: c => c.fromHigh60 != null && c.fromHigh60 <= -5 && c.fromHigh60 >= -15 }
   ];
+  // 基本面條件：要勾「同時檢查基本面」才會出現（因為要多打 API、多花時間）
+  // ctx.fund 已被正規化成 { pe, pb, roe, dy }，台美兩邊來源不同但形狀一樣
+  const US_SCAN_FUND_CONDS = [
+    { key: 'f_profit',  name: '公司有在賺錢',   fund: true, hint: '本益比是正的（虧損公司算不出本益比）',        test: c => !!(c.fund && c.fund.pe > 0) },
+    { key: 'f_pe_low',  name: '本益比 < 20',    fund: true, hint: '用現在的獲利算，20 年內回本，相對便宜',      test: c => !!(c.fund && c.fund.pe > 0 && c.fund.pe < 20) },
+    { key: 'f_pe_ok',   name: '本益比 < 30',    fund: true, hint: '比上面寬鬆，成長股用這個比較實際',            test: c => !!(c.fund && c.fund.pe > 0 && c.fund.pe < 30) },
+    { key: 'f_roe',     name: 'ROE ≥ 15%',      fund: true, hint: '公司拿股東的錢一年賺 15% 以上，很會賺',       test: c => !!(c.fund && c.fund.roe >= 15) },
+    { key: 'f_pb',      name: '股價淨值比 < 3', fund: true, hint: '公司資產值 1 塊，你付不到 3 塊',              test: c => !!(c.fund && c.fund.pb > 0 && c.fund.pb < 3) },
+    { key: 'f_div',     name: '殖利率 ≥ 3%',    fund: true, hint: '有在配息，存股族會看這個',                    test: c => !!(c.fund && c.fund.dy >= 3) }
+  ];
+  const usScanAllConds = () => usScanUseFund ? US_SCAN_CONDS.concat(US_SCAN_FUND_CONDS) : US_SCAN_CONDS;
+
   const US_SCAN_PRESETS = {
     breakout: ['bull_stack', 'above_ma60', 'near_high', 'vol_up', 'not_hot'],
     pullback: ['bull_stack', 'above_ma60', 'pullback', 'kd_turn', 'not_hot'],
     rebound:  ['rsi_low', 'boll_low', 'kd_turn', 'macd_pos'],
+    // 價值＋轉強：便宜、會賺錢，而且技術面剛開始轉多（需要基本面）
+    value:    ['f_profit', 'f_pe_low', 'f_roe', 'above_ma60', 'kd_turn', 'not_hot'],
+    // 存股：有配息、不貴、趨勢沒壞
+    income:   ['f_div', 'f_pe_ok', 'f_pb', 'above_ma60', 'not_hot'],
     none: []
   };
 
@@ -22103,6 +22127,47 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   let usScanPicked = US_SCAN_PRESETS.pullback.slice();
   let usScanRunning = false;
   let usScanMarket = 'us';   // 'us' | 'tw' —— 13 個技術條件都只吃日線，兩邊完全共用
+  let usScanUseFund = false; // 是否同時檢查基本面（要多打 API，預設關）
+  let usScanFundCache = {};  // { 'market:symbol': { fund, ts } }
+
+  // 台股基本面：掃描時只抓 TaiwanStockPER 一支（1 次呼叫就有 PER/PBR/殖利率，ROE 再用 PBR÷PER 推）
+  // ⚠ 刻意不在批次掃描時抓財報（毛利率/營益率要再一次呼叫），
+  //   91 檔 × 2 支 API 容易撞到 FinMind 免費層的用量上限。細節在個股頁面看就好。
+  async function scanFundTw(sym) {
+    const s = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+    const r = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPER&data_id=${encodeURIComponent(sym)}&start_date=${s}`, { cache: 'no-store' });
+    const j = await r.json();
+    const rows = (j && j.data) || [];
+    const last = rows[rows.length - 1];
+    if (!last) return null;
+    const pe = Number(last.PER) > 0 ? Number(last.PER) : null;
+    const pb = Number(last.PBR) > 0 ? Number(last.PBR) : null;
+    return { pe, pb, dy: last.dividend_yield != null ? Number(last.dividend_yield) : null,
+             roe: (pe && pb) ? pb / pe * 100 : null, date: last.date };
+  }
+  // 美股基本面：Finnhub，需要金鑰。免費層 60 次/分 → 全域節流至少間隔 1.05 秒
+  let usScanFinnhubGate = Promise.resolve();
+  function finnhubThrottled(fn) {
+    const p = usScanFinnhubGate.then(fn);
+    usScanFinnhubGate = p.catch(() => {}).then(() => new Promise(r => setTimeout(r, 1050)));
+    return p;
+  }
+  async function scanFundUs(sym) {
+    const m = await finnhubThrottled(() => finnhubMetrics(sym));
+    const x = (m && m.metric) || {};
+    const num = v => { const n = Number(v); return isFinite(n) ? n : null; };
+    return { pe: num(x.peTTM ?? x.peBasicExclExtraTTM), pb: num(x.pbAnnual ?? x.pbQuarterly),
+             roe: num(x.roeTTM ?? x.roeRfy), dy: num(x.currentDividendYieldTTM ?? x.dividendYieldIndicatedAnnual), date: null };
+  }
+  async function scanFetchFund(market, sym) {
+    const ck = market + ':' + sym;
+    const c = usScanFundCache[ck];
+    if (c && Date.now() - c.ts < US_SCAN_CACHE_TTL) return c.fund;
+    let fund = null;
+    try { fund = market === 'tw' ? await scanFundTw(sym) : await scanFundUs(sym); } catch (e) { fund = null; }
+    usScanFundCache[ck] = { fund, ts: Date.now() };
+    return fund;
+  }
 
   // 台股日線（欄位名跟美股不一樣：open/max/min/close/Trading_Volume）
   async function fetchTwOhlc(code) {
@@ -22167,14 +22232,34 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function renderUsScanConds() {
     const box = document.getElementById('usScanConds');
     if (!box) return;
-    box.innerHTML = US_SCAN_CONDS.map(c => `
+    box.innerHTML = usScanAllConds().map(c => `
       <label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; cursor:pointer; border-bottom:1px solid var(--line);">
         <input type="checkbox" data-us-scan="${escape(c.key)}" ${usScanPicked.includes(c.key) ? 'checked' : ''} onchange="onUsScanCondChange()" style="margin-top:3px;">
         <span style="min-width:0;">
-          <span style="font-size:12.5px; color:var(--ink-primary);">${escape(c.name)}</span>
+          <span style="font-size:12.5px; color:${c.fund ? 'var(--accent-warm)' : 'var(--ink-primary)'};">${c.fund ? '◆ ' : ''}${escape(c.name)}</span>
           <span style="display:block; font-size:10.5px; color:var(--ink-tertiary); line-height:1.45;">${escape(c.hint)}</span>
         </span>
       </label>`).join('');
+    const cb = document.getElementById('usScanUseFund');
+    if (cb) cb.checked = usScanUseFund;
+    const note = document.getElementById('usScanFundNote');
+    if (note) {
+      note.innerHTML = usScanMarket === 'tw'
+        ? '台股走 FinMind，免金鑰。每檔多抓一次，掃「全部個股」會比較久，建議先用權值 40 檔。'
+        : (finnhubKey
+            ? '美股走 Finnhub，免費層每分鐘 60 次 → 系統會自動放慢到約 <strong>1 秒/檔</strong>（42 檔約多花 45 秒）。'
+            : '⚠ 美股基本面需要 Finnhub 金鑰，請先到工具列「🔑 金鑰」設定。<strong>沒設定的話勾了也抓不到。</strong>');
+    }
+  }
+  function onUsScanFundToggle() {
+    usScanUseFund = !!document.getElementById('usScanUseFund').checked;
+    if (!usScanUseFund) {
+      // 關掉基本面 → 把已勾的基本面條件一起拿掉，不然會變成永遠不符合
+      const fundKeys = US_SCAN_FUND_CONDS.map(c => c.key);
+      usScanPicked = usScanPicked.filter(k => !fundKeys.includes(k));
+    }
+    renderUsScanConds();
+    renderUsScanResults();
   }
   function onUsScanCondChange() {
     usScanPicked = [...document.querySelectorAll('[data-us-scan]:checked')].map(cb => cb.getAttribute('data-us-scan'));
@@ -22182,6 +22267,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   function applyUsScanPreset(k) {
     usScanPicked = (US_SCAN_PRESETS[k] || []).slice();
+    // 套用到含基本面的組合時，自動把基本面開關打開，否則那些條件根本不會出現
+    const fundKeys = US_SCAN_FUND_CONDS.map(c => c.key);
+    if (usScanPicked.some(x => fundKeys.includes(x))) usScanUseFund = true;
     renderUsScanConds();
     renderUsScanResults();
   }
@@ -22280,7 +22368,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           if (c && (now - c.ts) < US_SCAN_CACHE_TTL) { bars = c.bars; cached++; }
           else { bars = await scanFetch(usScanMarket, item.symbol); usScanCache[ck] = { bars, ts: Date.now() }; }
           const ctx = usScanCtx(item, bars);
-          if (ctx) rows.push(ctx); else failed++;
+          if (ctx) {
+            if (usScanUseFund) { try { ctx.fund = await scanFetchFund(usScanMarket, item.symbol); } catch (e) { ctx.fund = null; } }
+            rows.push(ctx);
+          } else failed++;
         } catch (e) { failed++; }
         step(item.symbol);
       }
@@ -22296,7 +22387,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   function usScanEvaluate(ctx) {
     const matched = [], missed = [];
-    US_SCAN_CONDS.forEach(c => {
+    usScanAllConds().forEach(c => {
       if (!usScanPicked.includes(c.key)) return;
       let ok = false;
       try { ok = !!c.test(ctx); } catch (e) { ok = false; }
@@ -22374,8 +22465,18 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
               <div style="font-family:var(--mono); font-size:12px;">${sup ? f(sup.v) : '—'} / ${res ? f(res.v) : '—'}</div>
             </div>
           </div>
+          ${(() => {
+            if (!usScanUseFund) return '';
+            const fd = c.fund;
+            if (!fd) return `<div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:6px;">◆ 基本面：查無資料</div>`;
+            const cell = (k, v, unit) => `<span style="color:var(--ink-tertiary);">${k}</span> <strong style="color:var(--ink-primary);">${v == null ? '—' : Number(v).toFixed(v >= 100 ? 0 : 2) + (unit || '')}</strong>`;
+            return `<div style="display:flex; flex-wrap:wrap; gap:4px 14px; font-family:var(--mono); font-size:10.5px; margin-bottom:7px; padding:5px 9px; background:rgba(232,184,138,0.07); border-left:2px solid var(--accent-warm); border-radius:3px;">
+              <span style="color:var(--accent-warm);">◆ 基本面</span>
+              ${cell('本益比', fd.pe)}${cell('股價淨值比', fd.pb)}${cell('ROE', fd.roe, '%')}${cell('殖利率', fd.dy, '%')}
+            </div>`;
+          })()}
           <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
-            ${r.matched.map(m => `<span style="font-family:var(--mono); font-size:10px; color:var(--accent); border:1px solid var(--accent-deep); border-radius:2px; padding:2px 7px;">✓ ${escape(m.name)}</span>`).join('')}
+            ${r.matched.map(m => `<span style="font-family:var(--mono); font-size:10px; color:${m.fund ? 'var(--accent-warm)' : 'var(--accent)'}; border:1px solid var(--accent-deep); border-radius:2px; padding:2px 7px;">✓ ${escape(m.name)}</span>`).join('')}
             ${r.missed.map(m => `<span style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); border:1px solid var(--line); border-radius:2px; padding:2px 7px;">✕ ${escape(m.name)}</span>`).join('')}
           </div>
           <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; padding-top:7px; border-top:1px solid var(--line);">
