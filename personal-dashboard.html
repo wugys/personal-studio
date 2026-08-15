@@ -6638,8 +6638,28 @@
         <span style="display:flex; gap:6px;">
           <button class="btn btn-sm" onclick="exportAlogData()" title="只匯出這一檔的記錄">↓ 匯出這檔</button>
           <button class="btn btn-sm" onclick="copyAlogSummary()" title="複製成文字，可貼到別的地方">📋 複製摘要</button>
+          <button class="btn btn-sm" onclick="openPlanWatch()" title="看所有設過買賣價位的股票現在踩到哪">📋 我的下單計畫</button>
         </span>
         <button class="btn" onclick="closeAnalysisLog()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 我的下單計畫：把所有設過買賣價位的股票排在一起，看誰踩到停損/停利了 -->
+  <div class="modal-backdrop" id="planWatchModal" style="z-index:2150;">
+    <div class="modal" style="max-width: 980px;">
+      <h2>📋 我的<em>下單計畫</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:6px;">
+        每一檔你在「分析策略記錄」設過最低／最高價的股票都在這。現價會先抓你在各模組維護的價格，抓不到才用上次看盤的價。
+      </div>
+      <div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.6; margin-bottom:12px;">
+        ⚠ 這只是把你自己設的價位跟市價比一比，<strong>不是買賣建議</strong>，也不會自動下單。
+      </div>
+      <div id="planWatchStats" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+      <div id="planWatchBody"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="copyPlanWatch()" title="複製成文字">📋 複製清單</button>
+        <button class="btn" onclick="closePlanWatch()">關閉</button>
       </div>
     </div>
   </div>
@@ -8115,7 +8135,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.3 · ι</div>
+    <div>v 9.4 · ι</div>
   </footer>
 </div>
 
@@ -8799,6 +8819,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '+', label: '新增群組', action: 'openGroupModal()' });
     items.push({ icon: '+', label: '新增模組', action: 'openModuleModal()' });
     items.push({ sep: true });
+    items.push({ icon: '📋', label: '我的下單計畫（看誰踩到停損／停利）', action: 'openPlanWatch()' });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
 
@@ -8866,12 +8887,96 @@ alter publication supabase_realtime add table party_locations;</pre>
     try { const v = await readKey(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
   }
 
+  // ===== 下單計畫看守 =====
+  // 「分析策略記錄」裡設好的最低（停損）／最高（停利）如果沒人看著，就只是一段筆記。
+  // 這裡把每一檔有計畫的股票跟現在的市價比一比，算出它現在踩到哪一格。
+  // 回傳陣列讓首頁提醒與「我的下單計畫」總覽共用，不要各算一份而算出不同答案。
+  //
+  // 現價的優先順序：持股裡自己維護的 currentPrice > 上次開分析畫面抓到的市價（alogTouchMeta 存的）。
+  // 兩個都沒有就標成 nopx，只列出來、不做任何判斷（沒有價格就不該說「跌破」）。
+  const PLAN_PRICE_KEYS = [
+    { key: 'us_holdings_v1', market: 'us', view: 'usStockView' },
+    { key: 'tw_holdings_v1', market: 'tw', view: 'twStockView' },
+    { key: 'mketf_holdings_v1', market: null, view: 'mkEtfView' },
+    { key: 'hdetf_holdings_v1', market: 'tw', view: 'hdEtfView' },
+    { key: 'crypto_holdings_v1', market: 'us', view: 'cryptoView' }
+  ];
+  async function buildPlanWatch() {
+    const books = await readJson('analysis_log_v1', {});
+    if (!books || typeof books !== 'object') return [];
+    // 先把各模組的現價與所屬 view 收成一張表（同一代號以先找到的為準）
+    const px = {};
+    for (const src of PLAN_PRICE_KEYS) {
+      const hs = await readJson(src.key, []);
+      (Array.isArray(hs) ? hs : []).forEach(h => {
+        if (!h || !h.symbol || px[h.symbol]) return;
+        const v = Number(h.currentPrice);
+        if (!(v > 0)) return;
+        px[h.symbol] = { price: v, view: src.view, held: true, name: h.name || '' };
+      });
+    }
+    const rows = [];
+    Object.keys(books).forEach(sym => {
+      const b = books[sym];
+      const p = b && b.plan;
+      if (!p) return;
+      const low = Number(p.low), high = Number(p.high), entry = Number(p.price);
+      if (!(low > 0) && !(high > 0)) return;            // 沒設任何一邊就沒什麼好看的
+      const hit = px[sym];
+      const now = hit ? hit.price : (Number(b.lastPrice) > 0 ? Number(b.lastPrice) : null);
+      const market = b.market || (/^\d{4,6}[A-Z]?$/.test(sym) ? 'tw' : 'us');
+      const r = {
+        symbol: sym, name: b.name || (hit && hit.name) || '', market,
+        cur: market === 'tw' ? 'NT$' : '$',
+        entry: entry > 0 ? entry : null, low: low > 0 ? low : null, high: high > 0 ? high : null,
+        price: now, held: !!hit,
+        priceFrom: hit ? 'holding' : (now != null ? 'snapshot' : null),
+        priceAt: hit ? null : (b.lastPriceAt || null),
+        view: hit ? hit.view : (market === 'tw' ? 'twStockView' : 'usStockView'),
+        planAge: p.updatedAt ? Math.floor((Date.now() - p.updatedAt) / 86400000) : null,
+        updatedAt: p.updatedAt || 0,
+        status: 'nopx', toLowPct: null, toHighPct: null, rr: null
+      };
+      // 賠率（用當初決定時的價格算，跟徽章一致）
+      if (r.entry > 0 && r.high > r.entry && r.low > 0 && r.low < r.entry) {
+        r.rr = Number(((r.high - r.entry) / (r.entry - r.low)).toFixed(2));
+      }
+      if (now != null) {
+        // toLowPct = 「現價還要跌幾 % 才碰到停損」；toHighPct = 「還要漲幾 % 才到停利」。
+        // 兩個都用「相對現價」算，負的代表已經穿過去了。
+        // ⚠ 不可寫成 now/low-1（那是「比停損高幾 %」，基準錯，205 vs 120 會算成 70.8% 而不是 41.5%）。
+        if (r.low != null) r.toLowPct = (1 - r.low / now) * 100;
+        if (r.high != null) r.toHighPct = (r.high / now - 1) * 100;
+        // ⚠ 門檻要跟「畫面上顯示的那個數字」比（先四捨五入到 1 位），
+        // 否則 206/200 的 3.0000000000000027 會顯示「3.0%」卻被判成不到門檻，自相矛盾。
+        const near1 = r.toLowPct == null ? null : Number(r.toLowPct.toFixed(1));
+        const high1 = r.toHighPct == null ? null : Number(r.toHighPct.toFixed(1));
+        if (r.low != null && now <= r.low) r.status = 'stop';            // 已跌破停損
+        else if (r.high != null && now >= r.high) r.status = 'target';   // 已達停利
+        else if (near1 != null && near1 <= 3) r.status = 'near';         // 快碰到停損
+        else if (high1 != null && high1 <= 3) r.status = 'close';        // 快到停利
+        else r.status = 'ok';
+      }
+      rows.push(r);
+    });
+    const order = { stop: 0, target: 1, near: 2, close: 3, ok: 4, nopx: 5 };
+    rows.sort((a, b) => (order[a.status] - order[b.status]) || (b.updatedAt - a.updatedAt));
+    return rows;
+  }
+  const planMoney = (r, v) => v == null ? '—' : r.cur + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
   async function buildStudioAlerts() {
     const A = [];
     const push = (level, icon, text, view, extra) => A.push({ level, icon, text, view, extra });
     const money = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
 
     // 1) 停損被跌破（美股 + 台股，用「新手體檢」裡自己填的停損價）
+    // 同一檔如果在「分析記錄」也設了停損，就讓 1b 那段去講，這裡跳過——否則同一件事會提醒兩次。
+    let planStopSyms = new Set();
+    try {
+      const books = await readJson('analysis_log_v1', {});
+      Object.keys(books || {}).forEach(s => { if (books[s] && books[s].plan && Number(books[s].plan.low) > 0) planStopSyms.add(s); });
+    } catch (e) {}
     try {
       const answers = await readJson('us_check_v1', {});
       const mkts = [
@@ -8881,6 +8986,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       for (const m of mkts) {
         const hs = await readJson(m.hKey, []);
         hs.forEach(h => {
+          if (planStopSyms.has(h.symbol)) return;   // 分析記錄的計畫優先，交給 1b
           const a = answers[h.symbol];
           const stop = a && Number(a.stop);
           const px = Number(h.currentPrice);
@@ -8892,6 +8998,30 @@ alter publication supabase_realtime add table party_locations;</pre>
           }
         });
       }
+    } catch (e) {}
+
+    // 1b) 分析記錄裡設好的下單計畫，現在踩到停損 / 停利了嗎
+    try {
+      const plans = await buildPlanWatch();
+      plans.forEach(r => {
+        const who = `${r.symbol}${r.name && r.name !== r.symbol ? ' ' + r.name : ''}`;
+        const px = planMoney(r, r.price);
+        const stale = r.priceFrom === 'snapshot'
+          ? `（價格是 ${r.priceAt ? todayISO(r.priceAt) : '上次'} 看盤時的，打開分析畫面會更新）` : '';
+        if (r.status === 'stop') {
+          push('urgent', '🔻', `${who} 現價 ${px} <strong>已跌破你在分析記錄設的停損 ${planMoney(r, r.low)}</strong>${stale}`, r.view, 'plan');
+        } else if (r.status === 'target') {
+          push('urgent', '🎯', `${who} 現價 ${px} <strong>已達到你設的停利 ${planMoney(r, r.high)}</strong>，要不要收？${stale}`, r.view, 'plan');
+        } else if (r.status === 'near') {
+          push('warn', '⚠', `${who} 現價 ${px}，<strong>再跌 ${r.toLowPct.toFixed(1)}% 就碰到停損</strong> ${planMoney(r, r.low)}${stale}`, r.view, 'plan');
+        } else if (r.status === 'close') {
+          push('warn', '🎯', `${who} 現價 ${px}，再漲 ${r.toHighPct.toFixed(1)}% 就到停利 ${planMoney(r, r.high)}${stale}`, r.view, 'plan');
+        }
+        // 計畫放太久沒回頭看，市場早就不一樣了
+        if (r.planAge != null && r.planAge >= 90 && (r.status === 'ok' || r.status === 'nopx')) {
+          push('info', '📓', `${who} 的下單計畫是 <strong>${r.planAge} 天前</strong>設的，要不要重看一次？`, r.view, 'plan');
+        }
+      });
     } catch (e) {}
 
     // 2) 租約快到期
@@ -9014,7 +9144,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     if (dashLevel !== 'overview') { el.innerHTML = ''; return; }
     if (!list.length) {
       el.innerHTML = `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:10px 14px; margin-bottom:18px; font-size:12.5px; color:var(--ink-secondary);">
-        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查停損、租約、會費、活動、定存到期、備份狀態）</span>
+        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查下單計畫的停損／停利、租約、會費、活動、定存到期、備份狀態）</span>
       </div>`;
       return;
     }
@@ -11648,6 +11778,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       // 給「分析策略記錄」的「↓ 從系統帶入」用
       lastAnalysisSnapshot = { symbol: code, name: name || code, market: 'tw', price: price || 0,
         snap: `收盤 NT$${price}`, tech: '', techSummary: (sig && sig.summary) || '', check: '', levels: '' };
+      alogTouchMeta(code, 'tw', name || code, price);   // 讓首頁提醒拿得到最新市價
       const chk = document.getElementById('twCheckPanel');
       const lvl = document.getElementById('twLevelsPanel');
       if (chk) chk.innerHTML = renderUsBeginnerCheck(code, price, null, sig, 'tw');   // 先用技術面畫一次
@@ -12470,6 +12601,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     usAnalysisCtx = { symbol: h.symbol, name: h.name, snap, tech: '', levels: '' };
     // 給「分析策略記錄」的「↓ 從系統帶入」用
     lastAnalysisSnapshot = { symbol: h.symbol, name: h.name, market: 'us', price: (quote && quote.c) || 0, snap, tech: '', techSummary: '', check: '', levels: '' };
+    alogTouchMeta(h.symbol, 'us', h.name, (quote && quote.c) || 0);   // 讓首頁提醒拿得到最新市價
     usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap, 'general');
     // 新手體檢要用到：使用者先前填的答案 + 總資產（用來算「這筆佔你多少 %」）
     await loadUsCheckAnswers();
@@ -22346,6 +22478,25 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   const alogCur = () => alogMarket === 'tw' ? 'NT$' : '$';
 
+  // 每次打開分析畫面就把「這檔是台股還是美股、叫什麼、當下市價多少」記進記錄本。
+  // 首頁提醒要靠這個才知道要用 NT$ 還是 $、要跳到哪個模組，
+  // 以及沒持有的觀察股（看盤查股查來的）拿不到 currentPrice 時的備援價格。
+  async function alogTouchMeta(symbol, market, name, price) {
+    if (!symbol) return;
+    try {
+      if (!alogAll || !Object.keys(alogAll).length) await loadAlog();
+      const b = alogAll[symbol];
+      if (!b) return;                              // 沒記錄過的股票不要憑空建一堆空本子
+      let dirty = false;
+      if (market && b.market !== market) { b.market = market; dirty = true; }
+      if (name && b.name !== name) { b.name = name; dirty = true; }
+      if (Number(price) > 0 && b.lastPrice !== Number(price)) {
+        b.lastPrice = Number(price); b.lastPriceAt = Date.now(); dirty = true;
+      }
+      if (dirty) await saveAlog();
+    } catch (e) {}
+  }
+
   // 在圖表那一列右邊顯示「這檔已經記下的下單決定」，讓你看圖時就知道自己當初打算怎麼做
   // elId: 'usPlanBadge'（美股）或 'twPlanBadge'（台股）
   async function renderPlanBadge(elId, symbol, market) {
@@ -22565,11 +22716,108 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const b = alogBook(alogSymbol);
     const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
     b.plan = { price: num('alogPrice'), high: num('alogHigh'), low: num('alogLow'), updatedAt: Date.now() };
+    // 記下市場與名稱，首頁提醒才知道幣別與要跳去哪個模組
+    b.market = alogMarket; b.name = alogName || alogSymbol;
+    if (lastAnalysisSnapshot && lastAnalysisSnapshot.symbol === alogSymbol && Number(lastAnalysisSnapshot.price) > 0) {
+      b.lastPrice = Number(lastAnalysisSnapshot.price); b.lastPriceAt = Date.now();
+    }
     await saveAlog();
     // 兩個圖表列的徽章都更新（哪個開著就更新哪個），存完馬上看得到
     renderPlanBadge('usPlanBadge', alogSymbol, alogMarket);
     renderPlanBadge('twPlanBadge', alogSymbol, alogMarket);
     showToast('✓ 下單決定已儲存');
+  }
+
+  // ===== 我的下單計畫（總覽）=====
+  const PLAN_STATUS = {
+    stop:   { label: '已跌破停損', color: 'var(--danger)', icon: '🔻' },
+    target: { label: '已達停利',   color: 'var(--accent)', icon: '🎯' },
+    near:   { label: '快碰到停損', color: 'var(--accent-warm)', icon: '⚠' },
+    close:  { label: '快到停利',   color: 'var(--accent-warm)', icon: '🎯' },
+    ok:     { label: '區間內',     color: 'var(--ink-tertiary)', icon: '·' },
+    nopx:   { label: '沒有現價',   color: 'var(--ink-muted)', icon: '?' }
+  };
+  let planWatchRows = [];
+
+  async function openPlanWatch() {
+    document.getElementById('planWatchModal').classList.add('active');
+    document.getElementById('planWatchBody').innerHTML =
+      '<div style="padding:20px; text-align:center; color:var(--ink-tertiary); font-size:12px;">整理中…</div>';
+    planWatchRows = await buildPlanWatch();
+    renderPlanWatch();
+  }
+  function closePlanWatch() { document.getElementById('planWatchModal').classList.remove('active'); }
+
+  function renderPlanWatch() {
+    const rows = planWatchRows;
+    const stats = document.getElementById('planWatchStats');
+    const body = document.getElementById('planWatchBody');
+    if (!rows.length) {
+      stats.innerHTML = '';
+      body.innerHTML = `<div style="padding:26px 20px; text-align:center; color:var(--ink-tertiary); font-size:12.5px; line-height:1.8; border:1px dashed var(--line); border-radius:4px;">
+        還沒有任何下單計畫。<br>
+        打開一檔股票的分析畫面 → 左下角「📓 分析策略記錄」→ 表格最下面填「最低／最高價」存檔，這裡就會出現。
+      </div>`;
+      return;
+    }
+    const n = k => rows.filter(r => r.status === k).length;
+    const chip = (label, count, color) => count
+      ? `<span style="font-family:var(--mono); font-size:10.5px; letter-spacing:0.05em; padding:5px 10px; border-radius:3px; background:var(--bg-elevated); border:1px solid var(--line); color:${color};">${label} ${count}</span>` : '';
+    stats.innerHTML = [
+      chip('共', rows.length, 'var(--ink-secondary)'),
+      chip('已跌破停損', n('stop'), 'var(--danger)'),
+      chip('已達停利', n('target'), 'var(--accent)'),
+      chip('接近停損', n('near'), 'var(--accent-warm)'),
+      chip('接近停利', n('close'), 'var(--accent-warm)'),
+      chip('沒有現價', n('nopx'), 'var(--ink-tertiary)')
+    ].join('');
+
+    const th = (t, w) => `<th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); ${w ? 'width:' + w + ';' : ''} white-space:nowrap;">${t}</th>`;
+    body.innerHTML = `
+      <div style="overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--bg-elevated);">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:800px;">
+          <thead><tr style="background:var(--bg-card);">
+            ${th('狀態', '116px')}${th('代號', '150px')}${th('停損 低', '96px')}${th('現價', '104px')}${th('停利 高', '96px')}${th('還要跌', '92px')}${th('還要漲', '92px')}${th('賠率', '72px')}${th('設定日', '92px')}
+          </tr></thead>
+          <tbody>
+            ${rows.map(r => {
+              const s = PLAN_STATUS[r.status] || PLAN_STATUS.ok;
+              // 正數＝還沒到、還要走這麼多；負數＝已經穿過去了，直接講白話不要讓人自己判斷正負號
+              const pct = (v, arrow, done) => v == null ? '—'
+                : v < 0 ? `<span style="color:${s.color};">${done}</span>` : `${arrow}${v.toFixed(1)}%`;
+              return `<tr onclick="closePlanWatch(); showView('${escape(r.view)}')" style="cursor:pointer; border-bottom:1px solid var(--line);" title="點一下前往該模組">
+                <td style="padding:8px 10px; color:${s.color}; white-space:nowrap;">${s.icon} ${s.label}</td>
+                <td style="padding:8px 10px;">
+                  <span style="font-family:var(--mono); color:var(--accent); font-weight:600;">${escape(r.symbol)}</span>
+                  ${r.name && r.name !== r.symbol ? `<span style="color:var(--ink-tertiary); font-size:11px;"> ${escape(r.name)}</span>` : ''}
+                  ${!r.held ? '<span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-muted);"> 觀察</span>' : ''}
+                </td>
+                <td style="padding:8px 10px; font-family:var(--mono); color:var(--danger);">${planMoney(r, r.low)}</td>
+                <td style="padding:8px 10px; font-family:var(--mono); color:var(--ink-primary);">${planMoney(r, r.price)}${r.priceFrom === 'snapshot' ? '<span style="color:var(--ink-muted); font-size:9.5px;"> 舊</span>' : ''}</td>
+                <td style="padding:8px 10px; font-family:var(--mono); color:var(--accent);">${planMoney(r, r.high)}</td>
+                <td style="padding:8px 10px; font-family:var(--mono); color:var(--ink-secondary);">${pct(r.toLowPct, '↓', '已跌破')}</td>
+                <td style="padding:8px 10px; font-family:var(--mono); color:var(--ink-secondary);">${pct(r.toHighPct, '↑', '已達標')}</td>
+                <td style="padding:8px 10px; font-family:var(--mono); color:${r.rr == null ? 'var(--ink-muted)' : (r.rr >= 2 ? 'var(--accent)' : 'var(--danger)')};">${r.rr == null ? '—' : '1:' + r.rr.toFixed(2)}</td>
+                <td style="padding:8px 10px; font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">${r.updatedAt ? escape(todayISO(r.updatedAt)) : '—'}${r.planAge != null && r.planAge >= 90 ? '<span style="color:var(--accent-warm);"> 舊</span>' : ''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="font-size:11px; color:var(--ink-tertiary); margin-top:8px; line-height:1.7;">
+        「還要跌」＝現價要再跌幾 % 才碰到你設的最低價（停損）；「還要漲」＝還要漲幾 % 到最高價（停利）。
+        標「觀察」＝你沒持有這檔，只是查過；標「舊」的現價是上次看盤時抓的，打開該檔分析畫面就會更新。
+      </div>`;
+  }
+
+  function copyPlanWatch() {
+    if (!planWatchRows.length) { showToast('還沒有任何下單計畫'); return; }
+    const lines = planWatchRows.map(r => {
+      const s = PLAN_STATUS[r.status] || PLAN_STATUS.ok;
+      return `${r.symbol}${r.name && r.name !== r.symbol ? ' ' + r.name : ''}｜${s.label}｜停損 ${planMoney(r, r.low)}｜現價 ${planMoney(r, r.price)}｜停利 ${planMoney(r, r.high)}｜賠率 ${r.rr == null ? '—' : '1:' + r.rr.toFixed(2)}｜${r.updatedAt ? todayISO(r.updatedAt) : ''} 設定`;
+    });
+    const txt = `我的下單計畫（${todayISO()}）\n${'─'.repeat(28)}\n${lines.join('\n')}\n${'─'.repeat(28)}\n※ 這是自己設的價位對照，不構成投資建議。`;
+    navigator.clipboard.writeText(txt).then(() => showToast('✓ 已複製下單計畫')).catch(() => showToast('複製失敗'));
   }
 
   // ===== 匯出 / 複製 =====
