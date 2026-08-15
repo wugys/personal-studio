@@ -6967,11 +6967,16 @@
       </div>
     </div>
     <div class="stats-row" id="cfStats"></div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; align-items:center;">
+      <button class="btn btn-sm btn-primary" data-refresh-prices onclick="refreshAllPrices()"
+              title="台股走 FinMind 收盤、美股走 Finnhub 即時、加密走 CoinGecko、外幣走即時匯率">⚡ 一鍵更新全部現價</button>
+      <span id="cfPriceAge" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);"></span>
+      <span style="flex:1;"></span>
       <span id="cfFxLabel" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.05em;">USD/TWD —</span>
-      <button class="btn btn-sm" onclick="refreshCashflowFxAndRender()">↻ 更新匯率</button>
+      <button class="btn btn-sm" onclick="refreshCashflowFxAndRender()">↻ 只更新匯率</button>
       <button class="btn btn-sm" onclick="setCashflowFxManual()">✎ 手動</button>
     </div>
+    <div id="priceRefreshResult" style="margin-bottom:18px;"></div>
     <div id="cfHistory"></div>
     <div id="cfBody"></div>
     <div id="cfPerfRisk"></div>
@@ -8193,7 +8198,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.5 · ι</div>
+    <div>v 9.6 · ι</div>
   </footer>
 </div>
 
@@ -8877,6 +8882,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '+', label: '新增群組', action: 'openGroupModal()' });
     items.push({ icon: '+', label: '新增模組', action: 'openModuleModal()' });
     items.push({ sep: true });
+    items.push({ icon: '⚡', label: '一鍵更新全部現價（台股／美股／加密／匯率）', action: 'refreshAllPrices()' });
     items.push({ icon: '📋', label: '我的下單計畫（看誰踩到停損／停利）', action: 'openPlanWatch()' });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
@@ -9055,6 +9061,22 @@ alter publication supabase_realtime add table party_locations;</pre>
             push('warn', '⚠', `${h.symbol} ${h.name || ''} 現價 ${m.cur}${px}，距停損 ${m.cur}${stop} 只剩 ${((px / stop - 1) * 100).toFixed(1)}%`, m.view);
           }
         });
+      }
+    } catch (e) {}
+
+    // 1a) 現價太舊 → 下面所有跟價格有關的提醒都會失準，先講這件事
+    try {
+      const info = await readJson('studio_price_refresh_v1', null);
+      let anyHolding = false;
+      for (const k of ['tw_holdings_v1', 'us_holdings_v1', 'crypto_holdings_v1', 'hdetf_holdings_v1', 'mketf_holdings_v1']) {
+        const hs = await readJson(k, []);
+        if (Array.isArray(hs) && hs.length) { anyHolding = true; break; }
+      }
+      if (anyHolding) {
+        const days = info && info.at ? Math.floor((Date.now() - info.at) / 86400000) : null;
+        if (days == null) push('info', '⚡', '現價<strong>從來沒有自動更新過</strong>，下面跟價格有關的提醒可能不準。按一下就全部更新。', 'cashflowView', 'prices');
+        else if (days >= 7) push('warn', '⚡', `現價已經 <strong>${days} 天</strong>沒更新了，損益與停損判斷會失準`, 'cashflowView', 'prices');
+        else if (days >= 3) push('info', '⚡', `現價 ${days} 天沒更新了`, 'cashflowView', 'prices');
       }
     } catch (e) {}
 
@@ -22468,6 +22490,263 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     writeKey(CF_STORAGE.fx, JSON.stringify(cashflowFx));
     loadCashflow();
   }
+  // ===== 一鍵更新全部現價 =====
+  // 整個系統（儀表板／資產配置／挑戰目標／下單計畫看守）都吃 holding.currentPrice，
+  // 但除了美股以外全都要手動輸入。資料一舊，所有數字與提醒就跟著失準。
+  //
+  // ⚠ 資料源都查證過（見 SKILL.md §5.8.19）：
+  //   台股 → FinMind 逐檔（證交所官方 API 一次能給全市場，但沒有 CORS 標頭，瀏覽器擋掉）
+  //   美股 → Finnhub（要免費金鑰；沒設定就跳過，不當成錯誤）
+  //   加密 → CoinGecko，一次帶多個 id
+  //   外幣 → open.er-api，一次拿全部匯率
+  //   基金／貴金屬／不動產沒有公開報價來源 → 不碰
+  const CG_IDS = {
+    BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', BNB: 'binancecoin', XRP: 'ripple',
+    ADA: 'cardano', DOGE: 'dogecoin', AVAX: 'avalanche-2', DOT: 'polkadot', TRX: 'tron',
+    LINK: 'chainlink', SHIB: 'shiba-inu', LTC: 'litecoin', BCH: 'bitcoin-cash', NEAR: 'near',
+    APT: 'aptos', SUI: 'sui', ARB: 'arbitrum', OP: 'optimism', PEPE: 'pepe',
+    UNI: 'uniswap', AAVE: 'aave', USDT: 'tether', USDC: 'usd-coin',
+    // ⚠ TON 不能用 CoinGecko /search 去猜——它會配到 tokamak-network（同代號的另一個小幣，市值第 855 名）。
+    //   Toncoin 的正式 id 是 the-open-network。
+    TON: 'the-open-network',
+    // ⚠ MATIC 已遷移成 POL。這裡照使用者記的代號對應，不替他換幣（價差很大），兩個都留著。
+    MATIC: 'matic-network', POL: 'polygon-ecosystem-token'
+  };
+  // 台股代號：4~6 位數字，可能結尾一個英文字母（2330 / 0050 / 00878 / 00679B）
+  const isTwCode = s => /^\d{4,6}[A-Z]?$/.test(String(s || '').trim());
+
+  // 每個模組怎麼讀、怎麼存、怎麼重畫。mem() 回傳「模組已經載入到記憶體的那份陣列」——
+  // ⚠ 一定要優先改那一份，不能只改 storage：模組載入後任何一次存檔都會用記憶體那份覆蓋回去，
+  //   我們的更新就會被洗掉。
+  const PRICE_TARGETS = [
+    { key: 'tw', name: '台股個股', hKey: 'tw_holdings_v1', view: 'twStockView', src: () => 'tw',
+      mem: () => (typeof twHoldings !== 'undefined' ? twHoldings : null),
+      push: h => pushHoldingToSupabase(h), render: () => { renderHoldings(); renderTwStockStats(); } },
+    { key: 'etf', name: '高股息 ETF', hKey: 'hdetf_holdings_v1', view: 'hdEtfView', src: () => 'tw',
+      mem: () => (typeof hdEtfHoldings !== 'undefined' ? hdEtfHoldings : null),
+      push: h => pushHdEtfHoldingToSupabase(h), render: () => { renderHdEtfHoldings(); renderHdEtfStats(); } },
+    { key: 'us', name: '美股個股', hKey: 'us_holdings_v1', view: 'usStockView', src: () => 'us',
+      mem: () => (typeof usHoldings !== 'undefined' ? usHoldings : null),
+      push: h => pushUsHoldingToSupabase(h), render: () => { renderUsHoldings(); renderUsStockStats(); } },
+    // 混合幣別的兩個模組：逐筆看自己的 ccy 決定去哪抓
+    { key: 'mketf', name: '市值型 ETF', hKey: 'mketf_holdings_v1', view: 'mkEtfView', src: h => h.ccy === 'USD' ? 'us' : 'tw',
+      mem: () => (typeof mkEtfHoldings !== 'undefined' ? mkEtfHoldings : null),
+      push: h => pushMkEtfHoldingToSupabase(h), render: () => { renderMkEtfHoldings(); renderMkEtfStats(); } },
+    { key: 'bond', name: '債券 · 債券 ETF', hKey: 'bond_holdings_v1', view: 'bondView', src: h => h.ccy === 'USD' ? 'us' : 'tw',
+      mem: () => (typeof bondHoldings !== 'undefined' ? bondHoldings : null),
+      push: h => pushBondHoldingToSupabase(h), render: () => { renderBondHoldings(); renderBondStats(); } },
+    { key: 'crypto', name: '加密貨幣', hKey: 'crypto_holdings_v1', view: 'cryptoView', src: () => 'crypto',
+      mem: () => (typeof cryptoHoldings !== 'undefined' ? cryptoHoldings : null),
+      push: h => pushCryptoHoldingToSupabase(h), render: () => { renderCryptoHoldings(); renderCryptoStats(); } },
+    // 外幣存款的 currentPrice 是「目前匯率」，不是股價（見 §5.8.9）
+    { key: 'fxdep', name: '外幣存款', hKey: 'fxdep_holdings_v1', view: 'fxDepView', src: () => 'fx',
+      mem: () => (typeof fxDepHoldings !== 'undefined' ? fxDepHoldings : null),
+      push: h => pushFxDepHoldingToSupabase(h), render: () => { renderFxDepHoldings(); renderFxDepStats(); } }
+  ];
+
+  // FinMind 逐檔抓最近收盤（只要 10 天，不像畫圖要 400 天）
+  async function quoteTwClose(code) {
+    const start = todayISO(Date.now() - 12 * 864e5);
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const rows = (j && j.data) || [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const c = Number(rows[i].close);
+      if (c > 0) return { price: c, date: rows[i].date };
+    }
+    return null;
+  }
+  // 一次跑幾個，避免被 FinMind 免費層擋
+  async function mapLimit(items, limit, fn) {
+    const out = new Array(items.length);
+    let i = 0;
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (i < items.length) { const n = i++; try { out[n] = await fn(items[n], n); } catch (e) { out[n] = { error: e }; } }
+    }));
+    return out;
+  }
+
+  let priceRefreshBusy = false;
+  async function refreshAllPrices() {
+    if (priceRefreshBusy) { showToast('正在更新中…'); return; }
+    priceRefreshBusy = true;
+    const btns = [...document.querySelectorAll('[data-refresh-prices]')];
+    const oldTxt = btns.map(b => b.textContent);
+    btns.forEach(b => { b.disabled = true; b.textContent = '⚡ 更新中…'; });
+
+    const log = { tw: { ok: 0, fail: 0 }, us: { ok: 0, fail: 0, skip: 0 }, crypto: { ok: 0, fail: 0 }, fx: { ok: 0, fail: 0 }, changed: [], firstFill: [] };
+    const notes = [];
+    try {
+      // 0) 匯率先更新（外幣存款要用，儀表板換算也要用）
+      const fxRate = await refreshCashflowFx();
+      let fxTable = null;
+      try {
+        const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+        const j = await r.json();
+        if (j && j.rates && j.rates.TWD > 0) fxTable = j.rates;
+      } catch (e) {}
+
+      // 1) 把所有模組的持股攤平成一張待辦表
+      const jobs = [];
+      const loaded = [];
+      for (const t of PRICE_TARGETS) {
+        let arr = null;
+        try { arr = t.mem(); } catch (e) { arr = null; }
+        if (!arr || !arr.length) { try { arr = await readJson(t.hKey, []); } catch (e) { arr = []; } }
+        if (!Array.isArray(arr) || !arr.length) continue;
+        loaded.push({ t, arr });
+        arr.forEach(h => {
+          const sym = String(h.symbol || '').trim();
+          if (!sym) return;
+          let kind = t.src(h);
+          // 模組裡混進不像台股代號的東西（例如把美股填進台股模組）就改走美股
+          if (kind === 'tw' && !isTwCode(sym)) kind = 'us';
+          jobs.push({ t, h, sym, kind });
+        });
+      }
+      if (!jobs.length) { showToast('目前沒有任何持股可以更新'); return; }
+
+      const setPx = (job, price) => {
+        const before = Number(job.h.currentPrice) || 0;
+        // ⚠ 只有「上次也是自動抓的」才算得出有意義的漲跌。
+        //    跟使用者手填的舊值比會出現 +6304600% 這種荒謬數字（實測 currentPrice 還是 1 時就會）。
+        //    第一次自動帶入只說「首次帶入」，不假裝那是漲跌。
+        const hadAuto = !!job.h.priceUpdatedAt;
+        job.h.currentPrice = price;
+        job.h.priceUpdatedAt = Date.now();
+        job.h.updatedAt = Date.now();
+        if (!hadAuto) { log.firstFill.push(job.sym); return; }
+        if (before > 0 && Math.abs(price - before) / before > 0.0001) {
+          log.changed.push({ sym: job.sym, from: before, to: price, pct: (price / before - 1) * 100, key: job.t.key });
+        }
+      };
+
+      // 2) 台股：逐檔 FinMind，併發 5
+      const twJobs = jobs.filter(j => j.kind === 'tw');
+      if (twJobs.length) {
+        await mapLimit(twJobs, 5, async job => {
+          try {
+            const q = await quoteTwClose(job.sym);
+            if (q && q.price > 0) { setPx(job, q.price); log.tw.ok++; } else log.tw.fail++;
+          } catch (e) { log.tw.fail++; }
+        });
+      }
+
+      // 3) 美股：Finnhub，需要金鑰
+      const usJobs = jobs.filter(j => j.kind === 'us');
+      if (usJobs.length) {
+        if (!finnhubKey) { try { await loadFinnhubKey(); } catch (e) {} }
+        if (!finnhubKey) {
+          log.us.skip = usJobs.length;
+          notes.push(`美股 ${usJobs.length} 檔沒更新——還沒設定 Finnhub 金鑰（美股工具列的「🔑 金鑰」）`);
+        } else {
+          for (const job of usJobs) {   // 免費層 60 次/分，這裡保守序列跑
+            try {
+              const q = await finnhubQuote(job.sym);
+              if (q && Number(q.c) > 0) {
+                setPx(job, Number(q.c));
+                job.h.dayChange = q.d; job.h.dayChangePct = q.dp; job.h.prevClose = q.pc;
+                log.us.ok++;
+              } else log.us.fail++;
+            } catch (e) {
+              log.us.fail++;
+              if (/401|金鑰|429/.test(String(e && e.message))) { notes.push('美股中斷：' + e.message); break; }
+            }
+            await new Promise(r => setTimeout(r, 1100));
+          }
+        }
+      }
+
+      // 4) 加密：CoinGecko 一次帶全部 id
+      const cJobs = jobs.filter(j => j.kind === 'crypto');
+      if (cJobs.length) {
+        const ids = [...new Set(cJobs.map(j => CG_IDS[j.sym.toUpperCase()]).filter(Boolean))];
+        const unknown = [...new Set(cJobs.filter(j => !CG_IDS[j.sym.toUpperCase()]).map(j => j.sym))];
+        if (unknown.length) notes.push(`這些幣不在對照表裡，沒更新：${unknown.join('、')}`);
+        if (ids.length) {
+          try {
+            const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd`, { cache: 'no-store' });
+            const j = await r.json();
+            cJobs.forEach(job => {
+              const id = CG_IDS[job.sym.toUpperCase()];
+              const p = id && j[id] && Number(j[id].usd);
+              if (p > 0) { setPx(job, p); log.crypto.ok++; } else if (id) log.crypto.fail++;
+            });
+          } catch (e) { log.crypto.fail += cJobs.length; }
+        }
+      }
+
+      // 5) 外幣存款：currentPrice = 該幣別對台幣的匯率
+      //    er-api 給的是「1 USD = N 外幣」，所以 外幣→台幣 = rates.TWD / rates.該幣
+      const fJobs = jobs.filter(j => j.kind === 'fx');
+      if (fJobs.length) {
+        if (!fxTable) { log.fx.fail = fJobs.length; notes.push('匯率抓不到，外幣存款沒更新'); }
+        else {
+          fJobs.forEach(job => {
+            const code = job.sym.toUpperCase();
+            const per = code === 'USD' ? 1 : Number(fxTable[code]);
+            const twd = Number(fxTable.TWD);
+            if (per > 0 && twd > 0) { setPx(job, Number((twd / per).toFixed(5))); log.fx.ok++; }
+            else log.fx.fail++;
+          });
+        }
+      }
+
+      // 6) 存檔 + 推雲端 + 重畫（只重畫正在看的那一頁，避免無謂的 DOM 工作）
+      for (const { t, arr } of loaded) {
+        try { await writeKey(t.hKey, JSON.stringify(arr)); } catch (e) {}
+        try {
+          const view = document.getElementById(t.view);
+          if (view && view.classList.contains('active')) t.render();
+        } catch (e) {}
+        arr.forEach(h => { try { if (h.priceUpdatedAt) t.push(h); } catch (e) {} });
+      }
+      await writeKey('studio_price_refresh_v1', JSON.stringify({ at: Date.now(), ok: log.tw.ok + log.us.ok + log.crypto.ok + log.fx.ok }));
+
+      renderPriceRefreshResult(log, notes, fxRate);
+      // 現金流頁與首頁提醒的數字都跟現價有關，順手重算
+      try { if (document.getElementById('cashflowView').classList.contains('active')) loadCashflow(); } catch (e) {}
+      try { refreshStudioAlerts(); } catch (e) {}
+    } finally {
+      priceRefreshBusy = false;
+      btns.forEach((b, i) => { b.disabled = false; b.textContent = oldTxt[i]; });
+    }
+  }
+
+  function renderPriceRefreshResult(log, notes, fxRate) {
+    const total = log.tw.ok + log.us.ok + log.crypto.ok + log.fx.ok;
+    const fail = log.tw.fail + log.us.fail + log.crypto.fail + log.fx.fail;
+    const el = document.getElementById('priceRefreshResult');
+    showToast(`⚡ 更新 ${total} 檔${fail ? ` · 失敗 ${fail}` : ''}${log.us.skip ? ` · 美股 ${log.us.skip} 檔略過` : ''}`);
+    if (!el) return;
+    const up = log.changed.filter(c => c.pct > 0).length;
+    const down = log.changed.filter(c => c.pct < 0).length;
+    const big = [...log.changed].sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)).slice(0, 6);
+    el.innerHTML = `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:12px 14px; margin-top:12px;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:8px;">更新結果 · ${escape(todayISO())} ${new Date().toTimeString().slice(0, 5)}</div>
+        <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.9;">
+          成功更新 <strong style="color:var(--accent);">${total}</strong> 檔
+          <span style="color:var(--ink-tertiary);">（台股 ${log.tw.ok}／美股 ${log.us.ok}／加密 ${log.crypto.ok}／外幣 ${log.fx.ok}）</span>
+          ${fail ? `<span style="color:var(--danger);"> · 失敗 ${fail} 檔</span>` : ''}
+          ${fxRate ? `<br>匯率 USD/TWD <strong>${fxRate.toFixed(3)}</strong>` : ''}
+          ${log.firstFill.length ? `<br><span style="color:var(--accent-warm);">${log.firstFill.length} 檔是第一次自動帶入</span><span style="color:var(--ink-tertiary);">（之前是手填的，沒有前次自動價可比，所以不算漲跌）</span>` : ''}
+          ${log.changed.length ? `<br>有 ${log.changed.length} 檔跟上次自動更新時不一樣（<span style="color:var(--accent);">${up} 漲</span>／<span style="color:var(--danger);">${down} 跌</span>）`
+            : (log.firstFill.length ? '' : '<br>價格跟上次一樣（可能不是交易日）')}
+        </div>
+        ${big.length ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:9px;">
+          ${big.map(c => `<span style="font-family:var(--mono); font-size:10.5px; padding:4px 9px; border-radius:3px; background:var(--bg-elevated); border:1px solid var(--line); color:${c.pct >= 0 ? 'var(--accent)' : 'var(--danger)'};">${escape(c.sym)} ${c.pct >= 0 ? '+' : ''}${c.pct.toFixed(1)}%</span>`).join('')}
+        </div>` : ''}
+        ${notes.length ? `<div style="margin-top:9px; font-size:11.5px; color:var(--accent-warm); line-height:1.7;">${notes.map(n => '· ' + escape(n)).join('<br>')}</div>` : ''}
+        <div style="margin-top:9px; font-size:11px; color:var(--ink-tertiary); line-height:1.7;">
+          台股是<strong>最近收盤價</strong>（不是盤中即時）；美股是即時報價；加密與匯率是即時。
+          基金／貴金屬／不動產沒有公開報價來源，要自己填。
+        </div>
+      </div>`;
+  }
+
   async function cfCompute() {
     const fx = cashflowFx.usdTwd || 32;
     const rows = [];
@@ -22486,7 +22765,21 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     return rows;
   }
+  // 現價是什麼時候更新的？太舊就用顏色提醒，不然使用者不知道自己在看幾天前的數字
+  async function renderPriceAge() {
+    const el = document.getElementById('cfPriceAge');
+    if (!el) return;
+    let info = null;
+    try { info = await readJson('studio_price_refresh_v1', null); } catch (e) {}
+    if (!info || !info.at) { el.innerHTML = '<span style="color:var(--accent-warm);">現價還沒自動更新過</span>'; return; }
+    const mins = Math.floor((Date.now() - info.at) / 60000);
+    const txt = mins < 1 ? '剛剛' : mins < 60 ? `${mins} 分鐘前` : mins < 1440 ? `${Math.floor(mins / 60)} 小時前` : `${Math.floor(mins / 1440)} 天前`;
+    const color = mins > 1440 * 3 ? 'var(--danger)' : mins > 1440 ? 'var(--accent-warm)' : 'var(--ink-tertiary)';
+    el.innerHTML = `<span style="color:${color};">現價更新於 ${escape(txt)}</span>`;
+  }
+
   async function loadCashflow() {
+    renderPriceAge();
     await loadCashflowFx();
     if (!cashflowFx.updatedAt) await refreshCashflowFx(); // 首次自動抓匯率
     const rows = await cfCompute();
