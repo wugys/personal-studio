@@ -7374,7 +7374,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 7.2 · η</div>
+    <div>v 7.3 · η</div>
   </footer>
 </div>
 
@@ -7787,8 +7787,22 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   // === View History Stack ===
+  // 條目格式：模組頁 = view id；儀表板 = 'dashboardView' 或 'dashboardView|<groupId>'
+  // （要記住當初停在哪一層，不然「上一頁」會一路跳回最外層群組總覽）
   let viewHistory = ['dashboardView'];
   let suppressHistory = false; // 內部跳轉時用，避免重複推入
+  function histParse(entry) {
+    const s = String(entry || '');
+    const i = s.indexOf('|');
+    return i < 0 ? { view: s, group: null } : { view: s.slice(0, i), group: s.slice(i + 1) };
+  }
+  // 儀表板換層（進群組／回總覽）時，把最上面那筆 history 一起更新
+  function histSyncDashboard() {
+    if (!viewHistory.length) return;
+    const top = histParse(viewHistory[viewHistory.length - 1]);
+    if (top.view !== 'dashboardView') return;
+    viewHistory[viewHistory.length - 1] = currentGroupId ? 'dashboardView|' + currentGroupId : 'dashboardView';
+  }
 
   function showView(id, opts = {}) {
     const cur = document.querySelector('.view.active');
@@ -7805,7 +7819,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
     if (!suppressHistory && !backward) {
       // 推進 history（避免連續相同）
-      if (viewHistory[viewHistory.length - 1] !== id) {
+      if (histParse(viewHistory[viewHistory.length - 1]).view !== id) {
         viewHistory.push(id);
         if (viewHistory.length > 30) viewHistory.shift();
       }
@@ -7823,17 +7837,34 @@ alter publication supabase_realtime add table party_locations;</pre>
       return;
     }
     viewHistory.pop(); // 移除當前
-    const prev = viewHistory[viewHistory.length - 1];
+    const prev = histParse(viewHistory[viewHistory.length - 1]);
     suppressHistory = true;
-    showView(prev, { backward: true });
+    showView(prev.view, { backward: true });
+    // 回儀表板時把當初那一層還原回來（showView 的載入器會把它 reset 成群組總覽）
+    if (prev.view === 'dashboardView') {
+      if (prev.group && groups.some(g => g.id === prev.group)) enterGroup(prev.group);
+      else backToGroupsOverview();
+    }
     suppressHistory = false;
+    renderBreadcrumb();
   }
 
   function goHome() {
     viewHistory = ['dashboardView'];
     suppressHistory = true;
     showView('dashboardView', { backward: true });
+    backToGroupsOverview();
     suppressHistory = false;
+    renderBreadcrumb();
+  }
+
+  // 直接跳到某個群組那一層（麵包屑第 2 層用）
+  function goToGroup(groupId) {
+    suppressHistory = true;
+    showView('dashboardView', { backward: true });
+    enterGroup(groupId);
+    suppressHistory = false;
+    renderBreadcrumb();
   }
 
   // === Breadcrumb 自動生成（3 層快捷圖示：首頁 → 群組 → 模組） ===
@@ -7857,14 +7888,13 @@ alter publication supabase_realtime add table party_locations;</pre>
       return trail;
     }
 
-    // 在某個模組 view
-    const viewToModuleId = {
-      apiView: 'm_apis',
-      doubleView: 'm_double',
-      leverageView: 'm_leverage',
-      tripsView: 'm_travel',
-      travelView: 'm_travel'
-    };
+    // 在某個模組 view：對照表直接從 modules 的 target 生成，
+    // 這樣以後新增模組不用回來改這裡（之前寫死只有 5 個，導致投資模組全部沒有麵包屑）
+    const viewToModuleId = {};
+    modules.forEach(m => { if (m.target) viewToModuleId[m.target] = m.id; });
+    // 沒有掛在 target 上的額外對照（旅遊有 tripsView / travelView 兩個畫面）
+    const extraViewMap = { travelView: 'm_travel', tripsView: 'm_travel', doubleView: 'm_double', leverageView: 'm_leverage', apiView: 'm_apis' };
+    Object.keys(extraViewMap).forEach(v => { if (!viewToModuleId[v]) viewToModuleId[v] = extraViewMap[v]; });
     const moduleId = viewToModuleId[activeView];
     if (moduleId) {
       const m = modules.find(x => x.id === moduleId);
@@ -7875,7 +7905,7 @@ alter publication supabase_realtime add table party_locations;</pre>
           trail.push({
             icon: g.emoji || '◇',
             label: g.name,
-            action: () => { suppressHistory = false; goHome(); setTimeout(() => enterGroup(g.id), 50); }
+            action: () => goToGroup(g.id)
           });
         }
       }
@@ -8119,6 +8149,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     currentGroupId = groupId;
     document.body.classList.toggle('dense-page', groupId === 'g_invest');
     renderDashboard();
+    histSyncDashboard();   // history 那筆也要記住現在停在哪個群組
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -8127,6 +8158,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     currentGroupId = null;
     document.body.classList.remove('dense-page');
     renderDashboard();
+    histSyncDashboard();
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -10632,6 +10664,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const strat = document.getElementById('usStrategySelect')?.value || 'general';
     let snap = usAnalysisCtx.snap || '';
     if (usAnalysisCtx.tech) snap += (snap ? ' · ' : '') + usAnalysisCtx.tech;
+    if (usAnalysisCtx.levels) snap += (snap ? '\n關鍵價位（規則算出，非預測）：' : '') + usAnalysisCtx.levels;
     usAnalysisPrompt = buildUsAnalysisPrompt(usAnalysisCtx.symbol, usAnalysisCtx.name, snap, strat);
   }
   function renderStrategyDesc() {
@@ -10792,6 +10825,331 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       </div>
       ${sig.summary ? `<div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); padding:9px 12px; border-radius:3px; font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:10px;">📖 ${escape(sig.summary)}</div>` : ''}
       <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:0 16px; margin-bottom:14px;">${sig.sig.map(chip).join('')}</div>`;
+  }
+
+  // ============================================================
+  // 新手體檢 + 參考價位帶（v7.3）
+  //
+  // ⚠ 設計原則：**這裡不做任何預測**。所有價位都是「規則算出來的客觀數字」——
+  //   支撐/壓力 = 大家都在看的技術位置；停損 = 數學算出來的風險距離；
+  //   估值情境 = EPS × 各種本益比的單純乘法。
+  //   絕對不要在這裡加「我預估會漲到 X」這種東西。
+  // ============================================================
+  const US_CHECK_STORAGE = 'us_check_v1';
+  let usCheckAnswers = {};          // { [symbol]: { understand, stop, budget, updatedAt } }
+  let usCheckTotalAssets = null;    // cfCompute 的總資產（台幣），算過就快取
+  let usLevelsCache = null;         // 最近一次算出來的價位帶，給 AI 提示詞用
+
+  async function loadUsCheckAnswers() {
+    try { const v = await readKey(US_CHECK_STORAGE); usCheckAnswers = v ? JSON.parse(v) : {}; }
+    catch (e) { usCheckAnswers = {}; }
+    return usCheckAnswers;
+  }
+  async function saveUsCheckAnswers() { await writeKey(US_CHECK_STORAGE, JSON.stringify(usCheckAnswers)); }
+
+  // 真實波幅均值：衡量「這檔平常一天會晃多少」，停損距離用它才不會被雜訊掃出場
+  function usATR(bars, period = 14) {
+    if (!bars || bars.length < period + 1 || typeof bars[0] !== 'object') return null;
+    const trs = [];
+    for (let i = 1; i < bars.length; i++) {
+      const h = bars[i].high, l = bars[i].low, pc = bars[i - 1].close;
+      if (h == null || l == null || pc == null) continue;
+      trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    }
+    if (trs.length < period) return null;
+    const slice = trs.slice(-period);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  }
+  // 近 n 根的波段高低點
+  function usSwing(bars, n) {
+    if (!bars || !bars.length || typeof bars[0] !== 'object') return null;
+    const s = bars.slice(-n);
+    const highs = s.map(b => b.high).filter(v => v != null);
+    const lows = s.map(b => b.low).filter(v => v != null);
+    if (!highs.length || !lows.length) return null;
+    return { high: Math.max(...highs), low: Math.min(...lows) };
+  }
+
+  // 把所有「客觀價位」算出來
+  function usPriceLevels(price, metric, sig, bars) {
+    const c = Number(price);
+    if (!(c > 0)) return null;
+    const m = (metric && metric.metric) || {};
+    const atr = usATR(bars, 14);
+    const sw20 = usSwing(bars, 20);
+    const sw60 = usSwing(bars, 60);
+    const w52h = Number(m['52WeekHigh']) || null;
+    const w52l = Number(m['52WeekLow']) || null;
+
+    // 支撐 / 壓力候選（去重、依距離排序）
+    const cand = [];
+    const push = (label, v) => { const n = Number(v); if (n > 0 && isFinite(n)) cand.push({ label, v: n }); };
+    if (sig) {
+      push('月線 MA20', sig.ma20);
+      push('季線 MA60', sig.ma60);
+      if (sig.boll) { push('布林下軌', sig.boll.lower); push('布林上軌', sig.boll.upper); }
+    }
+    if (sw20) { push('近 20 日低', sw20.low); push('近 20 日高', sw20.high); }
+    if (sw60) { push('近 60 日低', sw60.low); push('近 60 日高', sw60.high); }
+    push('52 週低', w52l); push('52 週高', w52h);
+
+    const dedup = arr => {
+      const out = [];
+      arr.forEach(x => { if (!out.some(y => Math.abs(y.v - x.v) / c < 0.005)) out.push(x); });
+      return out;
+    };
+    const supports = dedup(cand.filter(x => x.v < c * 0.999).sort((a, b) => b.v - a.v)).slice(0, 4)
+      .map(x => ({ ...x, pct: (x.v - c) / c * 100 }));
+    const resists = dedup(cand.filter(x => x.v > c * 1.001).sort((a, b) => a.v - b.v)).slice(0, 4)
+      .map(x => ({ ...x, pct: (x.v - c) / c * 100 }));
+
+    // 兩種停損：波動型（2×ATR）與結構型（跌破近 20 日低）
+    const stops = [];
+    if (atr) {
+      const v = c - 2 * atr;
+      if (v > 0) stops.push({ key: 'atr', label: '波動型停損', how: '現價 − 2×ATR(14)', v, pct: (v - c) / c * 100,
+        why: '這檔平常一天晃 ' + (atr / c * 100).toFixed(1) + '%，抓兩倍才不會被正常震盪掃出場' });
+    }
+    if (sw20 && sw20.low < c) {
+      const v = sw20.low * 0.995;
+      stops.push({ key: 'swing', label: '結構型停損', how: '跌破近 20 日波段低點', v, pct: (v - c) / c * 100,
+        why: '跌破最近一波的低點，代表原本的上升結構被破壞' });
+    }
+    if (sig && sig.ma60 && sig.ma60 < c) {
+      const v = sig.ma60;
+      stops.push({ key: 'ma60', label: '季線停損', how: '跌破季線 MA60', v, pct: (v - c) / c * 100,
+        why: '季線是中期多空分水嶺，跌破通常代表趨勢轉弱' });
+    }
+    // 依「賠率 2:1」反推最低該有的獲利目標
+    stops.forEach(s => { const risk = c - s.v; s.target2r = c + 2 * risk; s.target2rPct = (s.target2r - c) / c * 100; });
+
+    // 估值情境：EPS × 各種本益比（純乘法，不是預測）
+    const eps = Number(m.epsTTM ?? m.epsBasicExclExtraItemsTTM);
+    const pe = Number(m.peTTM ?? m.peBasicExclExtraTTM);
+    let valuation = null;
+    if (eps > 0) {
+      const mult = [10, 15, 20, 25, 30, 40, 60];
+      if (pe > 0 && !mult.some(x => Math.abs(x - pe) < 2)) mult.push(Math.round(pe));
+      valuation = { eps, pe: pe > 0 ? pe : null, rows: mult.sort((a, b) => a - b).map(x => ({ pe: x, price: eps * x, pct: (eps * x - c) / c * 100 })) };
+    }
+    const pos52 = (w52h && w52l && w52h > w52l) ? (c - w52l) / (w52h - w52l) * 100 : null;
+    return { c, atr, atrPct: atr ? atr / c * 100 : null, supports, resists, stops, valuation, pos52, w52h, w52l };
+  }
+
+  // 一句白話總結價位帶（也餵給 AI 提示詞）
+  function usLevelsSummary(L) {
+    if (!L) return '';
+    const f = v => '$' + Number(v).toFixed(2);
+    const parts = [];
+    if (L.supports[0]) parts.push(`最近支撐 ${L.supports[0].label} ${f(L.supports[0].v)}（${L.supports[0].pct.toFixed(1)}%）`);
+    if (L.resists[0]) parts.push(`最近壓力 ${L.resists[0].label} ${f(L.resists[0].v)}（+${L.resists[0].pct.toFixed(1)}%）`);
+    if (L.stops[0]) parts.push(`停損參考 ${f(L.stops[0].v)}（${L.stops[0].pct.toFixed(1)}%）· 對應 2:1 目標 ${f(L.stops[0].target2r)}`);
+    if (L.pos52 != null) parts.push(`目前位於 52 週區間 ${L.pos52.toFixed(0)}% 位置`);
+    return parts.join('；') + '。';
+  }
+
+  const usLvlPill = (label, v, pct, color) => `
+    <div style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line);">
+      <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); min-width:76px;">${escape(label)}</span>
+      <span style="font-family:var(--serif); font-size:15px; color:${color};">$${Number(v).toFixed(2)}</span>
+      <span style="margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>
+    </div>`;
+
+  function renderUsPriceLevels(L) {
+    if (!L) return '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">價位帶需要歷史資料，此代號暫時算不出來。</div>';
+    const f = v => '$' + Number(v).toFixed(2);
+    const stopHtml = L.stops.map(s => `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--danger); border-radius:3px; padding:10px 12px; margin-bottom:8px;">
+        <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
+          <span style="font-family:var(--mono); font-size:10px; color:var(--danger); letter-spacing:0.1em;">${escape(s.label)}</span>
+          <span style="font-family:var(--serif); font-size:17px; color:var(--ink-primary);">${f(s.v)}</span>
+          <span style="font-family:var(--mono); font-size:11px; color:var(--danger);">${s.pct.toFixed(1)}%</span>
+          <span style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(s.how)}</span>
+        </div>
+        <div style="font-size:11.5px; color:var(--ink-secondary); margin-top:5px; line-height:1.55;">${escape(s.why)}</div>
+        <div style="font-size:11.5px; color:var(--ink-secondary); margin-top:5px; line-height:1.55;">→ 賠這麼多的話，獲利目標至少要 <strong style="color:var(--accent);">${f(s.target2r)}</strong>（+${s.target2rPct.toFixed(1)}%）才划得來（賠率 2:1）</div>
+      </div>`).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px;">資料不足，算不出停損參考。</div>';
+
+    const valHtml = L.valuation ? `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 6px;">估值情境 · 如果市場願意給不同本益比</div>
+      <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:8px;">用<strong>目前每股盈餘 ${f(L.valuation.eps)}</strong> 直接乘出來的價格。這是單純乘法，<strong>不是預測</strong>——它只告訴你「市場現在心裡想的是幾倍」。</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:6px;">
+        ${L.valuation.rows.map(r => {
+          const isNow = L.valuation.pe && Math.abs(r.pe - L.valuation.pe) < 2;
+          return `<div style="background:${isNow ? 'rgba(212,165,116,0.14)' : 'var(--bg-card)'}; border:1px solid ${isNow ? 'var(--accent)' : 'var(--line)'}; border-radius:3px; padding:8px 10px; text-align:center;">
+            <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">P/E ${r.pe}${isNow ? ' · 現在' : ''}</div>
+            <div style="font-family:var(--serif); font-size:15px; color:var(--ink-primary);">${f(r.price)}</div>
+            <div style="font-family:var(--mono); font-size:10px; color:${r.pct >= 0 ? 'var(--accent)' : 'var(--danger)'};">${r.pct >= 0 ? '+' : ''}${r.pct.toFixed(0)}%</div>
+          </div>`;
+        }).join('')}
+      </div>` : `<div style="font-size:11.5px; color:var(--ink-tertiary); margin-top:12px;">這家公司目前每股盈餘是負的（還在虧錢），沒辦法用本益比推估值區間。</div>`;
+
+    return `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 8px;">參考價位帶 · PRICE LEVELS</div>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:9px 12px; border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:12px;">
+        ⚠ 以下<strong>沒有任何一個是「預測」</strong>。支撐壓力＝很多人都在看的技術位置；停損＝用波動度算出來的風險距離；估值＝單純乘法。價格會不會到，沒有人知道。
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:6px;">
+        <div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:0.1em; margin-bottom:2px;">▼ 下方支撐（想買的人會等的位置）</div>
+          ${L.supports.map(s => usLvlPill(s.label, s.v, s.pct, 'var(--accent)')).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px; padding:6px 0;">現價已接近區間最低，下方無明顯支撐。</div>'}
+        </div>
+        <div>
+          <div style="font-family:var(--mono); font-size:10px; color:var(--danger); letter-spacing:0.1em; margin-bottom:2px;">▲ 上方壓力（想賣的人會等的位置）</div>
+          ${L.resists.map(s => usLvlPill(s.label, s.v, s.pct, 'var(--danger)')).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px; padding:6px 0;">現價已在區間最高，上方無明顯壓力。</div>'}
+        </div>
+      </div>
+      ${L.pos52 != null ? `<div style="margin:10px 0 14px;">
+        <div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:4px;"><span>52 週低 ${f(L.w52l)}</span><span>目前在 ${L.pos52.toFixed(0)}% 位置</span><span>52 週高 ${f(L.w52h)}</span></div>
+        <div style="position:relative; height:6px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px;">
+          <div style="position:absolute; left:${Math.max(0, Math.min(100, L.pos52))}%; top:-4px; width:2px; height:12px; background:var(--accent);"></div>
+        </div>
+        <div style="font-size:11.5px; color:var(--ink-secondary); margin-top:6px; line-height:1.55;">${L.pos52 >= 75 ? '📍 靠近一年來的高點，<strong>追高的風險比較大</strong>。' : L.pos52 <= 30 ? '📍 靠近一年來的低點。便宜有便宜的理由，要先搞清楚為什麼跌。' : '📍 在區間中段，上下都有空間。'}</div>
+      </div>` : ''}
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 6px;">停損參考 · 買之前就要決定</div>
+      ${stopHtml}
+      ${valHtml}`;
+  }
+
+  // ===== 新手體檢（8 項自動紅綠燈）=====
+  function usCheckItems(price, metric, sig) {
+    const m = (metric && metric.metric) || {};
+    const num = v => { const n = Number(v); return isFinite(n) ? n : null; };
+    const mk = (label, valText, verdict, say) => ({ label, valText, verdict, say });
+    const items = [];
+    const pe = num(m.peTTM ?? m.peBasicExclExtraTTM);
+    items.push(pe == null ? mk('本益比 P/E', '—', 'na', '沒資料')
+      : pe <= 0 ? mk('本益比 P/E', '虧損', 'red', '公司目前是虧錢的，沒有本益比可看')
+      : mk('本益比 P/E', pe.toFixed(1), pe < 25 ? 'green' : pe < 40 ? 'amber' : 'red',
+          pe < 25 ? '用現在的獲利算，' + pe.toFixed(0) + ' 年回本，還算合理'
+                  : '用現在的獲利算，要 ' + pe.toFixed(0) + ' 年才回本。你買的是「未來」不是「現在」'));
+    const pb = num(m.pbAnnual ?? m.pbQuarterly);
+    items.push(pb == null ? mk('股價淨值比 P/B', '—', 'na', '沒資料')
+      : mk('股價淨值比 P/B', pb.toFixed(2), pb < 3 ? 'green' : pb < 8 ? 'amber' : 'red',
+          '公司資產值 1 塊，你付 ' + pb.toFixed(1) + ' 塊'));
+    const roe = num(m.roeTTM ?? m.roeRfy);
+    items.push(roe == null ? mk('ROE 股東報酬率', '—', 'na', '沒資料')
+      : mk('ROE 股東報酬率', roe.toFixed(1) + '%', roe >= 15 ? 'green' : roe >= 8 ? 'amber' : 'red',
+          '公司拿股東的錢，一年賺 ' + roe.toFixed(1) + '%' + (roe >= 15 ? '，很會賺' : roe < 8 ? '，偏低' : '，普通')));
+    const om = num(m.operatingMarginTTM ?? m.operatingMarginAnnual);
+    const gm = num(m.grossMarginTTM ?? m.grossMarginAnnual);
+    items.push(om == null ? mk('營益率', '—', 'na', '沒資料')
+      : mk('營益率', om.toFixed(1) + '%' + (gm != null ? '（毛利 ' + gm.toFixed(0) + '%）' : ''),
+          om >= 15 ? 'green' : om >= 5 ? 'amber' : 'red',
+          '賣 100 塊，扣掉成本跟開銷剩 ' + om.toFixed(1) + ' 塊' + (om < 5 ? '，很薄，景氣一差就容易虧' : '')));
+    const h52 = num(m['52WeekHigh']), l52 = num(m['52WeekLow']);
+    const pos = (h52 && l52 && h52 > l52 && price > 0) ? (price - l52) / (h52 - l52) * 100 : null;
+    items.push(pos == null ? mk('52 週位置', '—', 'na', '沒資料')
+      : mk('52 週位置', pos.toFixed(0) + '%', pos < 40 ? 'green' : pos < 75 ? 'amber' : 'red',
+          pos >= 75 ? '接近一年來的高點，追高風險大' : pos < 40 ? '接近一年來的低點，但要先搞懂為什麼跌' : '在區間中段'));
+    const beta = num(m.beta);
+    items.push(beta == null ? mk('Beta 波動度', '—', 'na', '沒資料')
+      : mk('Beta 波動度', beta.toFixed(2), beta < 1 ? 'green' : beta < 1.5 ? 'amber' : 'red',
+          '大盤跌 10%，它大約跌 ' + (beta * 10).toFixed(1) + '%' + (beta >= 1.5 ? '，抖很大，部位要放小' : '')));
+    items.push(!sig ? mk('技術方向', '計算中', 'na', '')
+      : mk('技術方向', sig.overall, sig.overall === '偏多' ? 'green' : sig.overall === '偏空' ? 'red' : 'amber',
+          sig.trend || ''));
+    if (!sig) items.push(mk('短線過熱', '計算中', 'na', ''));
+    else {
+      const rsi = sig.rsi, k = sig.kd ? sig.kd.k : null;
+      const hot = (rsi != null && rsi >= 70) || (k != null && k >= 80);
+      const warm = (rsi != null && rsi >= 60) || (k != null && k >= 70);
+      items.push(mk('短線過熱', (rsi != null ? 'RSI ' + rsi.toFixed(0) : '') + (k != null ? ' · K ' + k.toFixed(0) : ''),
+        hot ? 'red' : warm ? 'amber' : 'green',
+        hot ? '短線指標已經衝很高，現在追容易買在短期高點' : warm ? '短線稍微偏熱，可以再等等' : '短線沒有過熱'));
+    }
+    return items;
+  }
+
+  function renderUsBeginnerCheck(symbol, price, metric, sig) {
+    const items = usCheckItems(price, metric, sig);
+    const red = items.filter(i => i.verdict === 'red').length;
+    const green = items.filter(i => i.verdict === 'green').length;
+    const na = items.filter(i => i.verdict === 'na').length;
+    const dot = v => v === 'green' ? '🟢' : v === 'amber' ? '🟡' : v === 'red' ? '🔴' : '⚪';
+    const col = v => v === 'green' ? 'var(--accent)' : v === 'amber' ? 'var(--accent-warm)' : v === 'red' ? 'var(--danger)' : 'var(--ink-tertiary)';
+    const redLabels = items.filter(i => i.verdict === 'red').map(i => i.label).join('、');
+    const verdictText = na >= 6 ? '資料不足（多半是還沒設 Finnhub 金鑰，或這個代號 Finnhub 沒有基本面）。'
+      : red === 0 ? `八項體檢沒有紅燈，綠燈 ${green} 項。基本盤看起來還算穩，但這不代表會漲。`
+      : red <= 2 ? `有 ${red} 項紅燈：<strong>${escape(redLabels)}</strong>。不是不能買，但你要說得出「為什麼這幾項我可以忽略」。`
+      : `有 ${red} 項紅燈：<strong>${escape(redLabels)}</strong>。這種情況通常是在賭一個還沒發生的故事，部位要放小。`;
+    const ans = usCheckAnswers[symbol] || {};
+    const stopPct = (ans.stop > 0 && price > 0) ? ((ans.stop - price) / price * 100) : null;
+    const budgetPct = (ans.budget > 0 && usCheckTotalAssets > 0) ? (ans.budget / usCheckTotalAssets * 100) : null;
+    return `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:16px 0 8px;">🔰 新手體檢 · BEGINNER CHECK</div>
+      <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:12px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:0 18px;">
+          ${items.map(i => `
+            <div style="padding:7px 0; border-bottom:1px solid var(--line);">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:11px;">${dot(i.verdict)}</span>
+                <span style="font-size:12.5px; color:var(--ink-primary);">${escape(i.label)}</span>
+                <span style="margin-left:auto; font-family:var(--mono); font-size:12px; color:${col(i.verdict)};">${escape(i.valText)}</span>
+              </div>
+              ${i.say ? `<div style="font-size:11px; color:var(--ink-tertiary); line-height:1.5; margin-top:2px; padding-left:19px;">${escape(i.say)}</div>` : ''}
+            </div>`).join('')}
+        </div>
+        <div style="margin-top:12px; padding:9px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12.5px; color:var(--ink-secondary); line-height:1.65;">📋 ${verdictText}</div>
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:8px; line-height:1.5;">門檻是一般常見的參考值，<strong>不同產業差很多</strong>（例如軟體業毛利天生就高、零售業天生就低）。紅燈≠不能買，是「你要有理由說服自己」。</div>
+      </div>
+
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 8px;">✍ 這三題只有你能回答（會自動存起來）</div>
+      <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:12px;">
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:12px;">
+          <input type="checkbox" id="usCheckUnderstand" ${ans.understand ? 'checked' : ''} onchange="saveUsCheckField('${escape(symbol)}')" style="margin-top:3px;">
+          <span>我講得出<strong>這家公司靠什麼賺錢</strong>。（講不出來就別買——這是最有效的一條規則）</span>
+        </label>
+        <div class="form-row" style="margin-bottom:8px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">跌到多少我認錯出場（US$）</label>
+            <input type="number" step="any" min="0" class="form-input" id="usCheckStop" value="${ans.stop || ''}" placeholder="看上面「停損參考」挑一個" oninput="saveUsCheckField('${escape(symbol)}')" style="font-family:var(--mono);">
+            <div id="usCheckStopHint" style="font-size:11px; color:${stopPct != null && stopPct < -20 ? 'var(--danger)' : 'var(--ink-tertiary)'}; margin-top:5px; line-height:1.5;">${stopPct != null ? `距現價 ${stopPct.toFixed(1)}%${stopPct < -20 ? '　⚠ 這個停損太遠了，一次會賠掉五分之一以上' : ''}` : '沒寫下來就不要買。這一格是新手和賭徒的分界線。'}</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">我要投入多少（NT$）</label>
+            <input type="number" step="any" min="0" class="form-input" id="usCheckBudget" value="${ans.budget || ''}" placeholder="例如 50000" oninput="saveUsCheckField('${escape(symbol)}')" style="font-family:var(--mono);">
+            <div id="usCheckBudgetHint" style="font-size:11px; color:${budgetPct != null && budgetPct > 10 ? 'var(--danger)' : 'var(--ink-tertiary)'}; margin-top:5px; line-height:1.5;">${budgetPct != null ? `佔你目前總資產 ${budgetPct.toFixed(1)}%${budgetPct > 10 ? '　⚠ 單一標的超過 10%，太集中了' : '　（單一標的建議 5-10% 以內）'}` : (usCheckTotalAssets > 0 ? `你目前總資產約 ${cfMoney(usCheckTotalAssets)}` : '填了會自動幫你算佔總資產幾 %')}</div>
+          </div>
+        </div>
+        ${(ans.stop > 0 && ans.budget > 0 && price > 0 && stopPct != null) ? `
+          <div style="margin-top:6px; padding:9px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); border-radius:3px; font-size:12.5px; color:var(--ink-secondary); line-height:1.65;">
+            💸 這樣配置，如果真的跌到停損，你會賠掉大約 <strong style="color:var(--danger);">${cfMoney(ans.budget * Math.abs(stopPct) / 100)}</strong>${usCheckTotalAssets > 0 ? `（總資產的 ${(ans.budget * Math.abs(stopPct) / 100 / usCheckTotalAssets * 100).toFixed(2)}%）` : ''}。<strong>這個數字你能接受嗎？</strong>不能的話，回去把投入金額調小。
+          </div>` : ''}
+      </div>`;
+  }
+
+  async function saveUsCheckField(symbol) {
+    const cur = usCheckAnswers[symbol] || {};
+    const u = document.getElementById('usCheckUnderstand');
+    const s = document.getElementById('usCheckStop');
+    const b = document.getElementById('usCheckBudget');
+    usCheckAnswers[symbol] = {
+      understand: u ? !!u.checked : !!cur.understand,
+      stop: s ? (Number(s.value) || 0) : (cur.stop || 0),
+      budget: b ? (Number(b.value) || 0) : (cur.budget || 0),
+      updatedAt: Date.now()
+    };
+    await saveUsCheckAnswers();
+    // 只重畫兩行提示，不整塊重繪（不然使用者打字會被打斷）
+    const ans = usCheckAnswers[symbol];
+    const price = (usLevelsCache && usLevelsCache.c) || 0;
+    const sh = document.getElementById('usCheckStopHint');
+    if (sh) {
+      if (ans.stop > 0 && price > 0) {
+        const pct = (ans.stop - price) / price * 100;
+        sh.textContent = `距現價 ${pct.toFixed(1)}%` + (pct < -20 ? '　⚠ 這個停損太遠了，一次會賠掉五分之一以上' : '');
+        sh.style.color = pct < -20 ? 'var(--danger)' : 'var(--ink-tertiary)';
+      } else { sh.textContent = '沒寫下來就不要買。這一格是新手和賭徒的分界線。'; sh.style.color = 'var(--ink-tertiary)'; }
+    }
+    const bh = document.getElementById('usCheckBudgetHint');
+    if (bh) {
+      if (ans.budget > 0 && usCheckTotalAssets > 0) {
+        const pct = ans.budget / usCheckTotalAssets * 100;
+        bh.textContent = `佔你目前總資產 ${pct.toFixed(1)}%` + (pct > 10 ? '　⚠ 單一標的超過 10%，太集中了' : '　（單一標的建議 5-10% 以內）');
+        bh.style.color = pct > 10 ? 'var(--danger)' : 'var(--ink-tertiary)';
+      } else { bh.textContent = usCheckTotalAssets > 0 ? `你目前總資產約 ${cfMoney(usCheckTotalAssets)}` : '填了會自動幫你算佔總資產幾 %'; bh.style.color = 'var(--ink-tertiary)'; }
+    }
   }
 
   // ===== Phase 3：條件選股篩選器（Finnhub 基本面，AND 交集）=====
@@ -10965,8 +11323,14 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const mm = (metric && metric.metric) || {};
     if (mm.peTTM != null || mm.peBasicExclExtraTTM != null) snap += ` · P/E ${Number(mm.peTTM ?? mm.peBasicExclExtraTTM).toFixed(1)}`;
     if (mm['52WeekHigh'] != null) snap += ` · 52W ${mm['52WeekLow']}~${mm['52WeekHigh']}`;
-    usAnalysisCtx = { symbol: h.symbol, name: h.name, snap, tech: '' };
+    usAnalysisCtx = { symbol: h.symbol, name: h.name, snap, tech: '', levels: '' };
     usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap, 'general');
+    // 新手體檢要用到：使用者先前填的答案 + 總資產（用來算「這筆佔你多少 %」）
+    await loadUsCheckAnswers();
+    if (usCheckTotalAssets == null) {
+      cfCompute().then(rows => { usCheckTotalAssets = rows.reduce((a, r) => a + (Number(r.value) || 0), 0); })
+                 .catch(() => { usCheckTotalAssets = 0; });
+    }
     const dataEl = document.getElementById('usAnalysisData');
     if (dataEl) {
       dataEl.style.padding = '0'; dataEl.style.textAlign = 'left'; dataEl.style.color = 'var(--ink-secondary)';
@@ -10978,13 +11342,25 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       const panel = document.getElementById('usSignalsPanel');
       const sig = usTechSignals(closes);
       if (panel) panel.innerHTML = renderUsSignals(sig);
+      // 有了日線才算得出 ATR / 波段高低 → 參考價位帶 + 補完新手體檢的技術兩項
+      const px = (quote && quote.c > 0) ? quote.c : (sig ? sig.last : 0);
+      const L = usPriceLevels(px, metric, sig, Array.isArray(closes) && typeof closes[0] === 'object' ? closes : null);
+      usLevelsCache = L;
+      const lvlEl = document.getElementById('usLevelsPanel');
+      if (lvlEl) lvlEl.innerHTML = renderUsPriceLevels(L);
+      const chkEl = document.getElementById('usCheckPanel');
+      if (chkEl) chkEl.innerHTML = renderUsBeginnerCheck(h.symbol, px, metric, sig);
       if (sig) {
         usAnalysisCtx.tech = `技術面 ${sig.overall}（MA20 ${sig.ma20 ? sig.ma20.toFixed(2) : '—'}、RSI ${sig.rsi != null ? sig.rsi.toFixed(0) : '—'}、MACD柱 ${sig.macd ? (sig.macd.hist > 0 ? '正(偏多)' : '負(偏空)') : '—'}）`;
-        rebuildUsPrompt();
       }
+      if (L) usAnalysisCtx.levels = usLevelsSummary(L);
+      if (sig || L) rebuildUsPrompt();
     }).catch(() => {
+      if (seq !== usAnalysisSeq) return;
       const panel = document.getElementById('usSignalsPanel');
-      if (panel && seq === usAnalysisSeq) panel.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">技術訊號暫時無法計算（查無此代號歷史資料）。</div>';
+      if (panel) panel.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">技術訊號暫時無法計算（查無此代號歷史資料）。</div>';
+      const lvlEl = document.getElementById('usLevelsPanel');
+      if (lvlEl) lvlEl.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">參考價位帶暫時無法計算（查無此代號歷史資料）。</div>';
     });
   }
   function renderUsAnalysisData(h, quote, profile, metric, news) {
@@ -11064,7 +11440,11 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       </div>`;
 
     const signalsBlock = `<div id="usSignalsPanel"><div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">計算技術訊號中…</div></div>`;
-    return profileBlock + quoteBlock + metricBlock + signalsBlock + newsBlock + aiBlock;
+    // 新手體檢先用基本面畫一次（技術兩項顯示「計算中」），等 FinMind 日線回來再整塊重畫
+    const checkBlock = `<div id="usCheckPanel">${renderUsBeginnerCheck(h.symbol, hasQuote ? quote.c : 0, metric, null)}</div>`;
+    const levelsBlock = `<div id="usLevelsPanel"><div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">計算參考價位帶中…</div></div>`;
+    // 新手優先：先體檢、再價位，技術細節放後面給想深入的人看
+    return profileBlock + quoteBlock + metricBlock + checkBlock + levelsBlock + signalsBlock + newsBlock + aiBlock;
   }
   function copyUsAnalysisPrompt() {
     navigator.clipboard.writeText(usAnalysisPrompt).then(
@@ -24733,8 +25113,8 @@ ${daysBrief}
   // ===== 啟動 =====
   // 監聽顯示 view 時觸發載入
   const origShowView = showView;
-  showView = function(id) {
-    origShowView(id);
+  showView = function(id, opts) {
+    origShowView(id, opts);   // opts 要往下傳，不然 backward 動畫方向會掉
     document.body.classList.toggle('travel-active', id === 'travelView');
     // 離開 travel 相關頁面時，停 GPS 追蹤
     if (id !== 'travelView') stopGpsTracking();
@@ -24793,10 +25173,13 @@ ${daysBrief}
       loadAllocation();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
-      // 回到儀表板時 reset 到群組總覽層
+      // 回到儀表板時預設 reset 到群組總覽層
+      // （goBack / goToGroup 會在這之後再把該停的那一層設回去）
       dashLevel = 'overview';
       currentGroupId = null;
+      document.body.classList.remove('dense-page');
       renderDashboard();
+      renderBreadcrumb();   // 一定要在 reset 之後再畫一次，否則麵包屑會停在上一層（顯示已經離開的群組）
       closeMoreSheet();
     } else {
       closeMoreSheet();
