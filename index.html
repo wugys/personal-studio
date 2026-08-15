@@ -6144,6 +6144,402 @@
 
 
 
+  <!-- ============ 協會 · 組織 VIEW ============ -->
+  <div id="assocView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">⚐ ORGANIZATION</div>
+        <h1 id="assocTitle">協會 · <em>組織</em></h1>
+        <p>會員名冊、活動行事曆、會費收繳，一個地方管完。會費可以一鍵產生整年度應繳名單，催繳名單也能一鍵複製貼到 LINE 群。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="openAssocOrgModal()">⚙ 組織設定</button>
+        <button class="btn btn-primary" id="assocAddBtn" onclick="assocAddByTab()">+ 新增會員</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="assocStats"></div>
+
+    <div class="travel-tabs" style="margin-bottom:18px;">
+      <button class="travel-tab active" data-assoc-tab="members" onclick="setAssocTab('members')">⚇ 會員</button>
+      <button class="travel-tab" data-assoc-tab="events" onclick="setAssocTab('events')">✦ 活動</button>
+      <button class="travel-tab" data-assoc-tab="dues" onclick="setAssocTab('dues')">¥ 會費</button>
+      <span style="margin-left:auto; display:flex; align-items:center; gap:6px; padding-right:4px;">
+        <span id="assocSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary);">☁ 未啟用</span>
+        <button class="btn btn-sm" id="assocSyncBtn" onclick="syncAssocNow()" title="立即推 + 拉雲端同步">☁</button>
+        <button class="btn btn-sm" onclick="openAssocSyncModal()" title="跨裝置同步設定">⚙</button>
+        <button class="btn btn-sm" onclick="exportAssocData()" title="備份全部資料">↓</button>
+        <button class="btn btn-sm" onclick="document.getElementById('assocImport').click()" title="從備份還原">↑</button>
+        <input type="file" id="assocImport" accept=".json" style="display:none" onchange="importAssocData(event)">
+      </span>
+    </div>
+
+    <!-- 會員 -->
+    <div class="travel-panel active" id="assocPane_members">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center;">
+        <input type="text" class="form-input" id="assocMemberSearch" placeholder="⌕ 搜尋姓名 / 公司 / 電話" oninput="renderAssocMembers()" style="width:auto; min-width:200px; flex:1; max-width:320px;">
+        <select id="assocMemberLevel" class="form-select" onchange="renderAssocMembers()" style="width:auto;">
+          <option value="">全部職務</option>
+        </select>
+        <select id="assocMemberStatus" class="form-select" onchange="renderAssocMembers()" style="width:auto;">
+          <option value="在籍">在籍</option>
+          <option value="">全部狀態</option>
+          <option value="停權">停權</option>
+          <option value="已退會">已退會</option>
+        </select>
+        <select id="assocMemberSort" class="form-select" onchange="renderAssocMembers()" style="width:auto;">
+          <option value="level">依職務</option>
+          <option value="name">依姓名</option>
+          <option value="join">依入會日（新→舊）</option>
+          <option value="birthday">依生日（近→遠）</option>
+        </select>
+      </div>
+      <div id="assocMembersGrid" class="opp-grid"></div>
+    </div>
+
+    <!-- 活動 -->
+    <div class="travel-panel" id="assocPane_events">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center;">
+        <select id="assocEventFilter" class="form-select" onchange="renderAssocEvents()" style="width:auto;">
+          <option value="upcoming">即將舉行</option>
+          <option value="all">全部</option>
+          <option value="past">已結束</option>
+          <option value="year">今年</option>
+        </select>
+        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); letter-spacing:0.1em;">EVENT · CALENDAR</span>
+      </div>
+      <div id="assocEventsGrid" class="opp-grid"></div>
+    </div>
+
+    <!-- 會費 -->
+    <div class="travel-panel" id="assocPane_dues">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center;">
+        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); letter-spacing:0.1em;">年度</span>
+        <select id="assocDuesYear" class="form-select" onchange="renderAssocDues()" style="width:auto;"></select>
+        <select id="assocDuesFilter" class="form-select" onchange="renderAssocDues()" style="width:auto;">
+          <option value="">全部</option>
+          <option value="unpaid">未繳清</option>
+          <option value="paid">已繳清</option>
+        </select>
+        <button class="btn btn-sm" onclick="assocGenerateDues()" title="依在籍會員與年費標準，一次建立整年度的應繳名單">⚡ 產生本年度應繳名單</button>
+        <button class="btn btn-sm" onclick="copyAssocReminderList()" title="複製未繳名單文字，可直接貼到 LINE 群">📋 複製催繳名單</button>
+      </div>
+      <div id="assocDuesSummary" style="margin-bottom:16px;"></div>
+      <div id="assocDuesGrid" class="opp-grid"></div>
+    </div>
+  </div>
+
+  <!-- ============ 協會 組織設定 Modal ============ -->
+  <div class="modal-backdrop" id="assocOrgModal">
+    <div class="modal">
+      <h2>⚙ 組織 <em>設定</em></h2>
+      <form onsubmit="saveAssocOrg(event)">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">組織名稱</label>
+            <input type="text" class="form-input" id="assocOrgName" placeholder="例如 台北市禮品公會">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">我的職務</label>
+            <input type="text" class="form-input" id="assocOrgMyRole" placeholder="理事 / 總幹事 / 一般會員">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">年度會費標準 (NT$)</label>
+            <input type="number" step="any" min="0" class="form-input" id="assocOrgFee" placeholder="12000">
+            <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">「產生應繳名單」會用這個金額</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">會計年度起始月</label>
+            <select class="form-select" id="assocOrgFyStart">
+              <option value="1">1 月（曆年制）</option>
+              <option value="7">7 月</option>
+              <option value="9">9 月</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">職務類別（用逗號分隔，會出現在會員的下拉選單）</label>
+          <input type="text" class="form-input" id="assocOrgLevels" placeholder="理事長,常務理事,理事,常務監事,監事,一般會員,準會員,榮譽會員">
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <textarea class="form-textarea" id="assocOrgNotes" placeholder="開會地點、聯絡窗口、章程重點..."></textarea>
+        </div>
+        <div class="form-actions" style="justify-content:flex-end;">
+          <button type="button" class="btn" onclick="closeAssocOrgModal()">取消</button>
+          <button type="submit" class="btn btn-primary">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 協會 會員 Modal ============ -->
+  <div class="modal-backdrop" id="assocMemberModal">
+    <div class="modal">
+      <h2 id="assocMemberModalTitle">新增 <em>會員</em></h2>
+      <form onsubmit="saveAssocMember(event)">
+        <input type="hidden" id="assocMemberEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">姓名</label>
+            <input type="text" class="form-input" id="assocMemberName" required placeholder="王大明">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">職務</label>
+            <select class="form-select" id="assocMemberLevelSel"></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">公司 / 單位</label>
+            <input type="text" class="form-input" id="assocMemberCompany" placeholder="某某企業有限公司">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">公司職稱</label>
+            <input type="text" class="form-input" id="assocMemberTitle" placeholder="總經理">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">電話</label>
+            <input type="tel" class="form-input" id="assocMemberPhone" placeholder="0912-345-678" style="font-family:var(--mono);">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-input" id="assocMemberEmail" placeholder="name@example.com">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">入會日期</label>
+            <input type="date" class="form-input" id="assocMemberJoin">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">生日（月/日，會出現在本月壽星）</label>
+            <input type="text" class="form-input" id="assocMemberBirthday" placeholder="03-15" style="font-family:var(--mono);">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">狀態</label>
+            <select class="form-select" id="assocMemberStatusSel">
+              <option value="在籍">在籍</option>
+              <option value="停權">停權</option>
+              <option value="已退會">已退會</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">LINE ID</label>
+            <input type="text" class="form-input" id="assocMemberLine" placeholder="lineid123">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <textarea class="form-textarea" id="assocMemberNotes" placeholder="產業別、可以合作的地方、上次聊到什麼..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="assocMemberDeleteBtn" onclick="deleteAssocMember()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeAssocMemberModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 協會 活動 Modal ============ -->
+  <div class="modal-backdrop" id="assocEventModal">
+    <div class="modal">
+      <h2 id="assocEventModalTitle">新增 <em>活動</em></h2>
+      <form onsubmit="saveAssocEvent(event)">
+        <input type="hidden" id="assocEventEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">活動名稱</label>
+            <input type="text" class="form-input" id="assocEventTitle" required placeholder="第 12 屆第 3 次理監事會議">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="assocEventType">
+              <option value="例會">例會</option>
+              <option value="理監事會">理監事會</option>
+              <option value="會員大會">會員大會</option>
+              <option value="年會">年會 / 尾牙</option>
+              <option value="聯誼">聯誼 / 參訪</option>
+              <option value="講座">講座 / 課程</option>
+              <option value="公益">公益活動</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">日期</label>
+            <input type="date" class="form-input" id="assocEventDate" required>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">時間</label>
+            <input type="time" class="form-input" id="assocEventTime">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">地點</label>
+            <input type="text" class="form-input" id="assocEventPlace" placeholder="台北市 xxx 餐廳 3F">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">主辦 / 聯絡人</label>
+            <input type="text" class="form-input" id="assocEventHost" placeholder="總幹事 陳小姐">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">每人費用 (NT$)</label>
+            <input type="number" step="any" min="0" class="form-input" id="assocEventFee" placeholder="800">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">出席人數</label>
+            <input type="number" step="1" min="0" class="form-input" id="assocEventAttendees" placeholder="活動後回來填">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">狀態</label>
+          <select class="form-select" id="assocEventStatus">
+            <option value="規劃中">規劃中</option>
+            <option value="報名中">報名中</option>
+            <option value="已結束">已結束</option>
+            <option value="取消">取消</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <textarea class="form-textarea" id="assocEventNotes" placeholder="議程、要準備什麼、誰要致詞..."></textarea>
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="assocEventDeleteBtn" onclick="deleteAssocEvent()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeAssocEventModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 協會 會費 Modal ============ -->
+  <div class="modal-backdrop" id="assocDueModal">
+    <div class="modal">
+      <h2 id="assocDueModalTitle">會費 <em>記錄</em></h2>
+      <form onsubmit="saveAssocDue(event)">
+        <input type="hidden" id="assocDueEditId">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">會員</label>
+            <select class="form-select" id="assocDueMember"></select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">年度</label>
+            <input type="number" step="1" class="form-input" id="assocDueYear" required style="font-family:var(--mono);">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">應繳 (NT$)</label>
+            <input type="number" step="any" min="0" class="form-input" id="assocDueAmount" required placeholder="12000">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">已繳 (NT$)</label>
+            <input type="number" step="any" min="0" class="form-input" id="assocDuePaid" placeholder="0">
+            <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">可以分次繳，填累計已收金額</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">繳費日期</label>
+            <input type="date" class="form-input" id="assocDuePayDate">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">方式</label>
+            <select class="form-select" id="assocDueMethod">
+              <option value="">—</option>
+              <option value="匯款">匯款</option>
+              <option value="轉帳">轉帳</option>
+              <option value="現金">現金</option>
+              <option value="支票">支票</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <input type="text" class="form-input" id="assocDueNotes" placeholder="">
+        </div>
+        <div class="form-actions">
+          <div>
+            <button type="button" class="btn" id="assocDueDeleteBtn" onclick="deleteAssocDue()" style="display:none; border-color:var(--danger); color:var(--danger);">刪除</button>
+          </div>
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeAssocDueModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 協會 雲端同步設定 Modal ============ -->
+  <div class="modal-backdrop" id="assocSyncModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>☁ 跨裝置<em>雲端同步</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        透過你自己的 <strong>Supabase 專案</strong>同步會員、活動與會費記錄。可重用旅遊／台股／美股用的 Supabase，無需另開。
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:0.1em;">
+          <input type="checkbox" id="assocSyncEnabled"> 啟用雲端同步
+        </label>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="assocSyncSupabaseUrl" class="form-input" placeholder="https://xxx.supabase.co" style="flex:1;">
+          <button class="btn btn-sm" type="button" onclick="fillAssocSyncFromTrv()" title="從台股／旅遊設定帶入">↓ 用現有的</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Supabase Anon (Public) Key</label>
+        <input type="text" id="assocSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">User ID（多裝置要相同）</label>
+        <input type="text" id="assocSyncUserId" class="form-input" placeholder="kevin-personal">
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px;">相同 ID 的裝置才會互通資料。</div>
+      </div>
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 建表 SQL</summary>
+        <div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.6;">到 Supabase Dashboard → <strong>SQL Editor</strong> → 複製下方 SQL → 貼上 → Run。</div>
+        <button class="btn btn-sm" type="button" onclick="copyAssocSyncSql()" style="margin-top:10px;">📋 複製建表 SQL</button>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.5;">💡 會建 3 張表：<code>assoc_members</code>、<code>assoc_events</code>、<code>assoc_dues</code>。</div>
+      </details>
+      <div style="background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); padding:8px 12px; margin-bottom:14px; font-size:11px; color:var(--ink-secondary); line-height:1.5;">⚠ 會員名冊含個資。Supabase 用的是 Allow-All policy（適合個人用），<strong>anon key 等於誰拿到誰看得到</strong>，不要把設定碼隨便外流。</div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeAssocSyncModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveAssocSyncSettings()">儲存 + 立即同步</button>
+      </div>
+    </div>
+  </div>
+
+
+
   <!-- ============ 現金流儀表板 VIEW（聚合所有資產模組）============ -->
   <div id="cashflowView" class="view">
     <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
@@ -7374,7 +7770,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 7.3 · η</div>
+    <div>v 8.0 · θ</div>
   </footer>
 </div>
 
@@ -7676,7 +8072,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
     // === 生活規劃 ===
     { id: 'm_travel', name: '旅遊規劃', nameEn: 'TRAVEL · PLANNING', icon: '✈', desc: '隨身導遊 · 個人管家 · 行前清單 · 預算花費 · 購物記錄 · AI 助理。', status: 'active', groupId: 'g_life', order: 0, builtin: true, target: 'tripsView' },
-    { id: 'm_assoc', name: '協會 · 組織', nameEn: 'ORGANIZATION', icon: '⚐', desc: '會員資料、活動行事曆、會費管理。', status: 'soon', groupId: 'g_life', order: 1 },
+    { id: 'm_assoc', name: '協會 · 組織', nameEn: 'ORGANIZATION', icon: '⚐', desc: '會員名冊、活動行事曆、會費收繳。一鍵產生整年度應繳名單，催繳名單可直接複製貼到 LINE 群。', status: 'active', groupId: 'g_life', order: 1, builtin: true, target: 'assocView' },
 
     // === 投資中心 · 總覽工具（最重要，放最前面）===
     { id: 'm_dashboard', name: '現金流儀表板', nameEn: 'CASHFLOW · DASHBOARD', icon: '⊟', desc: '台股/美股/加密/高股息 ETF/市值型 ETF 總資產、損益、配息、資產配置一覽（統一台幣）。', status: 'active', groupId: 'g_invest', order: 0, builtin: true, target: 'cashflowView' },
@@ -7741,7 +8137,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '17';
+      const CURRENT_VERSION = '18';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：合併現有自訂模組 + 新版預設
@@ -20300,6 +20696,783 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
 
   // ============================================================
+  // 協會 · 組織 · Association Module
+  // 三個分頁共用一個 view：會員名冊 / 活動行事曆 / 會費收繳
+  // 跟投資模組無關，不進 CF_SOURCES
+  // ============================================================
+  const ASSOC_STORAGE = {
+    org: 'assoc_org_v1',
+    members: 'assoc_members_v1',
+    events: 'assoc_events_v1',
+    dues: 'assoc_dues_v1',
+    sync: 'assoc_sync_v1'
+  };
+  const ASSOC_DEFAULT_LEVELS = ['理事長', '副理事長', '常務理事', '理事', '常務監事', '監事', '總幹事', '一般會員', '準會員', '榮譽會員'];
+  const ASSOC_EVENT_ICON = { 例會: '◷', 理監事會: '⚖', 會員大會: '⚇', 年會: '✦', 聯誼: '♦', 講座: '✎', 公益: '♥', 其他: '◇' };
+
+  let assocOrg = { name: '', myRole: '', fee: 0, fyStart: 1, levels: ASSOC_DEFAULT_LEVELS.slice(), notes: '' };
+  let assocMembers = [];
+  let assocEvents = [];
+  let assocDues = [];
+  let assocTab = 'members';
+  let assocSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
+  let assocSyncClient = null;
+
+  const assocMoney = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+  const assocNum = v => Number(v) || 0;
+  function assocDaysTo(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + 'T23:59:59');
+    if (isNaN(d.getTime())) return null;
+    return Math.ceil((d.getTime() - Date.now()) / 86400000);
+  }
+  // 生日只存 MM-DD；容錯接受 3/15、03-15、2026-03-15
+  function assocBirthMD(v) {
+    const s = String(v || '').trim();
+    if (!s) return '';
+    const m = s.match(/(\d{1,2})\s*[-/月]\s*(\d{1,2})/);
+    if (!m) return '';
+    const mm = String(Math.min(12, Math.max(1, +m[1]))).padStart(2, '0');
+    const dd = String(Math.min(31, Math.max(1, +m[2]))).padStart(2, '0');
+    return mm + '-' + dd;
+  }
+  const assocThisMonth = () => String(new Date().getMonth() + 1).padStart(2, '0');
+  const assocThisYear = () => new Date().getFullYear();
+  const assocActiveMembers = () => assocMembers.filter(m => (m.status || '在籍') === '在籍');
+  function assocMemberName(id) {
+    const m = assocMembers.find(x => x.id === id);
+    return m ? m.name : '（已刪除的會員）';
+  }
+  function assocDueOf(memberId, year) {
+    return assocDues.find(d => d.memberId === memberId && Number(d.year) === Number(year));
+  }
+
+  async function loadAssoc() {
+    try { const v = await readKey(ASSOC_STORAGE.org); if (v) assocOrg = { ...assocOrg, ...JSON.parse(v) }; } catch (e) {}
+    if (!Array.isArray(assocOrg.levels) || !assocOrg.levels.length) assocOrg.levels = ASSOC_DEFAULT_LEVELS.slice();
+    try { const v = await readKey(ASSOC_STORAGE.members); assocMembers = v ? JSON.parse(v) : []; } catch (e) { assocMembers = []; }
+    try { const v = await readKey(ASSOC_STORAGE.events); assocEvents = v ? JSON.parse(v) : []; } catch (e) { assocEvents = []; }
+    try { const v = await readKey(ASSOC_STORAGE.dues); assocDues = v ? JSON.parse(v) : []; } catch (e) { assocDues = []; }
+    await loadAssocSyncConfig();
+    renderAssocAll();
+    if (assocSyncConfig.enabled) {
+      pullAllAssocFromSupabase().then(r => {
+        if (r) { renderAssocAll(); if (r.total > 0) showToast(`☁ 已從雲端同步 · ${r.mCount} 會員 / ${r.eCount} 活動 / ${r.dCount} 筆會費`); }
+      }).catch(e => console.warn('assoc auto pull fail', e));
+    }
+  }
+  function renderAssocAll() {
+    const t = document.getElementById('assocTitle');
+    if (t) t.innerHTML = assocOrg.name ? `${escape(assocOrg.name)}` : '協會 · <em>組織</em>';
+    assocFillLevelSelects();
+    assocFillYearSelect();
+    renderAssocStats();
+    renderAssocMembers();
+    renderAssocEvents();
+    renderAssocDues();
+    renderAssocSyncBadge();
+  }
+  async function saveAssocOrgData() { await writeKey(ASSOC_STORAGE.org, JSON.stringify(assocOrg)); }
+  async function saveAssocMembers() { await writeKey(ASSOC_STORAGE.members, JSON.stringify(assocMembers)); }
+  async function saveAssocEvents() { await writeKey(ASSOC_STORAGE.events, JSON.stringify(assocEvents)); }
+  async function saveAssocDues() { await writeKey(ASSOC_STORAGE.dues, JSON.stringify(assocDues)); }
+
+  function setAssocTab(tab) {
+    assocTab = tab;
+    document.querySelectorAll('[data-assoc-tab]').forEach(b => b.classList.toggle('active', b.getAttribute('data-assoc-tab') === tab));
+    ['members', 'events', 'dues'].forEach(t => {
+      const el = document.getElementById('assocPane_' + t);
+      if (el) el.classList.toggle('active', t === tab);
+    });
+    const btn = document.getElementById('assocAddBtn');
+    if (btn) btn.textContent = tab === 'members' ? '+ 新增會員' : tab === 'events' ? '+ 新增活動' : '+ 記一筆會費';
+  }
+  function assocAddByTab() {
+    if (assocTab === 'members') openAssocMemberModal();
+    else if (assocTab === 'events') openAssocEventModal();
+    else openAssocDueModal();
+  }
+  function assocFillLevelSelects() {
+    const levels = assocOrg.levels || ASSOC_DEFAULT_LEVELS;
+    const filt = document.getElementById('assocMemberLevel');
+    if (filt) {
+      const prev = filt.value;
+      filt.innerHTML = '<option value="">全部職務</option>' + levels.map(l => `<option value="${escape(l)}">${escape(l)}</option>`).join('');
+      if (levels.includes(prev)) filt.value = prev;
+    }
+    const sel = document.getElementById('assocMemberLevelSel');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = levels.map(l => `<option value="${escape(l)}">${escape(l)}</option>`).join('');
+      sel.value = levels.includes(prev) ? prev : (levels.includes('一般會員') ? '一般會員' : levels[levels.length - 1]);
+    }
+  }
+  function assocFillYearSelect() {
+    const sel = document.getElementById('assocDuesYear');
+    if (!sel) return;
+    const now = assocThisYear();
+    const years = new Set([now, now - 1, now + 1]);
+    assocDues.forEach(d => { if (d.year) years.add(Number(d.year)); });
+    const list = Array.from(years).sort((a, b) => b - a);
+    const prev = Number(sel.value) || now;
+    sel.innerHTML = list.map(y => `<option value="${y}">${y} 年度</option>`).join('');
+    sel.value = list.includes(prev) ? prev : now;
+  }
+
+  // ===== 統計卡 =====
+  function renderAssocStats() {
+    const el = document.getElementById('assocStats');
+    if (!el) return;
+    const active = assocActiveMembers();
+    // 職務分布（取人數最多的前兩類）
+    const byLevel = {};
+    active.forEach(m => { const l = m.level || '一般會員'; byLevel[l] = (byLevel[l] || 0) + 1; });
+    const levelSub = Object.keys(byLevel).sort((a, b) => byLevel[b] - byLevel[a]).slice(0, 3)
+      .map(k => `${k} ${byLevel[k]}`).join(' · ') || '尚無會員';
+    // 今年會費
+    const y = assocThisYear();
+    const yDues = assocDues.filter(d => Number(d.year) === y);
+    const totalDue = yDues.reduce((s, d) => s + assocNum(d.amount), 0);
+    const totalPaid = yDues.reduce((s, d) => s + Math.min(assocNum(d.paid), assocNum(d.amount)), 0);
+    const rate = totalDue > 0 ? totalPaid / totalDue * 100 : 0;
+    const unpaidList = yDues.filter(d => assocNum(d.paid) < assocNum(d.amount));
+    const unpaidAmt = unpaidList.reduce((s, d) => s + (assocNum(d.amount) - assocNum(d.paid)), 0);
+    // 下一場活動
+    const upcoming = assocEvents.filter(e => e.status !== '取消' && assocDaysTo(e.date) != null && assocDaysTo(e.date) >= 0)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
+    const upDays = upcoming ? assocDaysTo(upcoming.date) : null;
+    // 今年活動與本月壽星
+    const yEvents = assocEvents.filter(e => (e.date || '').slice(0, 4) === String(y) && e.status !== '取消');
+    const mm = assocThisMonth();
+    const birthdays = active.filter(m => (m.birthday || '').slice(0, 2) === mm);
+    const rateCls = totalDue === 0 ? 'flat' : rate >= 90 ? 'profit' : rate >= 60 ? 'flat' : 'loss';
+    el.innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">在籍會員</div>
+        <div class="stat-value">${active.length}</div>
+        <div class="stat-sub">${escape(levelSub)}</div>
+      </div>
+      <div class="stat-card ${rateCls}">
+        <div class="stat-label">${y} 年度收繳率</div>
+        <div class="stat-value">${totalDue > 0 ? rate.toFixed(0) + '%' : '—'}</div>
+        <div class="stat-sub">${totalDue > 0 ? '已收 ' + assocMoney(totalPaid) + ' / 應收 ' + assocMoney(totalDue) : '按「產生本年度應繳名單」開始'}</div>
+      </div>
+      <div class="stat-card ${unpaidList.length ? 'loss' : 'profit'}">
+        <div class="stat-label">未繳清</div>
+        <div class="stat-value">${unpaidList.length} 人</div>
+        <div class="stat-sub">${unpaidList.length ? '尚欠 ' + assocMoney(unpaidAmt) : '全部收齊了 ✓'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">下一場活動</div>
+        <div class="stat-value" style="font-size:${upcoming ? '20px' : '28px'};">${upcoming ? (upDays === 0 ? '今天' : upDays + ' 天後') : '—'}</div>
+        <div class="stat-sub">${upcoming ? escape(upcoming.title).slice(0, 18) + ' · ' + escape(upcoming.date) : '尚未安排活動'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">今年活動</div>
+        <div class="stat-value">${yEvents.length} 場</div>
+        <div class="stat-sub">${birthdays.length ? '🎂 本月壽星 ' + birthdays.length + ' 位：' + birthdays.slice(0, 3).map(b => escape(b.name)).join('、') : '本月無壽星'}</div>
+      </div>
+    `;
+  }
+
+  // ===== 會員 =====
+  function renderAssocMembers() {
+    const grid = document.getElementById('assocMembersGrid');
+    if (!grid) return;
+    const q = (document.getElementById('assocMemberSearch')?.value || '').trim().toLowerCase();
+    const lv = document.getElementById('assocMemberLevel')?.value || '';
+    const st = document.getElementById('assocMemberStatus')?.value ?? '在籍';
+    const sort = document.getElementById('assocMemberSort')?.value || 'level';
+    const levels = assocOrg.levels || ASSOC_DEFAULT_LEVELS;
+    let list = assocMembers.filter(m => {
+      if (st && (m.status || '在籍') !== st) return false;
+      if (lv && (m.level || '') !== lv) return false;
+      if (!q) return true;
+      return [m.name, m.company, m.title, m.phone, m.email, m.notes].some(v => (v || '').toLowerCase().includes(q));
+    });
+    const mm = assocThisMonth();
+    list = list.sort((a, b) => {
+      if (sort === 'name') return (a.name || '').localeCompare(b.name || '', 'zh-TW');
+      if (sort === 'join') return (b.joinDate || '').localeCompare(a.joinDate || '');
+      if (sort === 'birthday') {
+        const key = x => { const bd = x.birthday || '99-99'; return bd >= mm + '-00' ? bd : 'z' + bd; };
+        return key(a).localeCompare(key(b));
+      }
+      const ia = levels.indexOf(a.level || ''), ib = levels.indexOf(b.level || '');
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a.name || '').localeCompare(b.name || '', 'zh-TW');
+    });
+    if (!list.length) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">⚇</span><h3>${assocMembers.length ? '沒有符合條件的會員' : '尚無會員資料'}</h3><p>${assocMembers.length ? '換個篩選條件試試。' : '點右上「+ 新增會員」開始建立名冊。建好之後，會費那一頁就能一鍵產生整年度應繳名單。'}</p></div>`;
+      return;
+    }
+    const y = assocThisYear();
+    grid.innerHTML = list.map(m => {
+      const due = assocDueOf(m.id, y);
+      const owed = due ? assocNum(due.amount) - assocNum(due.paid) : null;
+      const isBirth = (m.birthday || '').slice(0, 2) === mm;
+      const stColor = (m.status || '在籍') === '在籍' ? 'var(--accent)' : 'var(--ink-tertiary)';
+      return `
+      <div class="opp-card" style="cursor:pointer;" onclick="openAssocMemberModal('${escape(m.id)}')">
+        <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-family:var(--serif); font-size:17px; color:var(--ink-primary);">${escape(m.name)}${isBirth ? ' <span style="font-size:13px;">🎂</span>' : ''}</div>
+            <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:2px;">${escape(m.company || '')}${m.title ? ' · ' + escape(m.title) : ''}</div>
+          </div>
+          <span style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.1em; color:${stColor}; border:1px solid var(--line); border-radius:2px; padding:2px 7px; white-space:nowrap;">${escape(m.level || '會員')}</span>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:8px;">
+          ${m.phone ? `<a href="tel:${escape(m.phone)}" onclick="event.stopPropagation();" style="color:var(--accent); text-decoration:none;">☎ ${escape(m.phone)}</a>` : ''}
+          ${m.email ? `<a href="mailto:${escape(m.email)}" onclick="event.stopPropagation();" style="color:var(--accent); text-decoration:none;">✉ ${escape(m.email)}</a>` : ''}
+          ${m.line ? `<span>LINE ${escape(m.line)}</span>` : ''}
+          ${m.birthday ? `<span style="color:${isBirth ? 'var(--accent-warm)' : 'var(--ink-tertiary)'};">生日 ${escape(m.birthday)}</span>` : ''}
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; padding-top:8px; border-top:1px solid var(--line); font-family:var(--mono); font-size:10.5px;">
+          <span style="color:var(--ink-tertiary);">${m.joinDate ? '入會 ' + escape(m.joinDate) : '未填入會日'}</span>
+          <span style="margin-left:auto; color:${owed == null ? 'var(--ink-tertiary)' : owed > 0 ? 'var(--danger)' : 'var(--accent)'};">
+            ${owed == null ? y + ' 未建立會費' : owed > 0 ? y + ' 尚欠 ' + assocMoney(owed) : y + ' 已繳清 ✓'}
+          </span>
+        </div>
+        ${m.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; margin-top:8px;">${escape(m.notes)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function openAssocMemberModal(id) {
+    assocFillLevelSelects();
+    const isEdit = !!id;
+    document.getElementById('assocMemberEditId').value = id || '';
+    document.getElementById('assocMemberDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('assocMemberModalTitle').innerHTML = isEdit ? '編輯 <em>會員</em>' : '新增 <em>會員</em>';
+    const set = (i, v) => { const el = document.getElementById(i); if (el) el.value = (v == null ? '' : v); };
+    if (isEdit) {
+      const m = assocMembers.find(x => x.id === id);
+      if (!m) return;
+      set('assocMemberName', m.name); set('assocMemberCompany', m.company); set('assocMemberTitle', m.title);
+      set('assocMemberPhone', m.phone); set('assocMemberEmail', m.email); set('assocMemberLine', m.line);
+      set('assocMemberJoin', m.joinDate); set('assocMemberBirthday', m.birthday); set('assocMemberNotes', m.notes);
+      const lvSel = document.getElementById('assocMemberLevelSel');
+      if (lvSel && m.level && [...lvSel.options].some(o => o.value === m.level)) lvSel.value = m.level;
+      document.getElementById('assocMemberStatusSel').value = m.status || '在籍';
+    } else {
+      ['assocMemberName','assocMemberCompany','assocMemberTitle','assocMemberPhone','assocMemberEmail','assocMemberLine','assocMemberBirthday','assocMemberNotes'].forEach(i => set(i, ''));
+      set('assocMemberJoin', new Date().toISOString().slice(0, 10));
+      document.getElementById('assocMemberStatusSel').value = '在籍';
+    }
+    document.getElementById('assocMemberModal').classList.add('active');
+  }
+  function closeAssocMemberModal() { document.getElementById('assocMemberModal').classList.remove('active'); }
+  async function saveAssocMember(e) {
+    e.preventDefault();
+    const id = document.getElementById('assocMemberEditId').value;
+    const g = i => document.getElementById(i).value.trim();
+    const data = {
+      name: g('assocMemberName'), level: document.getElementById('assocMemberLevelSel').value,
+      company: g('assocMemberCompany'), title: g('assocMemberTitle'),
+      phone: g('assocMemberPhone'), email: g('assocMemberEmail'), line: g('assocMemberLine'),
+      joinDate: document.getElementById('assocMemberJoin').value,
+      birthday: assocBirthMD(g('assocMemberBirthday')),
+      status: document.getElementById('assocMemberStatusSel').value,
+      notes: g('assocMemberNotes')
+    };
+    let saved;
+    if (id) {
+      const i = assocMembers.findIndex(x => x.id === id);
+      if (i > -1) { assocMembers[i] = { ...assocMembers[i], ...data, updatedAt: Date.now() }; saved = assocMembers[i]; }
+    } else {
+      saved = { id: 'am_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      assocMembers.push(saved);
+    }
+    await saveAssocMembers();
+    closeAssocMemberModal();
+    renderAssocAll();
+    showToast(id ? '會員已更新' : '已新增會員');
+    if (saved) pushAssocRow('members', saved);
+  }
+  async function deleteAssocMember() {
+    const id = document.getElementById('assocMemberEditId').value;
+    if (!id) return;
+    const m = assocMembers.find(x => x.id === id);
+    if (!m) return;
+    const rel = assocDues.filter(d => d.memberId === id);
+    if (!confirm(`確定刪除會員「${m.name}」？${rel.length ? `\n他的 ${rel.length} 筆會費記錄也會一起刪掉。` : ''}`)) return;
+    assocMembers = assocMembers.filter(x => x.id !== id);
+    assocDues = assocDues.filter(d => d.memberId !== id);
+    await saveAssocMembers(); await saveAssocDues();
+    closeAssocMemberModal();
+    renderAssocAll();
+    pushAssocRow('members', m, true);
+    rel.forEach(d => pushAssocRow('dues', d, true));
+  }
+
+  // ===== 活動 =====
+  function renderAssocEvents() {
+    const grid = document.getElementById('assocEventsGrid');
+    if (!grid) return;
+    const f = document.getElementById('assocEventFilter')?.value || 'upcoming';
+    const y = String(assocThisYear());
+    let list = assocEvents.slice();
+    if (f === 'upcoming') list = list.filter(e => { const d = assocDaysTo(e.date); return d != null && d >= 0 && e.status !== '取消'; });
+    else if (f === 'past') list = list.filter(e => { const d = assocDaysTo(e.date); return d == null || d < 0; });
+    else if (f === 'year') list = list.filter(e => (e.date || '').slice(0, 4) === y);
+    list.sort((a, b) => f === 'past' ? (b.date || '').localeCompare(a.date || '') : (a.date || '').localeCompare(b.date || ''));
+    if (!list.length) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">✦</span><h3>${assocEvents.length ? '這個範圍沒有活動' : '尚無活動'}</h3><p>${assocEvents.length ? '換個篩選看看。' : '點右上「+ 新增活動」建立例會、理監事會、年會等行程，統計卡會自動幫你倒數。'}</p></div>`;
+      return;
+    }
+    grid.innerHTML = list.map(e => {
+      const d = assocDaysTo(e.date);
+      const soon = d != null && d >= 0 && d <= 7;
+      const past = d != null && d < 0;
+      const badge = e.status === '取消' ? { t: '已取消', c: 'var(--ink-tertiary)' }
+        : d == null ? { t: '未定日期', c: 'var(--ink-tertiary)' }
+        : d < 0 ? { t: '已結束', c: 'var(--ink-tertiary)' }
+        : d === 0 ? { t: '就是今天', c: 'var(--danger)' }
+        : { t: d + ' 天後', c: soon ? 'var(--danger)' : 'var(--accent)' };
+      const icon = ASSOC_EVENT_ICON[e.etype] || '◇';
+      return `
+      <div class="opp-card" style="cursor:pointer; ${past || e.status === '取消' ? 'opacity:0.72;' : ''}" onclick="openAssocEventModal('${escape(e.id)}')">
+        <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.12em; color:var(--accent);">${icon} ${escape(e.etype || '活動')}</div>
+            <div style="font-family:var(--serif); font-size:16px; color:var(--ink-primary); margin-top:3px; line-height:1.35;">${escape(e.title)}</div>
+          </div>
+          <span style="font-family:var(--mono); font-size:10px; color:${badge.c}; white-space:nowrap; border:1px solid var(--line); border-radius:2px; padding:3px 7px;">${badge.t}</span>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:8px;">
+          <span>${escape(e.date || '未定')}${e.time ? ' ' + escape(e.time) : ''}</span>
+          ${e.place ? `<span>◉ ${escape(e.place)}</span>` : ''}
+          ${e.host ? `<span>${escape(e.host)}</span>` : ''}
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding-top:8px; border-top:1px solid var(--line); font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">
+          <span>${escape(e.status || '規劃中')}</span>
+          ${assocNum(e.fee) > 0 ? `<span>每人 ${assocMoney(e.fee)}</span>` : ''}
+          ${assocNum(e.attendees) > 0 ? `<span style="margin-left:auto; color:var(--accent);">出席 ${assocNum(e.attendees)} 人${assocActiveMembers().length ? '（' + (assocNum(e.attendees) / assocActiveMembers().length * 100).toFixed(0) + '%）' : ''}</span>` : ''}
+        </div>
+        ${e.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; margin-top:8px;">${escape(e.notes)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+  function openAssocEventModal(id) {
+    const isEdit = !!id;
+    document.getElementById('assocEventEditId').value = id || '';
+    document.getElementById('assocEventDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('assocEventModalTitle').innerHTML = isEdit ? '編輯 <em>活動</em>' : '新增 <em>活動</em>';
+    const set = (i, v) => { const el = document.getElementById(i); if (el) el.value = (v == null ? '' : v); };
+    if (isEdit) {
+      const e = assocEvents.find(x => x.id === id);
+      if (!e) return;
+      set('assocEventTitle', e.title); set('assocEventDate', e.date); set('assocEventTime', e.time);
+      set('assocEventPlace', e.place); set('assocEventHost', e.host); set('assocEventFee', e.fee);
+      set('assocEventAttendees', e.attendees); set('assocEventNotes', e.notes);
+      document.getElementById('assocEventType').value = e.etype || '例會';
+      document.getElementById('assocEventStatus').value = e.status || '規劃中';
+    } else {
+      ['assocEventTitle','assocEventTime','assocEventPlace','assocEventHost','assocEventFee','assocEventAttendees','assocEventNotes'].forEach(i => set(i, ''));
+      set('assocEventDate', new Date().toISOString().slice(0, 10));
+      document.getElementById('assocEventType').value = '例會';
+      document.getElementById('assocEventStatus').value = '規劃中';
+    }
+    document.getElementById('assocEventModal').classList.add('active');
+  }
+  function closeAssocEventModal() { document.getElementById('assocEventModal').classList.remove('active'); }
+  async function saveAssocEvent(e) {
+    e.preventDefault();
+    const id = document.getElementById('assocEventEditId').value;
+    const g = i => document.getElementById(i).value.trim();
+    const data = {
+      title: g('assocEventTitle'), etype: document.getElementById('assocEventType').value,
+      date: document.getElementById('assocEventDate').value, time: document.getElementById('assocEventTime').value,
+      place: g('assocEventPlace'), host: g('assocEventHost'),
+      fee: assocNum(g('assocEventFee')), attendees: assocNum(g('assocEventAttendees')),
+      status: document.getElementById('assocEventStatus').value, notes: g('assocEventNotes')
+    };
+    let saved;
+    if (id) {
+      const i = assocEvents.findIndex(x => x.id === id);
+      if (i > -1) { assocEvents[i] = { ...assocEvents[i], ...data, updatedAt: Date.now() }; saved = assocEvents[i]; }
+    } else {
+      saved = { id: 'ae_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      assocEvents.push(saved);
+    }
+    await saveAssocEvents();
+    closeAssocEventModal();
+    renderAssocAll();
+    showToast(id ? '活動已更新' : '已新增活動');
+    if (saved) pushAssocRow('events', saved);
+  }
+  async function deleteAssocEvent() {
+    const id = document.getElementById('assocEventEditId').value;
+    if (!id) return;
+    const e = assocEvents.find(x => x.id === id);
+    if (!e || !confirm(`確定刪除活動「${e.title}」？`)) return;
+    assocEvents = assocEvents.filter(x => x.id !== id);
+    await saveAssocEvents();
+    closeAssocEventModal();
+    renderAssocAll();
+    pushAssocRow('events', e, true);
+  }
+
+  // ===== 會費 =====
+  function renderAssocDues() {
+    const grid = document.getElementById('assocDuesGrid');
+    const sum = document.getElementById('assocDuesSummary');
+    if (!grid) return;
+    const y = Number(document.getElementById('assocDuesYear')?.value) || assocThisYear();
+    const f = document.getElementById('assocDuesFilter')?.value || '';
+    let list = assocDues.filter(d => Number(d.year) === y);
+    const totalDue = list.reduce((s, d) => s + assocNum(d.amount), 0);
+    const totalPaid = list.reduce((s, d) => s + Math.min(assocNum(d.paid), assocNum(d.amount)), 0);
+    const rate = totalDue > 0 ? totalPaid / totalDue * 100 : 0;
+    if (sum) {
+      sum.innerHTML = totalDue === 0 ? '' : `
+        <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px 16px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+            <span style="font-family:var(--serif); font-size:16px;">${y} 年度收繳 <strong style="color:var(--accent);">${rate.toFixed(1)}%</strong></span>
+            <span style="font-family:var(--mono); font-size:12px; color:var(--ink-secondary);">已收 ${assocMoney(totalPaid)} / 應收 ${assocMoney(totalDue)}　尚欠 <strong style="color:var(--danger);">${assocMoney(totalDue - totalPaid)}</strong></span>
+          </div>
+          <div style="height:8px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px; overflow:hidden;">
+            <div style="height:100%; width:${Math.max(0, Math.min(100, rate))}%; background:var(--accent);"></div>
+          </div>
+        </div>`;
+    }
+    if (f === 'unpaid') list = list.filter(d => assocNum(d.paid) < assocNum(d.amount));
+    else if (f === 'paid') list = list.filter(d => assocNum(d.paid) >= assocNum(d.amount) && assocNum(d.amount) > 0);
+    // 未繳的排前面，其次金額大的
+    list.sort((a, b) => {
+      const oa = assocNum(a.amount) - assocNum(a.paid), ob = assocNum(b.amount) - assocNum(b.paid);
+      if ((oa > 0) !== (ob > 0)) return oa > 0 ? -1 : 1;
+      return ob - oa || assocMemberName(a.memberId).localeCompare(assocMemberName(b.memberId), 'zh-TW');
+    });
+    if (!list.length) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">¥</span><h3>${y} 年度沒有${f === 'unpaid' ? '未繳清的' : f === 'paid' ? '已繳清的' : ''}記錄</h3><p>先到「⚙ 組織設定」填好年度會費標準，再按上面「⚡ 產生本年度應繳名單」，會依在籍會員一次建立。</p></div>`;
+      return;
+    }
+    grid.innerHTML = list.map(d => {
+      const amt = assocNum(d.amount), paid = assocNum(d.paid), owed = amt - paid;
+      const st = owed <= 0 ? { t: '已繳清', c: 'var(--accent)' } : paid > 0 ? { t: '部分繳納', c: 'var(--accent-warm)' } : { t: '未繳', c: 'var(--danger)' };
+      const m = assocMembers.find(x => x.id === d.memberId);
+      return `
+      <div class="opp-card" style="cursor:pointer;" onclick="openAssocDueModal('${escape(d.id)}')">
+        <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-family:var(--serif); font-size:17px; color:var(--ink-primary);">${escape(assocMemberName(d.memberId))}</div>
+            <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:2px;">${escape((m && m.company) || '')}${m && m.level ? ' · ' + escape(m.level) : ''}</div>
+          </div>
+          <span style="font-family:var(--mono); font-size:10px; color:${st.c}; border:1px solid var(--line); border-radius:2px; padding:3px 7px; white-space:nowrap;">${st.t}</span>
+        </div>
+        <div style="display:flex; gap:14px; flex-wrap:wrap; font-family:var(--mono); font-size:12px; color:var(--ink-secondary);">
+          <span>應繳 <strong style="color:var(--ink-primary);">${assocMoney(amt)}</strong></span>
+          <span>已繳 <strong style="color:var(--accent);">${assocMoney(paid)}</strong></span>
+          ${owed > 0 ? `<span style="margin-left:auto; color:var(--danger);">尚欠 ${assocMoney(owed)}</span>` : ''}
+        </div>
+        ${(d.payDate || d.method || d.notes) ? `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${d.payDate ? escape(d.payDate) : ''}${d.method ? ' · ' + escape(d.method) : ''}${d.notes ? ' · ' + escape(d.notes) : ''}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+  // 一鍵：依在籍會員 × 年費標準建立整年度應繳名單（已存在的不動）
+  async function assocGenerateDues() {
+    const y = Number(document.getElementById('assocDuesYear')?.value) || assocThisYear();
+    const fee = assocNum(assocOrg.fee);
+    if (!(fee > 0)) { showToast('請先到「⚙ 組織設定」填年度會費標準'); openAssocOrgModal(); return; }
+    const active = assocActiveMembers();
+    if (!active.length) { showToast('還沒有在籍會員'); return; }
+    const missing = active.filter(m => !assocDueOf(m.id, y));
+    if (!missing.length) { showToast(`${y} 年度所有在籍會員都已建立，沒有要新增的`); return; }
+    if (!confirm(`要為 ${missing.length} 位在籍會員建立 ${y} 年度應繳記錄嗎？\n每人 ${assocMoney(fee)}，合計 ${assocMoney(fee * missing.length)}。\n\n已經有記錄的不會被覆蓋。`)) return;
+    const created = missing.map(m => ({
+      id: 'ad_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      memberId: m.id, year: y, amount: fee, paid: 0, payDate: '', method: '', notes: '',
+      createdAt: Date.now(), updatedAt: Date.now()
+    }));
+    assocDues.push(...created);
+    await saveAssocDues();
+    renderAssocAll();
+    showToast(`已建立 ${created.length} 筆 ${y} 年度應繳記錄`);
+    created.forEach(d => pushAssocRow('dues', d));
+  }
+  // 一鍵複製催繳名單（貼到 LINE 群用）
+  function copyAssocReminderList() {
+    const y = Number(document.getElementById('assocDuesYear')?.value) || assocThisYear();
+    const unpaid = assocDues.filter(d => Number(d.year) === y && assocNum(d.paid) < assocNum(d.amount));
+    if (!unpaid.length) { showToast(`${y} 年度會費已全部收齊 🎉`); return; }
+    unpaid.sort((a, b) => (assocNum(b.amount) - assocNum(b.paid)) - (assocNum(a.amount) - assocNum(a.paid)));
+    const total = unpaid.reduce((s, d) => s + (assocNum(d.amount) - assocNum(d.paid)), 0);
+    const lines = [
+      `【${assocOrg.name || '本會'} ${y} 年度會費繳納提醒】`,
+      '',
+      ...unpaid.map((d, i) => {
+        const m = assocMembers.find(x => x.id === d.memberId);
+        const owed = assocNum(d.amount) - assocNum(d.paid);
+        const part = assocNum(d.paid) > 0 ? `（已繳 ${assocMoney(d.paid)}）` : '';
+        return `${i + 1}. ${assocMemberName(d.memberId)}${m && m.company ? '（' + m.company + '）' : ''}　尚欠 ${assocMoney(owed)}${part}`;
+      }),
+      '',
+      `合計 ${unpaid.length} 位、共 ${assocMoney(total)}`,
+      '如已完成繳納請忽略此訊息，並回覆匯款後五碼，謝謝。'
+    ];
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(
+      () => showToast(`已複製 ${unpaid.length} 位的催繳名單，可直接貼到 LINE`),
+      () => showCopiableError('催繳名單（請手動複製）', text)
+    );
+  }
+  function openAssocDueModal(id) {
+    const sel = document.getElementById('assocDueMember');
+    const pool = assocMembers.filter(m => (m.status || '在籍') === '在籍' || (id && assocDues.find(d => d.id === id)?.memberId === m.id));
+    if (!pool.length) { showToast('請先新增會員'); return; }
+    sel.innerHTML = pool.map(m => `<option value="${escape(m.id)}">${escape(m.name)}${m.company ? '（' + escape(m.company) + '）' : ''}</option>`).join('');
+    const isEdit = !!id;
+    document.getElementById('assocDueEditId').value = id || '';
+    document.getElementById('assocDueDeleteBtn').style.display = isEdit ? '' : 'none';
+    document.getElementById('assocDueModalTitle').innerHTML = isEdit ? '編輯 <em>會費</em>' : '記一筆 <em>會費</em>';
+    const set = (i, v) => { const el = document.getElementById(i); if (el) el.value = (v == null ? '' : v); };
+    if (isEdit) {
+      const d = assocDues.find(x => x.id === id);
+      if (!d) return;
+      sel.value = d.memberId;
+      set('assocDueYear', d.year); set('assocDueAmount', d.amount); set('assocDuePaid', d.paid);
+      set('assocDuePayDate', d.payDate); set('assocDueNotes', d.notes);
+      document.getElementById('assocDueMethod').value = d.method || '';
+    } else {
+      set('assocDueYear', Number(document.getElementById('assocDuesYear')?.value) || assocThisYear());
+      set('assocDueAmount', assocNum(assocOrg.fee) || '');
+      set('assocDuePaid', ''); set('assocDuePayDate', new Date().toISOString().slice(0, 10)); set('assocDueNotes', '');
+      document.getElementById('assocDueMethod').value = '';
+    }
+    document.getElementById('assocDueModal').classList.add('active');
+  }
+  function closeAssocDueModal() { document.getElementById('assocDueModal').classList.remove('active'); }
+  async function saveAssocDue(e) {
+    e.preventDefault();
+    const id = document.getElementById('assocDueEditId').value;
+    const memberId = document.getElementById('assocDueMember').value;
+    const year = Number(document.getElementById('assocDueYear').value);
+    // 同一個人同一年度只能有一筆，避免收繳率被算錯
+    const dup = assocDues.find(d => d.memberId === memberId && Number(d.year) === year && d.id !== id);
+    if (dup) { showToast(`${assocMemberName(memberId)} 的 ${year} 年度已經有記錄了，請直接編輯那一筆`); return; }
+    const data = {
+      memberId, year,
+      amount: assocNum(document.getElementById('assocDueAmount').value),
+      paid: assocNum(document.getElementById('assocDuePaid').value),
+      payDate: document.getElementById('assocDuePayDate').value,
+      method: document.getElementById('assocDueMethod').value,
+      notes: document.getElementById('assocDueNotes').value.trim()
+    };
+    let saved;
+    if (id) {
+      const i = assocDues.findIndex(x => x.id === id);
+      if (i > -1) { assocDues[i] = { ...assocDues[i], ...data, updatedAt: Date.now() }; saved = assocDues[i]; }
+    } else {
+      saved = { id: 'ad_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), ...data };
+      assocDues.push(saved);
+    }
+    await saveAssocDues();
+    closeAssocDueModal();
+    assocFillYearSelect();
+    renderAssocAll();
+    showToast(id ? '會費記錄已更新' : '已記一筆會費');
+    if (saved) pushAssocRow('dues', saved);
+  }
+  async function deleteAssocDue() {
+    const id = document.getElementById('assocDueEditId').value;
+    if (!id) return;
+    const d = assocDues.find(x => x.id === id);
+    if (!d || !confirm(`刪除 ${assocMemberName(d.memberId)} 的 ${d.year} 年度會費記錄？`)) return;
+    assocDues = assocDues.filter(x => x.id !== id);
+    await saveAssocDues();
+    closeAssocDueModal();
+    renderAssocAll();
+    pushAssocRow('dues', d, true);
+  }
+
+  // ===== 組織設定 =====
+  function openAssocOrgModal() {
+    document.getElementById('assocOrgName').value = assocOrg.name || '';
+    document.getElementById('assocOrgMyRole').value = assocOrg.myRole || '';
+    document.getElementById('assocOrgFee').value = assocOrg.fee || '';
+    document.getElementById('assocOrgFyStart').value = String(assocOrg.fyStart || 1);
+    document.getElementById('assocOrgLevels').value = (assocOrg.levels || ASSOC_DEFAULT_LEVELS).join(',');
+    document.getElementById('assocOrgNotes').value = assocOrg.notes || '';
+    document.getElementById('assocOrgModal').classList.add('active');
+  }
+  function closeAssocOrgModal() { document.getElementById('assocOrgModal').classList.remove('active'); }
+  async function saveAssocOrg(e) {
+    e.preventDefault();
+    const levels = document.getElementById('assocOrgLevels').value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    assocOrg = {
+      name: document.getElementById('assocOrgName').value.trim(),
+      myRole: document.getElementById('assocOrgMyRole').value.trim(),
+      fee: assocNum(document.getElementById('assocOrgFee').value),
+      fyStart: Number(document.getElementById('assocOrgFyStart').value) || 1,
+      levels: levels.length ? levels : ASSOC_DEFAULT_LEVELS.slice(),
+      notes: document.getElementById('assocOrgNotes').value.trim()
+    };
+    await saveAssocOrgData();
+    closeAssocOrgModal();
+    renderAssocAll();
+    showToast('組織設定已儲存');
+  }
+
+  // ===== Supabase 同步（三張表共用一組設定）=====
+  const ASSOC_TABLES = { members: 'assoc_members', events: 'assoc_events', dues: 'assoc_dues' };
+  const assocArr = k => k === 'members' ? assocMembers : k === 'events' ? assocEvents : assocDues;
+  async function loadAssocSyncConfig() {
+    try { const v = await readKey(ASSOC_STORAGE.sync); if (v) assocSyncConfig = { ...assocSyncConfig, ...JSON.parse(v) }; } catch (e) {}
+  }
+  async function saveAssocSyncConfig() { await writeKey(ASSOC_STORAGE.sync, JSON.stringify(assocSyncConfig)); }
+  async function initAssocSyncClient() {
+    if (!assocSyncConfig.enabled || !assocSyncConfig.supabaseUrl || !assocSyncConfig.supabaseKey || !assocSyncConfig.userId) return null;
+    if (assocSyncClient) return assocSyncClient;
+    if (!window.supabase) await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js', 'sdk-supabase');
+    assocSyncClient = window.supabase.createClient(assocSyncConfig.supabaseUrl, assocSyncConfig.supabaseKey);
+    return assocSyncClient;
+  }
+  async function pushAssocRow(kind, row, deleted = false) {
+    try {
+      const sb = await initAssocSyncClient();
+      if (!sb) return;
+      await sb.from(ASSOC_TABLES[kind]).upsert({ id: row.id, user_id: assocSyncConfig.userId, data: row, updated_at: new Date().toISOString(), deleted }, { onConflict: 'id' });
+    } catch (e) { console.warn('push assoc ' + kind + ' fail', e); }
+  }
+  async function pullAllAssocFromSupabase() {
+    const sb = await initAssocSyncClient();
+    if (!sb) return null;
+    const counts = {};
+    for (const kind of Object.keys(ASSOC_TABLES)) {
+      const { data, error } = await sb.from(ASSOC_TABLES[kind]).select('*').eq('user_id', assocSyncConfig.userId).eq('deleted', false);
+      if (error) throw new Error(`拉 ${kind} 失敗: ` + error.message);
+      const map = new Map(assocArr(kind).map(x => [x.id, x]));
+      (data || []).forEach(row => {
+        const local = map.get(row.id);
+        const remoteUpdated = new Date(row.updated_at).getTime();
+        const localUpdated = local?.updatedAt || local?.createdAt || 0;
+        if (!local || remoteUpdated > localUpdated) map.set(row.id, row.data);
+      });
+      const merged = Array.from(map.values());
+      if (kind === 'members') assocMembers = merged;
+      else if (kind === 'events') assocEvents = merged;
+      else assocDues = merged;
+      counts[kind] = (data || []).length;
+    }
+    await saveAssocMembers(); await saveAssocEvents(); await saveAssocDues();
+    assocSyncConfig.lastPullAt = Date.now();
+    await saveAssocSyncConfig();
+    return { mCount: counts.members, eCount: counts.events, dCount: counts.dues, total: counts.members + counts.events + counts.dues };
+  }
+  async function pushAllAssocToSupabase() {
+    for (const kind of Object.keys(ASSOC_TABLES)) {
+      for (const row of assocArr(kind)) { try { await pushAssocRow(kind, row); } catch (e) {} }
+    }
+  }
+  async function syncAssocNow() {
+    if (!assocSyncConfig.enabled) { openAssocSyncModal(); return; }
+    const btn = document.getElementById('assocSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    try {
+      const r = await pullAllAssocFromSupabase();
+      if (!r) throw new Error('Client 初始化失敗 · 請檢查設定');
+      await pushAllAssocToSupabase();
+      renderAssocAll();
+      showToast(`☁ 同步完成 · 雲端 ${r.mCount} 會員 / ${r.eCount} 活動 / ${r.dCount} 筆會費`);
+    } catch (e) { showToast('☁ 同步失敗：' + e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = '☁'; } }
+  }
+  function renderAssocSyncBadge() {
+    const el = document.getElementById('assocSyncBadge');
+    if (!el) return;
+    if (!assocSyncConfig.enabled) { el.textContent = '☁ 未啟用'; el.style.color = 'var(--ink-tertiary)'; return; }
+    const t = assocSyncConfig.lastPullAt;
+    el.textContent = t ? `☁ ${new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : '☁ 待同步';
+    el.style.color = 'var(--accent)';
+  }
+  async function openAssocSyncModal() {
+    await loadAssocSyncConfig();
+    document.getElementById('assocSyncEnabled').checked = !!assocSyncConfig.enabled;
+    document.getElementById('assocSyncSupabaseUrl').value = assocSyncConfig.supabaseUrl || '';
+    document.getElementById('assocSyncSupabaseKey').value = assocSyncConfig.supabaseKey || '';
+    document.getElementById('assocSyncUserId').value = assocSyncConfig.userId || '';
+    document.getElementById('assocSyncModal').classList.add('active');
+  }
+  function closeAssocSyncModal() { document.getElementById('assocSyncModal').classList.remove('active'); }
+  function fillAssocSyncFromTrv() {
+    const src = (typeof twSyncConfig !== 'undefined' && twSyncConfig.supabaseUrl) ? twSyncConfig
+              : (typeof cryptoSyncConfig !== 'undefined' && cryptoSyncConfig.supabaseUrl) ? cryptoSyncConfig
+              : trvMultiConfig;
+    if (src?.supabaseUrl) document.getElementById('assocSyncSupabaseUrl').value = src.supabaseUrl;
+    if (src?.supabaseKey) document.getElementById('assocSyncSupabaseKey').value = src.supabaseKey;
+    if (src?.userId) document.getElementById('assocSyncUserId').value = src.userId;
+    showToast(src?.supabaseUrl ? '已帶入現有設定' : '尚未在台股／加密貨幣／旅遊設定 Supabase');
+  }
+  async function saveAssocSyncSettings() {
+    assocSyncConfig.enabled = document.getElementById('assocSyncEnabled').checked;
+    assocSyncConfig.supabaseUrl = document.getElementById('assocSyncSupabaseUrl').value.trim();
+    assocSyncConfig.supabaseKey = document.getElementById('assocSyncSupabaseKey').value.trim();
+    assocSyncConfig.userId = document.getElementById('assocSyncUserId').value.trim();
+    if (assocSyncConfig.enabled) {
+      if (!assocSyncConfig.supabaseUrl) return showToast('請填 Supabase URL');
+      if (!assocSyncConfig.supabaseKey) return showToast('請填 Supabase Anon Key');
+      if (!assocSyncConfig.userId) return showToast('請填 User ID');
+      if (!/^https:\/\/.+\.supabase\.co$/.test(assocSyncConfig.supabaseUrl)) return showToast('Supabase URL 格式錯（應為 https://xxx.supabase.co）');
+    }
+    assocSyncClient = null;
+    await saveAssocSyncConfig();
+    renderAssocSyncBadge();
+    showToast('☁ 設定已儲存');
+    closeAssocSyncModal();
+    if (assocSyncConfig.enabled) syncAssocNow();
+  }
+  function copyAssocSyncSql() {
+    const tbl = name => `CREATE TABLE IF NOT EXISTS ${name} (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_${name}_user ON ${name}(user_id);
+ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all" ON ${name};
+CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
+    const sql = '-- 在 Supabase Dashboard → SQL Editor 跑一次（建表）\n'
+      + Object.values(ASSOC_TABLES).map(tbl).join('\n\n');
+    navigator.clipboard.writeText(sql).then(
+      () => showToast('SQL 已複製，貼到 Supabase SQL Editor 跑一次'),
+      () => showToast('複製失敗，請手動選取')
+    );
+  }
+
+  // ===== 匯出 / 匯入 =====
+  function exportAssocData() {
+    const data = { org: assocOrg, members: assocMembers, events: assocEvents, dues: assocDues, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `assoc-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function importAssocData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!confirm(`匯入備份？\n會員 ${d.members?.length || 0} 位 · 活動 ${d.events?.length || 0} 場 · 會費 ${d.dues?.length || 0} 筆\n會覆蓋目前所有協會資料。`)) return;
+        if (d.org) assocOrg = { ...assocOrg, ...d.org };
+        if (d.members) assocMembers = d.members;
+        if (d.events) assocEvents = d.events;
+        if (d.dues) assocDues = d.dues;
+        await saveAssocOrgData(); await saveAssocMembers(); await saveAssocEvents(); await saveAssocDues();
+        renderAssocAll();
+        showToast(`已匯入 ${assocMembers.length} 位會員`);
+      } catch (err) { alert('匯入失敗：' + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+
+  // ============================================================
   // 現金流儀表板 · Cashflow Dashboard（聚合台股/美股/加密/ETF，統一台幣）
   // ============================================================
   const CF_STORAGE = { fx: 'cashflow_fx_v1' };
@@ -25179,6 +26352,9 @@ ${daysBrief}
       closeMoreSheet();
     } else if (id === 'commercialView') {
       loadRe('commercial');
+      closeMoreSheet();
+    } else if (id === 'assocView') {
+      loadAssoc();
       closeMoreSheet();
     } else if (id === 'cashflowView') {
       loadCashflow();
