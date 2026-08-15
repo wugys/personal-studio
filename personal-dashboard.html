@@ -6923,7 +6923,10 @@
   <div class="modal-backdrop" id="tvChartModal">
     <div class="modal" style="max-width:680px;">
       <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
-      <div style="font-size:10.5px; color:var(--ink-tertiary); margin-bottom:10px; font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 趨勢線 · 布林通道 · 成交量 · 來源 FinMind。</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+        <span style="font-size:10.5px; color:var(--ink-tertiary); font-family:var(--mono); letter-spacing:0.05em;">日 K 線 · MA20 · 趨勢線 · 布林通道 · 成交量 · 來源 FinMind。</span>
+        <span id="twPlanBadge" style="margin-left:auto;"></span>
+      </div>
       <div id="tvChartBox" style="height:360px; margin-bottom:14px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
       <div id="twCheckPanel"></div>
       <div id="twLevelsPanel"></div>
@@ -8112,7 +8115,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.2 · ι</div>
+    <div>v 9.3 · ι</div>
   </footer>
 </div>
 
@@ -8853,6 +8856,12 @@ alter publication supabase_realtime add table party_locations;</pre>
     return Math.round((t.getTime() - today.getTime()) / 86400000);
   }
   const alertDaysTo = d => daysBetweenToday(d);
+  // 本地時區的 YYYY-MM-DD。不可用 toISOString()——那是 UTC，台灣早上 8 點前會變成前一天。
+  function todayISO(ts) {
+    const d = ts == null ? new Date() : new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
   async function readJson(key, fallback) {
     try { const v = await readKey(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
   }
@@ -8940,8 +8949,8 @@ alter publication supabase_realtime add table party_locations;</pre>
       const plans = await readJson('dca_plans_v1', []);
       const execs = await readJson('dca_executions_v1', []);
       if (plans.length && typeof dcaDatesInRange === 'function') {
-        const from = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10);
-        const to = new Date().toISOString().slice(0, 10);
+        const from = todayISO(Date.now() - 60 * 864e5);
+        const to = todayISO();
         let missing = 0;
         plans.filter(p => p.status === 'active').forEach(p => {
           let dates = [];
@@ -9581,7 +9590,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ai-apis-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `ai-apis-${todayISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('已匯出');
@@ -10689,7 +10698,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       document.getElementById('holdingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['holdingSymbol','holdingName','holdingShares','holdingAvgCost','holdingCurrentPrice','holdingIndustry','holdingNotes','holdingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('holdingBuyDate').value = new Date().toISOString().slice(0,10);
+      document.getElementById('holdingBuyDate').value = todayISO();
       document.getElementById('holdingMarket').value = 'TWSE';
     }
     document.getElementById('holdingSearchResults').style.display = 'none';
@@ -10770,7 +10779,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     } else {
       ['txnSymbolName','txnShares','txnPrice','txnFee','txnTax','txnNotes','txnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('txnType').value = 'buy';
-      document.getElementById('txnDate').value = new Date().toISOString().slice(0,10);
+      document.getElementById('txnDate').value = todayISO();
       document.getElementById('txnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = twHoldings.find(x => x.symbol === presetSymbol);
@@ -10977,7 +10986,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tw-stocks-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `tw-stocks-${todayISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -11335,8 +11344,8 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   const finnhubProfile = symbol => finnhubGet('stock/profile2', { symbol });
   const finnhubMetrics = symbol => finnhubGet('stock/metric', { symbol, metric: 'all' });
   function finnhubNews(symbol) {
-    const to = new Date().toISOString().slice(0, 10);
-    const from = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+    const to = todayISO();
+    const from = todayISO(Date.now() - 14 * 864e5);
     return finnhubGet('company-news', { symbol, from, to });
   }
 
@@ -11559,7 +11568,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const out = { per: null, pbr: null, dy: null, gm: null, om: null, perDate: null, fsDate: null };
     const base = 'https://api.finmindtrade.com/api/v4/data?dataset=';
     try {
-      const s = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+      const s = todayISO(Date.now() - 45 * 864e5);
       const r = await fetch(`${base}TaiwanStockPER&data_id=${encodeURIComponent(code)}&start_date=${s}`, { cache: 'no-store' });
       const j = await r.json();
       const rows = (j && j.data) || [];
@@ -11572,7 +11581,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       }
     } catch (e) {}
     try {
-      const s = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+      const s = todayISO(Date.now() - 400 * 864e5);
       const r = await fetch(`${base}TaiwanStockFinancialStatements&data_id=${encodeURIComponent(code)}&start_date=${s}`, { cache: 'no-store' });
       const j = await r.json();
       const rows = (j && j.data) || [];
@@ -11616,7 +11625,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     try {
       if (!window.LightweightCharts) await loadScript('https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', 'sdk-lwc');
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
-      const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+      const start = todayISO(Date.now() - 400 * 864e5);
       const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
       const resp = await fetch(url, { cache: 'no-store' });
       const j = await resp.json().catch(() => null);
@@ -11682,7 +11691,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       if (!window.LightweightCharts) await loadScript('https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', 'sdk-lwc');
       if (stale()) return;
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
-      const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+      const start = todayISO(Date.now() - 400 * 864e5);
       const url = `https://api.finmindtrade.com/api/v4/data?dataset=USStockPrice&data_id=${encodeURIComponent(symbol)}&start_date=${start}`;
       const resp = await fetch(url, { cache: 'no-store' });
       const j = await resp.json().catch(() => null);
@@ -11705,6 +11714,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (ai) { ai.style.display = 'none'; ai.innerHTML = ''; }
     document.getElementById('tvChartModal').classList.add('active');
     tvChartPrompt = buildAnalysisPrompt(symbol, name || symbol); // 重用台股技術/籌碼分析框架
+    renderPlanBadge('twPlanBadge', symbol, 'tw');   // 圖表列右邊顯示已記下的買賣價位
     loadTwCandleChart('tvChartBox', symbol, name);
   }
   function closeTvChartModal() { document.getElementById('tvChartModal').classList.remove('active'); }
@@ -11802,7 +11812,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
 
   // ===== Phase 2：技術指標訊號（FinMind 美股日線 → RSI/MACD/均線）=====
   async function fetchUsOhlc(symbol) {
-    const start = new Date(Date.now() - 260 * 864e5).toISOString().slice(0, 10);
+    const start = todayISO(Date.now() - 260 * 864e5);
     const url = `https://api.finmindtrade.com/api/v4/data?dataset=USStockPrice&data_id=${encodeURIComponent(symbol)}&start_date=${start}`;
     const r = await fetch(url, { cache: 'no-store' });
     const j = await r.json().catch(() => null);
@@ -12348,7 +12358,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   }
 
   function buildUsAnalysisPrompt(symbol, name, snapshot, strategyKey) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const strat = US_STRATEGIES.find(s => s.key === strategyKey);
     const stratLine = (strat && strat.focus) ? `\n**分析策略：${strat.name}** — ${strat.focus}\n` : '';
     return `請對美股 ${symbol}（${name || ''}）做一份完整的個股盡職調查與分析（今天 ${today}）。${stratLine}
@@ -12428,13 +12438,15 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     document.getElementById('usAnalysisModal').classList.add('active');
     const body = document.getElementById('usAnalysisBody');
     body.innerHTML = `
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
+      <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
         <button class="btn btn-sm btn-primary" id="usChartTvBtn" onclick="setUsChartMode('tv')" title="TradingView 即時互動圖">📈 即時圖</button>
         <button class="btn btn-sm" id="usChartSelfBtn" onclick="setUsChartMode('self')" title="自繪：含趨勢線與金叉/死叉標記">✎ 趨勢線圖</button>
+        <span id="usPlanBadge" style="margin-left:auto;"></span>
       </div>
       <div id="usTvChart" style="height:360px; margin-bottom:16px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
       <div id="usAnalysisData" style="text-align:center; padding:18px; color:var(--ink-tertiary);">載入即時資料中…</div>`;
     usChartMode = 'tv';
+    renderPlanBadge('usPlanBadge', h.symbol, 'us');   // 圖表列右邊顯示已記下的買賣價位
     loadUsTvChart(h, seq); // 獨立載入，不擋資料區
     if (!finnhubKey) await loadFinnhubKey();
     if (seq !== usAnalysisSeq) return; // 已被更新的請求取代
@@ -12555,7 +12567,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const newsBlock = newsItems.length ? `
       <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:6px 0;">RECENT · NEWS</div>
       <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;">
-        ${newsItems.map(n => `<a href="${escape(n.url || '#')}" target="_blank" rel="noopener" style="display:block; padding:8px 10px; background:var(--bg-card); border:1px solid var(--line); border-radius:3px; text-decoration:none;"><div style="font-size:12.5px; color:var(--ink-primary); line-height:1.4;">${escape(n.headline || n.title || '')}</div><div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-top:3px;">${escape(n.source || '')}${n.datetime ? ` · ${new Date(n.datetime * 1000).toISOString().slice(0, 10)}` : ''}</div></a>`).join('')}
+        ${newsItems.map(n => `<a href="${escape(n.url || '#')}" target="_blank" rel="noopener" style="display:block; padding:8px 10px; background:var(--bg-card); border:1px solid var(--line); border-radius:3px; text-decoration:none;"><div style="font-size:12.5px; color:var(--ink-primary); line-height:1.4;">${escape(n.headline || n.title || '')}</div><div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-top:3px;">${escape(n.source || '')}${n.datetime ? ` · ${todayISO(n.datetime * 1000)}` : ''}</div></a>`).join('')}
       </div>` : '';
 
     const aiBlock = `
@@ -12855,7 +12867,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       document.getElementById('usHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['usHoldingSymbol','usHoldingName','usHoldingShares','usHoldingAvgCost','usHoldingCurrentPrice','usHoldingIndustry','usHoldingNotes','usHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('usHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('usHoldingBuyDate').value = todayISO();
       document.getElementById('usHoldingMarket').value = 'NASDAQ';
     }
     document.getElementById('usHoldingSearchResults').style.display = 'none';
@@ -12932,7 +12944,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     } else {
       ['usTxnSymbolName','usTxnShares','usTxnPrice','usTxnFee','usTxnNotes','usTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('usTxnType').value = 'buy';
-      document.getElementById('usTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('usTxnDate').value = todayISO();
       document.getElementById('usTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = usHoldings.find(x => x.symbol === presetSymbol);
@@ -13090,7 +13102,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `us-stocks-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `us-stocks-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importUsStockData(e) {
@@ -13589,7 +13601,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
       document.getElementById('cryptoHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['cryptoHoldingSymbol','cryptoHoldingName','cryptoHoldingShares','cryptoHoldingAvgCost','cryptoHoldingCurrentPrice','cryptoHoldingIndustry','cryptoHoldingNotes','cryptoHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('cryptoHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('cryptoHoldingBuyDate').value = todayISO();
       document.getElementById('cryptoHoldingMarket').value = 'Binance';
     }
     document.getElementById('cryptoHoldingSearchResults').style.display = 'none';
@@ -13666,7 +13678,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     } else {
       ['cryptoTxnSymbolName','cryptoTxnShares','cryptoTxnPrice','cryptoTxnFee','cryptoTxnNotes','cryptoTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('cryptoTxnType').value = 'buy';
-      document.getElementById('cryptoTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('cryptoTxnDate').value = todayISO();
       document.getElementById('cryptoTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = cryptoHoldings.find(x => x.symbol === presetSymbol);
@@ -13823,7 +13835,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `crypto-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `crypto-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importCryptoData(e) {
@@ -14374,7 +14386,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
       document.getElementById('hdEtfHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['hdEtfHoldingSymbol','hdEtfHoldingName','hdEtfHoldingShares','hdEtfHoldingAvgCost','hdEtfHoldingCurrentPrice','hdEtfHoldingIndustry','hdEtfHoldingNextExDate','hdEtfHoldingNotes','hdEtfHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('hdEtfHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('hdEtfHoldingBuyDate').value = todayISO();
       document.getElementById('hdEtfHoldingMarket').value = '元大';
       document.getElementById('hdEtfHoldingFreq').value = '月配';
     }
@@ -14454,7 +14466,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     } else {
       ['hdEtfTxnSymbolName','hdEtfTxnShares','hdEtfTxnPrice','hdEtfTxnFee','hdEtfTxnNotes','hdEtfTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('hdEtfTxnType').value = presetType || 'buy';
-      document.getElementById('hdEtfTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('hdEtfTxnDate').value = todayISO();
       document.getElementById('hdEtfTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = hdEtfHoldings.find(x => x.symbol === presetSymbol);
@@ -14619,7 +14631,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `hdetf-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `hdetf-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importHdEtfData(e) {
@@ -15238,7 +15250,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       document.getElementById('mkEtfHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['mkEtfHoldingSymbol','mkEtfHoldingName','mkEtfHoldingIndex','mkEtfHoldingShares','mkEtfHoldingAvgCost','mkEtfHoldingCurrentPrice','mkEtfHoldingExpense','mkEtfHoldingCategory','mkEtfHoldingNotes','mkEtfHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('mkEtfHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('mkEtfHoldingBuyDate').value = todayISO();
       document.getElementById('mkEtfHoldingCcy').value = 'TWD';
       document.getElementById('mkEtfHoldingMarket').value = '元大';
       document.getElementById('mkEtfHoldingFreq').value = '半年配';
@@ -15325,7 +15337,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     } else {
       ['mkEtfTxnSymbolName','mkEtfTxnShares','mkEtfTxnPrice','mkEtfTxnFee','mkEtfTxnNotes','mkEtfTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('mkEtfTxnType').value = presetType || 'buy';
-      document.getElementById('mkEtfTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('mkEtfTxnDate').value = todayISO();
       document.getElementById('mkEtfTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = mkEtfHoldings.find(x => x.symbol === presetSymbol);
@@ -15503,7 +15515,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `mketf-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `mketf-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importMkEtfData(e) {
@@ -16526,7 +16538,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `dca-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `dca-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importDcaData(e) {
@@ -17106,7 +17118,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `goals-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `goals-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importGoalData(e) {
@@ -17714,7 +17726,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
       document.getElementById('bondHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['bondHoldingSymbol','bondHoldingName','bondHoldingBtype','bondHoldingCoupon','bondHoldingDuration','bondHoldingMaturity','bondHoldingShares','bondHoldingAvgCost','bondHoldingCurrentPrice','bondHoldingExpense','bondHoldingCategory','bondHoldingNotes','bondHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('bondHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('bondHoldingBuyDate').value = todayISO();
       document.getElementById('bondHoldingCcy').value = 'TWD';
       document.getElementById('bondHoldingMarket').value = '元大';
       document.getElementById('bondHoldingFreq').value = '季配';
@@ -17804,7 +17816,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     } else {
       ['bondTxnSymbolName','bondTxnShares','bondTxnPrice','bondTxnFee','bondTxnNotes','bondTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('bondTxnType').value = presetType || 'buy';
-      document.getElementById('bondTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('bondTxnDate').value = todayISO();
       document.getElementById('bondTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = bondHoldings.find(x => x.symbol === presetSymbol);
@@ -17984,7 +17996,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `bond-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `bond-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importBondData(e) {
@@ -18592,7 +18604,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
       document.getElementById('fxDepHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['fxDepHoldingSymbol','fxDepHoldingName','fxDepHoldingShares','fxDepHoldingAvgCost','fxDepHoldingCurrentPrice','fxDepHoldingRate','fxDepHoldingMaturity','fxDepHoldingNotes','fxDepHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('fxDepHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fxDepHoldingBuyDate').value = todayISO();
       document.getElementById('fxDepHoldingCcy').value = 'TWD';
       document.getElementById('fxDepHoldingDepType').value = '定存';
       document.getElementById('fxDepHoldingMarket').value = '台灣銀行';
@@ -18677,7 +18689,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     } else {
       ['fxDepTxnSymbolName','fxDepTxnShares','fxDepTxnPrice','fxDepTxnFee','fxDepTxnNotes','fxDepTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('fxDepTxnType').value = presetType || 'buy';
-      document.getElementById('fxDepTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fxDepTxnDate').value = todayISO();
       document.getElementById('fxDepTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = fxDepHoldings.find(x => x.symbol === presetSymbol);
@@ -18857,7 +18869,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `fxdep-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `fxdep-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importFxDepData(e) {
@@ -19485,7 +19497,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
       document.getElementById('fundHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['fundHoldingSymbol','fundHoldingName','fundHoldingCompany','fundHoldingRegion','fundHoldingShares','fundHoldingAvgCost','fundHoldingCurrentPrice','fundHoldingExpense','fundHoldingBenchName','fundHoldingBench','fundHoldingNotes','fundHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('fundHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fundHoldingBuyDate').value = todayISO();
       document.getElementById('fundHoldingCcy').value = 'TWD';
       document.getElementById('fundHoldingFtype').value = '股票型';
       document.getElementById('fundHoldingMarket').value = '基富通';
@@ -19579,7 +19591,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     } else {
       ['fundTxnSymbolName','fundTxnShares','fundTxnPrice','fundTxnFee','fundTxnNotes','fundTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('fundTxnType').value = presetType || 'buy';
-      document.getElementById('fundTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fundTxnDate').value = todayISO();
       document.getElementById('fundTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = fundHoldings.find(x => x.symbol === presetSymbol);
@@ -19761,7 +19773,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `fund-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `fund-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importFundData(e) {
@@ -20386,7 +20398,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
       document.getElementById('metalHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
     } else {
       ['metalHoldingSymbol','metalHoldingName','metalHoldingShares','metalHoldingAvgCost','metalHoldingCurrentPrice','metalHoldingSpread','metalHoldingPurity','metalHoldingNotes','metalHoldingSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
-      document.getElementById('metalHoldingBuyDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('metalHoldingBuyDate').value = todayISO();
       document.getElementById('metalHoldingCcy').value = 'TWD';
       document.getElementById('metalHoldingMtype').value = '黃金';
       document.getElementById('metalHoldingForm').value = '銀行存摺';
@@ -20478,7 +20490,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
     } else {
       ['metalTxnSymbolName','metalTxnShares','metalTxnPrice','metalTxnFee','metalTxnNotes','metalTxnSearchBox'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('metalTxnType').value = presetType || 'buy';
-      document.getElementById('metalTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('metalTxnDate').value = todayISO();
       document.getElementById('metalTxnSymbol').value = presetSymbol || '';
       if (presetSymbol) {
         const h = metalHoldings.find(x => x.symbol === presetSymbol);
@@ -20654,7 +20666,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `metal-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `metal-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importMetalData(e) {
@@ -21204,7 +21216,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
        'rePropLoanRate','rePropLoanYears','rePropRent','rePropVacant','rePropMgmt','rePropTax','rePropInsurance',
        'rePropRepair','rePropAgent','rePropOther','rePropTenant','rePropDeposit','rePropLeaseStart',
        'rePropLeaseEnd','rePropFreeRent','rePropBump','rePropNotes'].forEach(i => set(i, ''));
-      set('rePropBuyDate', new Date().toISOString().slice(0, 10));
+      set('rePropBuyDate', todayISO());
       document.getElementById('rePropStatus').value = '出租中';
       typeSel.value = cfg.types[0];
     }
@@ -21347,7 +21359,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       document.getElementById('reTxnFlow').value = presetFlow || 'in';
       reFillTxnCats(presetFlow || 'in');
       if (presetCat) document.getElementById('reTxnCat').value = presetCat;
-      document.getElementById('reTxnDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('reTxnDate').value = todayISO();
       document.getElementById('reTxnNotes').value = '';
       // 收租的話，金額直接帶該物件的月租
       const p = reData[kind].props.find(x => x.id === (presetPropId || propSel.value));
@@ -21408,7 +21420,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `${kind === 'commercial' ? 'commercial' : 'rental'}-re-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `${kind === 'commercial' ? 'commercial' : 'rental'}-re-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importReData(e, kind) {
@@ -21691,7 +21703,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       document.getElementById('assocMemberStatusSel').value = m.status || '在籍';
     } else {
       ['assocMemberName','assocMemberCompany','assocMemberTitle','assocMemberPhone','assocMemberEmail','assocMemberLine','assocMemberBirthday','assocMemberNotes'].forEach(i => set(i, ''));
-      set('assocMemberJoin', new Date().toISOString().slice(0, 10));
+      set('assocMemberJoin', todayISO());
       document.getElementById('assocMemberStatusSel').value = '在籍';
     }
     document.getElementById('assocMemberModal').classList.add('active');
@@ -21804,7 +21816,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       document.getElementById('assocEventStatus').value = e.status || '規劃中';
     } else {
       ['assocEventTitle','assocEventTime','assocEventPlace','assocEventHost','assocEventFee','assocEventAttendees','assocEventNotes'].forEach(i => set(i, ''));
-      set('assocEventDate', new Date().toISOString().slice(0, 10));
+      set('assocEventDate', todayISO());
       document.getElementById('assocEventType').value = '例會';
       document.getElementById('assocEventStatus').value = '規劃中';
     }
@@ -21972,7 +21984,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     } else {
       set('assocDueYear', Number(document.getElementById('assocDuesYear')?.value) || assocThisYear());
       set('assocDueAmount', assocNum(assocOrg.fee) || '');
-      set('assocDuePaid', ''); set('assocDuePayDate', new Date().toISOString().slice(0, 10)); set('assocDueNotes', '');
+      set('assocDuePaid', ''); set('assocDuePayDate', todayISO()); set('assocDueNotes', '');
       document.getElementById('assocDueMethod').value = '';
     }
     document.getElementById('assocDueModal').classList.add('active');
@@ -22183,7 +22195,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `assoc-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `assoc-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function importAssocData(e) {
@@ -22334,6 +22346,40 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   const alogCur = () => alogMarket === 'tw' ? 'NT$' : '$';
 
+  // 在圖表那一列右邊顯示「這檔已經記下的下單決定」，讓你看圖時就知道自己當初打算怎麼做
+  // elId: 'usPlanBadge'（美股）或 'twPlanBadge'（台股）
+  async function renderPlanBadge(elId, symbol, market) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!alogAll || !Object.keys(alogAll).length) { try { await loadAlog(); } catch (e) {} }
+    const book = (alogAll && alogAll[symbol]) || null;
+    const p = book && book.plan;
+    const cur = market === 'tw' ? 'NT$' : '$';
+    const btn = 'font-family:var(--mono); font-size:10.5px; letter-spacing:0.05em; padding:5px 10px; border:1px solid var(--line); border-radius:3px; background:transparent; color:var(--ink-tertiary); cursor:pointer;';
+    if (!p || (p.price == null && p.high == null && p.low == null)) {
+      el.innerHTML = `<button style="${btn}" onclick="openAnalysisLog()" title="還沒設定這檔的買賣價位">📓 尚未設定價位</button>`;
+      return;
+    }
+    const d = p.updatedAt ? todayISO(p.updatedAt) : '';
+    const fmt = v => v == null ? '—' : cur + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    // 有現價與上下限就順便標出賠率，一眼看出這個計畫划不划算
+    let rr = null;
+    if (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price) {
+      rr = Number(((p.high - p.price) / (p.price - p.low)).toFixed(2));
+    }
+    el.innerHTML = `
+      <span onclick="openAnalysisLog()" title="點一下開啟分析策略記錄"
+            style="display:inline-flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
+                   font-family:var(--mono); font-size:11px; padding:5px 11px; border-radius:3px;
+                   background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent);">
+        <span style="color:var(--ink-tertiary);">📓 ${escape(d)}</span>
+        <span style="color:var(--ink-tertiary);">低 <strong style="color:var(--danger);">${fmt(p.low)}</strong></span>
+        <span style="color:var(--ink-tertiary);">現 <strong style="color:var(--ink-primary);">${fmt(p.price)}</strong></span>
+        <span style="color:var(--ink-tertiary);">高 <strong style="color:var(--accent);">${fmt(p.high)}</strong></span>
+        ${rr != null ? `<span style="color:${rr >= 2 ? 'var(--accent)' : 'var(--danger)'};">1:${rr.toFixed(2)}</span>` : ''}
+      </span>`;
+  }
+
   async function openAnalysisLog() {
     // 從目前開著的分析視窗判斷是哪一檔
     const snap = lastAnalysisSnapshot;
@@ -22413,7 +22459,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       document.getElementById('alogEntryInsight').value = e.insight || '';
       document.getElementById('alogEntryMemo').value = e.memo || '';
     } else {
-      document.getElementById('alogEntryDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('alogEntryDate').value = todayISO();
       document.getElementById('alogEntryContent').value = '';
       document.getElementById('alogEntryInsight').value = '';
       document.getElementById('alogEntryMemo').value = '';
@@ -22468,7 +22514,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const b = alogBook(alogSymbol);
     b.entries.push({
       id: 'al_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      tab: 'system', date: new Date().toISOString().slice(0, 10),
+      tab: 'system', date: todayISO(),
       type: '技術訊號', content: parts.join('\n\n'), insight: '', memo: '自動帶入',
       createdAt: Date.now(), updatedAt: Date.now()
     });
@@ -22520,6 +22566,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
     b.plan = { price: num('alogPrice'), high: num('alogHigh'), low: num('alogLow'), updatedAt: Date.now() };
     await saveAlog();
+    // 兩個圖表列的徽章都更新（哪個開著就更新哪個），存完馬上看得到
+    renderPlanBadge('usPlanBadge', alogSymbol, alogMarket);
+    renderPlanBadge('twPlanBadge', alogSymbol, alogMarket);
     showToast('✓ 下單決定已儲存');
   }
 
@@ -22529,7 +22578,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const blob = new Blob([JSON.stringify({ symbol: alogSymbol, name: alogName, market: alogMarket, ...b, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `analysis-log-${alogSymbol}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `analysis-log-${alogSymbol}-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
   function copyAlogSummary() {
@@ -22734,7 +22783,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `personal-studio-backup-${new Date().toISOString().slice(0, 10)}${withSecrets ? '-含金鑰' : ''}.json`;
+    a.download = `personal-studio-backup-${todayISO()}${withSecrets ? '-含金鑰' : ''}.json`;
     a.click();
     URL.revokeObjectURL(url);
     // 記一下最後備份時間，首頁的「你還沒備份過」提醒才會消失
@@ -22946,7 +22995,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // ⚠ 刻意不在批次掃描時抓財報（毛利率/營益率要再一次呼叫），
   //   91 檔 × 2 支 API 容易撞到 FinMind 免費層的用量上限。細節在個股頁面看就好。
   async function scanFundTw(sym) {
-    const s = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+    const s = todayISO(Date.now() - 45 * 864e5);
     const r = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPER&data_id=${encodeURIComponent(sym)}&start_date=${s}`, { cache: 'no-store' });
     const j = await r.json();
     const rows = (j && j.data) || [];
@@ -22983,7 +23032,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   // 台股日線（欄位名跟美股不一樣：open/max/min/close/Trading_Volume）
   async function fetchTwOhlc(code) {
-    const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+    const start = todayISO(Date.now() - 400 * 864e5);
     const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
     const r = await fetch(url, { cache: 'no-store' });
     const j = await r.json().catch(() => null);
@@ -23724,7 +23773,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const d = new Date(dateStr + 'T00:00:00');
     const dow = (d.getDay() + 6) % 7;      // 0 = 週一
     d.setDate(d.getDate() - dow);
-    return d.toISOString().slice(0, 10);
+    return todayISO(d);
   }
   // 稀釋舊資料：同一個時間桶只留最新的那一筆
   function histThin(list) {
@@ -23750,7 +23799,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     if (!(total > 0) && assetHistory.length === 0 && !manual) return null;
     const byKey = {};
     rows.forEach(r => { if (Number(r.value)) byKey[r.key] = Math.round(Number(r.value)); });
-    const date = new Date().toISOString().slice(0, 10);
+    const date = todayISO();
     const snap = { date, ts: Date.now(), total: Math.round(total), cost: Math.round(cost), pnl: Math.round(total - cost), div: Math.round(div), byKey, fx: Number(cashflowFx.usdTwd) || null };
     const i = assetHistory.findIndex(s => s.date === date);
     if (i > -1) assetHistory[i] = snap; else assetHistory.push(snap);
@@ -23778,7 +23827,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const blob = new Blob([JSON.stringify({ history: assetHistory, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `asset-history-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = `asset-history-${todayISO()}.json`;
     a.click(); URL.revokeObjectURL(url);
   }
 
@@ -24061,7 +24110,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       });
     }
     if (allH.length === 0) { el.innerHTML = '<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; color:var(--ink-tertiary); font-size:12.5px;">尚無持股，加了持股後這裡會顯示績效與風險分析。</div>'; return; }
-    flows.push({ date: new Date().toISOString().slice(0, 10), amount: valueSum }); // 期末＝目前總市值
+    flows.push({ date: todayISO(), amount: valueSum }); // 期末＝目前總市值
     const xirr = computeXIRR(flows);
     const totalReturn = costSum > 0 ? (unrealSum / costSum * 100) : 0;
     const winners = allH.filter(h => h.pnl > 0).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
@@ -25120,7 +25169,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const wkArr = ['日','一','二','三','四','五','六'];
     let n = 1;
     for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().slice(0, 10);
+      const dateStr = todayISO(d);
       days.push({
         day: n++,
         date: dateStr,
@@ -25464,7 +25513,7 @@ ${baseSchema}
     const done = trvChecklist.filter(x => x.done).length;
     document.getElementById('hc-checklist').textContent = `${done} / ${trvChecklist.length} 已完成`;
     // 行程
-    const today = new Date().toISOString().slice(0,10);
+    const today = todayISO();
     const todayDay = ITINERARY.days.find(d => d.date === today);
     document.getElementById('hc-timeline').textContent = todayDay
       ? `今日 DAY ${todayDay.day} · ${todayDay.title.slice(0, 12)}…`
@@ -25607,7 +25656,7 @@ ${baseSchema}
   // ===== 行程 timeline =====
   function renderTimeline() {
     const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = todayISO(today);
     const html = ITINERARY.days.map(d => {
       const isToday = d.date === todayStr;
       const dayBadge = isToday ? '<span class="day-badge">TODAY</span>' : '';
@@ -26172,7 +26221,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   }
   function findNextSpot() {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = todayISO(now);
     for (const d of ITINERARY.days) {
       if (d.date < todayStr) continue;
       for (const s of d.spots) {
@@ -26371,7 +26420,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
 
   // ===== 集合倒數 =====
   function openGatherModal() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     document.getElementById('gatherDate').value = trvGather?.date || today;
     document.getElementById('gatherTime').value = trvGather?.time || '07:00';
     document.getElementById('gatherDesc').value = trvGather?.desc || '飯店大廳';
@@ -26611,7 +26660,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     if (!apiKey) {
       throw new Error('尚未設定新聞 Worker。請點頁面上「⚙ 設定新聞來源」按免費部署教學');
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const prompt = `搜尋台股 ${symbol} ${name} 在 ${today} 前後 2 天的最新新聞。
 **只接受權威媒體**：${TW_NEWS_SOURCES}。
 
@@ -26630,7 +26679,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
 
   // 技術分析 prompt 生成（C 方案：複製到 Claude.ai / ChatGPT / Gemini 月租使用）
   function buildAnalysisPrompt(symbol, name) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     return `請對台股 ${symbol} ${name} 做技術分析（今天日期 ${today}）。
 
 請搜尋並整合：
@@ -26682,7 +26731,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     }
     const btn = document.getElementById('twNewsRefreshBtn');
     if (btn) { btn.disabled = true; btn.textContent = '◌ 抓取中…'; }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     let ok = 0, fail = 0;
     for (const h of twHoldings) {
       try {
@@ -26710,7 +26759,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   async function checkAutoFetchTwNews() {
     const workerUrl = await readKey(TW_STORAGE.newsWorker);
     if (!workerUrl) return; // 自動抓取只在 worker 設定後啟用（免費才自動，不燒 API）
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     if (twNewsState.lastFetch === today) return;
     if (new Date().getHours() < 8) return;
     if (twHoldings.length === 0) return;
@@ -26782,7 +26831,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       const news = await fetchStockNews(twCurrentNewsSymbol, twCurrentNewsName);
       twNewsState.perStock[twCurrentNewsSymbol] = {
         fetchedAt: new Date().toISOString(),
-        date: new Date().toISOString().slice(0, 10),
+        date: todayISO(),
         items: news.items || []
       };
       await saveTwNewsState();
@@ -27246,7 +27295,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const isEdit = !!id;
     document.getElementById('expEditId').value = id || '';
     document.getElementById('expDeleteBtn').style.display = isEdit ? '' : 'none';
-    const today = new Date().toISOString().slice(0,10);
+    const today = todayISO();
     if (isEdit) {
       const e = trvExpenses.find(x => x.id === id);
       document.getElementById('expCategory').value = e.category;
@@ -27413,7 +27462,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const blob = new Blob([txt], { type: 'text/plain; charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `九寨溝購物清單_${new Date().toISOString().slice(0,10)}.txt`;
+    a.href = url; a.download = `九寨溝購物清單_${todayISO()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -27635,7 +27684,7 @@ ${daysBrief}
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `travel_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.href = url; a.download = `travel_backup_${todayISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -28178,10 +28227,10 @@ ${daysBrief}
     let html = '';
     chatMessages.forEach(m => {
       const d = new Date(m.created_at);
-      const dayKey = d.toISOString().slice(0, 10);
+      const dayKey = todayISO(d);
       if (dayKey !== lastDay) {
-        const today = new Date().toISOString().slice(0, 10);
-        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const today = todayISO();
+        const yesterday = todayISO(Date.now() - 86400000);
         let label = dayKey;
         if (dayKey === today) label = '今天';
         else if (dayKey === yesterday) label = '昨天';
