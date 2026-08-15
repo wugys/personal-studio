@@ -3021,6 +3021,7 @@
       <div class="api-actions">
         <button class="btn btn-primary" onclick="openUsAnalysisSearch()">📈 看盤查股</button>
         <button class="btn" onclick="openUsScreener()">🔎 選股</button>
+        <button class="btn" onclick="openUsScanModal()" title="用多種技術條件掃描，找出短線值得關注的股票">🎯 機會掃描</button>
         <button class="btn" onclick="openUsTxnModal()">+ 新交易</button>
         <button class="btn" onclick="openUsHoldingModal()">+ 新增持股</button>
       </div>
@@ -6546,6 +6547,68 @@
 
 
 
+  <!-- ============ 美股 · 短線機會掃描 Modal ============ -->
+  <div class="modal-backdrop" id="usScanModal">
+    <div class="modal" style="max-width: 900px;">
+      <h2>🎯 短線 <em>機會掃描</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        勾好你要的技術條件，掃描一批美股，<strong>符合越多條件的排越前面</strong>。每一檔會直接給你現價、停損參考、目標價與符合了哪幾項。
+        <br><strong>資料抓一次就會快取</strong>——之後改條件重新排名是<strong>秒出</strong>的，可以放心一直調。
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">快速套用</span>
+        <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('breakout')">🚀 突破追強</button>
+        <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('pullback')">📉 回檔布局</button>
+        <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('rebound')">🔄 超跌反彈</button>
+        <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('none')">✕ 全部取消</button>
+      </div>
+      <div id="usScanConds" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:2px 16px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px; max-height:28vh; overflow-y:auto;"></div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">掃描範圍</span>
+        <select id="usScanScope" class="form-select" style="width:auto;" onchange="onUsScanScopeChange()">
+          <option value="builtin">內建熱門（42 檔）</option>
+          <option value="wide">內建 + 擴充（70 檔）</option>
+          <option value="mine">只掃我的持股</option>
+          <option value="custom">自訂代號</option>
+        </select>
+        <input type="text" id="usScanCustom" class="form-input" placeholder="AAPL, NVDA, TSLA（逗號分隔）" style="width:auto; min-width:220px; flex:1; display:none;">
+        <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">至少符合</span>
+        <select id="usScanMinMatch" class="form-select" style="width:auto;" onchange="renderUsScanResults()">
+          <option value="1">1 項</option>
+          <option value="2">2 項</option>
+          <option value="3" selected>3 項</option>
+          <option value="4">4 項</option>
+          <option value="5">5 項</option>
+          <option value="all">全部符合</option>
+        </select>
+        <button class="btn btn-primary" id="usScanRunBtn" type="button" onclick="runUsScan()" style="margin-left:auto;">▶ 開始掃描</button>
+      </div>
+
+      <div id="usScanProgress" style="display:none; margin-bottom:12px;">
+        <div style="height:6px; background:var(--bg-card); border:1px solid var(--line); border-radius:3px; overflow:hidden;">
+          <div id="usScanBar" style="height:100%; width:0%; background:var(--accent); transition:width 0.2s;"></div>
+        </div>
+        <div id="usScanProgressText" style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;"></div>
+      </div>
+
+      <div id="usScanResults" style="max-height:46vh; overflow-y:auto;"></div>
+
+      <div style="margin-top:12px; padding:9px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.6;">
+        ⚠ 這裡找出來的是<strong>「值得你花時間研究的候選名單」，不是「該買的股票」</strong>。技術面只描述「過去發生了什麼」，不預測未來。進場價與停損價都是規則算出來的參考值。<strong>不構成投資建議。</strong>
+      </div>
+      <div style="margin-top:8px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">
+        資料來源：FinMind 美股日線（免費、免金鑰）。價格是<strong>最近一個交易日的收盤價</strong>，不是即時報價。
+      </div>
+
+      <div class="form-actions" style="justify-content:space-between; margin-top:12px;">
+        <button class="btn btn-sm" onclick="clearUsScanCache()" title="清掉抓下來的日線快取，下次重新抓">↻ 清快取</button>
+        <button class="btn" onclick="closeUsScanModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 雲端同步總管 Modal（一次設定，全部模組通用）============ -->
   <div class="modal-backdrop" id="syncMasterModal">
     <div class="modal" style="max-width: 760px;">
@@ -7843,7 +7906,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 8.2 · θ</div>
+    <div>v 8.3 · θ</div>
   </footer>
 </div>
 
@@ -21633,6 +21696,283 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     await recordAssetSnapshot(rows);
     renderAssetHistory();
     renderPerformanceRisk();
+  }
+
+  // ============================================================
+  // 美股 · 短線機會掃描器 · Opportunity Scanner
+  //
+  // 目的：從一批股票裡，用多個技術條件篩出「值得花時間研究的候選」，
+  //      並直接給現價 / 停損 / 目標 / 符合了哪幾項 / 白話理由。
+  // 資料：FinMind 美股日線（免費、免金鑰、CORS *）。**不需要 Finnhub 金鑰**。
+  // ⚠ 設計重點：日線抓下來會**快取 4 小時**（`usScanCache`）。
+  //   使用者改條件重新排名時完全不重抓 —— 這才有辦法「重覆分析」調到滿意。
+  // ⚠ 併發限 5：FinMind 免費層打太快會被擋。
+  // ============================================================
+  const US_SCAN_EXTRA = [
+    { symbol: 'UBER', name: 'Uber', zh: '優步' }, { symbol: 'ABNB', name: 'Airbnb', zh: '愛彼迎' },
+    { symbol: 'COIN', name: 'Coinbase', zh: '幣安美' }, { symbol: 'MU', name: 'Micron', zh: '美光' },
+    { symbol: 'QCOM', name: 'Qualcomm', zh: '高通' }, { symbol: 'TXN', name: 'Texas Instruments', zh: '德州儀器' },
+    { symbol: 'NOW', name: 'ServiceNow', zh: '' }, { symbol: 'PANW', name: 'Palo Alto Networks', zh: '' },
+    { symbol: 'CRWD', name: 'CrowdStrike', zh: '' }, { symbol: 'SNOW', name: 'Snowflake', zh: '' },
+    { symbol: 'DDOG', name: 'Datadog', zh: '' }, { symbol: 'NET', name: 'Cloudflare', zh: '' },
+    { symbol: 'MRVL', name: 'Marvell', zh: '邁威爾' }, { symbol: 'ARM', name: 'Arm Holdings', zh: '安謀' },
+    { symbol: 'SMCI', name: 'Super Micro', zh: '美超微' }, { symbol: 'VRT', name: 'Vertiv', zh: '' },
+    { symbol: 'ANET', name: 'Arista Networks', zh: '' }, { symbol: 'CEG', name: 'Constellation Energy', zh: '星座能源' },
+    { symbol: 'VST', name: 'Vistra', zh: '' }, { symbol: 'NRG', name: 'NRG Energy', zh: '' },
+    { symbol: 'CMS', name: 'CMS Energy', zh: '' }, { symbol: 'CAT', name: 'Caterpillar', zh: '開拓重工' },
+    { symbol: 'DE', name: 'Deere', zh: '強鹿' }, { symbol: 'GE', name: 'GE Aerospace', zh: '奇異' },
+    { symbol: 'RTX', name: 'RTX Corp', zh: '雷神' }, { symbol: 'CVX', name: 'Chevron', zh: '雪佛龍' },
+    { symbol: 'FCX', name: 'Freeport-McMoRan', zh: '自由港' }, { symbol: 'NEM', name: 'Newmont', zh: '紐蒙特' }
+  ];
+
+  // 每個條件都要能用白話解釋「這代表什麼」，不然勾了也不知道在勾什麼
+  const US_SCAN_CONDS = [
+    { key: 'golden',     name: '出現黃金交叉',   hint: '短期均線剛穿過長期均線，通常代表轉強的起點',       test: c => !!(c.sig.cross && c.sig.cross.type === 'golden') },
+    { key: 'bull_stack', name: '多頭排列',       hint: '5日>20日>60日均線，三條線由上往下排好，趨勢明確向上', test: c => !!(c.sig.ma5 && c.sig.ma20 && c.sig.ma60 && c.sig.ma5 > c.sig.ma20 && c.sig.ma20 > c.sig.ma60) },
+    { key: 'above_ma60', name: '站上季線',       hint: '股價在 60 日均線之上，中期偏多',                    test: c => !!(c.sig.ma60 && c.price > c.sig.ma60) },
+    { key: 'above_ma20', name: '站上月線',       hint: '股價在 20 日均線之上，短期偏多',                    test: c => !!(c.sig.ma20 && c.price > c.sig.ma20) },
+    { key: 'kd_turn',    name: 'KD 低檔轉強',    hint: 'KD 還在低位但已經開始往上，通常是相對安全的進場點', test: c => !!(c.sig.kd && c.sig.kd.k < 45 && c.sig.kd.k > c.sig.kd.d) },
+    { key: 'not_hot',    name: '短線沒過熱',     hint: 'KD<80 且 RSI<70，避免追在短期高點',                test: c => (!c.sig.kd || c.sig.kd.k < 80) && (c.sig.rsi == null || c.sig.rsi < 70) },
+    { key: 'rsi_zone',   name: 'RSI 在健康區',   hint: 'RSI 落在 40~65，不超買也不超賣',                   test: c => c.sig.rsi != null && c.sig.rsi >= 40 && c.sig.rsi <= 65 },
+    { key: 'rsi_low',    name: 'RSI 超賣',       hint: 'RSI<40，跌深了，找反彈用（風險較高）',              test: c => c.sig.rsi != null && c.sig.rsi < 40 },
+    { key: 'macd_pos',   name: 'MACD 柱翻正',    hint: '動能由負轉正，買方開始佔上風',                     test: c => !!(c.sig.macd && c.sig.macd.hist > 0) },
+    { key: 'boll_low',   name: '靠近布林下軌',   hint: '股價貼近統計上的低位（%B<35），跌深反彈候選',        test: c => c.pctB != null && c.pctB < 35 },
+    { key: 'vol_up',     name: '成交量放大',     hint: '近 5 日均量 > 近 20 日均量的 1.2 倍，有人在進場',    test: c => c.volRatio != null && c.volRatio > 1.2 },
+    { key: 'near_high',  name: '接近 60 日高',   hint: '距離兩個月來的高點 5% 以內，突破型',                test: c => c.fromHigh60 != null && c.fromHigh60 > -5 },
+    { key: 'pullback',   name: '健康回檔',       hint: '從 60 日高回檔 5%~15%，不是崩盤但有折扣',           test: c => c.fromHigh60 != null && c.fromHigh60 <= -5 && c.fromHigh60 >= -15 }
+  ];
+  const US_SCAN_PRESETS = {
+    breakout: ['bull_stack', 'above_ma60', 'near_high', 'vol_up', 'not_hot'],
+    pullback: ['bull_stack', 'above_ma60', 'pullback', 'kd_turn', 'not_hot'],
+    rebound:  ['rsi_low', 'boll_low', 'kd_turn', 'macd_pos'],
+    none: []
+  };
+
+  const US_SCAN_CACHE_TTL = 4 * 3600 * 1000;   // 日線 4 小時內不重抓
+  let usScanCache = {};      // { symbol: { bars, ts } }
+  let usScanRows = [];       // 掃完的結果（含 ctx），改條件時直接重算不重抓
+  let usScanPicked = US_SCAN_PRESETS.pullback.slice();
+  let usScanRunning = false;
+
+  function openUsScanModal() {
+    renderUsScanConds();
+    onUsScanScopeChange();
+    renderUsScanResults();
+    document.getElementById('usScanModal').classList.add('active');
+  }
+  function closeUsScanModal() { document.getElementById('usScanModal').classList.remove('active'); }
+  function renderUsScanConds() {
+    const box = document.getElementById('usScanConds');
+    if (!box) return;
+    box.innerHTML = US_SCAN_CONDS.map(c => `
+      <label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; cursor:pointer; border-bottom:1px solid var(--line);">
+        <input type="checkbox" data-us-scan="${escape(c.key)}" ${usScanPicked.includes(c.key) ? 'checked' : ''} onchange="onUsScanCondChange()" style="margin-top:3px;">
+        <span style="min-width:0;">
+          <span style="font-size:12.5px; color:var(--ink-primary);">${escape(c.name)}</span>
+          <span style="display:block; font-size:10.5px; color:var(--ink-tertiary); line-height:1.45;">${escape(c.hint)}</span>
+        </span>
+      </label>`).join('');
+  }
+  function onUsScanCondChange() {
+    usScanPicked = [...document.querySelectorAll('[data-us-scan]:checked')].map(cb => cb.getAttribute('data-us-scan'));
+    renderUsScanResults();   // 不重抓，直接重算排名
+  }
+  function applyUsScanPreset(k) {
+    usScanPicked = (US_SCAN_PRESETS[k] || []).slice();
+    renderUsScanConds();
+    renderUsScanResults();
+  }
+  function onUsScanScopeChange() {
+    const v = document.getElementById('usScanScope').value;
+    document.getElementById('usScanCustom').style.display = v === 'custom' ? '' : 'none';
+  }
+  function clearUsScanCache() {
+    usScanCache = {}; usScanRows = [];
+    renderUsScanResults();
+    showToast('快取已清除，下次掃描會重新抓資料');
+  }
+  function usScanUniverse() {
+    const scope = document.getElementById('usScanScope').value;
+    // 自訂／持股也去內建清單查一下中文名，卡片才不會顯示成「AAPL AAPL」
+    const lookup = s => (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === s)
+      || US_SCAN_EXTRA.find(x => x.symbol === s) || null;
+    if (scope === 'mine') return usHoldings.filter(h => h.symbol).map(h => {
+      const ref = lookup(h.symbol);
+      return { symbol: h.symbol, name: h.name || (ref && ref.name) || h.symbol, zh: (ref && ref.zh) || '' };
+    });
+    if (scope === 'custom') {
+      const raw = document.getElementById('usScanCustom').value || '';
+      return raw.split(/[,，\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean).map(s => {
+        const ref = lookup(s);
+        return { symbol: s, name: (ref && ref.name) || s, zh: (ref && ref.zh) || '' };
+      });
+    }
+    const base = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).slice();
+    if (scope === 'wide') {
+      const seen = new Set(base.map(x => x.symbol));
+      return base.concat(US_SCAN_EXTRA.filter(x => !seen.has(x.symbol)));
+    }
+    return base;
+  }
+
+  // 把日線變成一組可以拿去測條件的數字
+  function usScanCtx(item, bars) {
+    const sig = usTechSignals(bars);
+    if (!sig) return null;
+    const price = sig.last;
+    if (!(price > 0)) return null;
+    const lv = usPriceLevels(price, null, sig, bars);
+    const vols = bars.map(b => Number(b.volume) || 0);
+    const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+    const v5 = avg(vols.slice(-5)), v20 = avg(vols.slice(-20));
+    const sw60 = usSwing(bars, 60);
+    const pctB = (sig.boll && sig.boll.upper > sig.boll.lower)
+      ? (price - sig.boll.lower) / (sig.boll.upper - sig.boll.lower) * 100 : null;
+    return {
+      symbol: item.symbol, name: item.name || item.symbol, zh: item.zh || '',
+      sig, bars, price, lv, sw60, pctB,
+      volRatio: v20 > 0 ? v5 / v20 : null,
+      fromHigh60: (sw60 && sw60.high > 0) ? (price - sw60.high) / sw60.high * 100 : null,
+      lastDate: bars[bars.length - 1] && bars[bars.length - 1].time
+    };
+  }
+
+  async function runUsScan() {
+    if (usScanRunning) return;
+    const universe = usScanUniverse();
+    if (!universe.length) { showToast('掃描範圍是空的'); return; }
+    usScanRunning = true;
+    const btn = document.getElementById('usScanRunBtn');
+    const prog = document.getElementById('usScanProgress');
+    const bar = document.getElementById('usScanBar');
+    const txt = document.getElementById('usScanProgressText');
+    if (btn) { btn.disabled = true; btn.textContent = '掃描中…'; }
+    if (prog) prog.style.display = '';
+    const rows = [];
+    let done = 0, failed = 0, cached = 0;
+    const now = Date.now();
+    const step = (sym) => {
+      done++;
+      if (bar) bar.style.width = (done / universe.length * 100).toFixed(1) + '%';
+      if (txt) txt.textContent = `${done} / ${universe.length}　剛完成 ${sym}${cached ? `　（${cached} 檔用快取）` : ''}${failed ? `　${failed} 檔查無資料` : ''}`;
+    };
+    // 併發 5：FinMind 免費層打太快會被擋
+    const queue = universe.slice();
+    const worker = async () => {
+      while (queue.length) {
+        const item = queue.shift();
+        try {
+          const c = usScanCache[item.symbol];
+          let bars;
+          if (c && (now - c.ts) < US_SCAN_CACHE_TTL) { bars = c.bars; cached++; }
+          else { bars = await fetchUsOhlc(item.symbol); usScanCache[item.symbol] = { bars, ts: Date.now() }; }
+          const ctx = usScanCtx(item, bars);
+          if (ctx) rows.push(ctx); else failed++;
+        } catch (e) { failed++; }
+        step(item.symbol);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(5, universe.length) }, worker));
+    usScanRows = rows;
+    usScanRunning = false;
+    if (btn) { btn.disabled = false; btn.textContent = '▶ 重新掃描'; }
+    if (prog) prog.style.display = 'none';
+    renderUsScanResults();
+    showToast(`🎯 掃描完成 · ${rows.length} 檔有資料${failed ? ` / ${failed} 檔查無` : ''}`);
+  }
+
+  function usScanEvaluate(ctx) {
+    const matched = [], missed = [];
+    US_SCAN_CONDS.forEach(c => {
+      if (!usScanPicked.includes(c.key)) return;
+      let ok = false;
+      try { ok = !!c.test(ctx); } catch (e) { ok = false; }
+      (ok ? matched : missed).push(c);
+    });
+    return { matched, missed };
+  }
+
+  function renderUsScanResults() {
+    const box = document.getElementById('usScanResults');
+    if (!box) return;
+    if (!usScanRows.length) {
+      box.innerHTML = `<div style="text-align:center; padding:28px 10px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
+        <div style="font-family:var(--serif); font-size:17px; color:var(--ink-secondary); margin-bottom:6px;">還沒掃描</div>
+        勾好上面的技術條件，選好範圍，按右邊「▶ 開始掃描」。<br>
+        第一次要抓資料（40 檔大約幾秒到十幾秒），<strong>之後改條件重新排名是即時的</strong>。
+      </div>`;
+      return;
+    }
+    if (!usScanPicked.length) {
+      box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px;">請至少勾一個技術條件。</div>`;
+      return;
+    }
+    const minSel = document.getElementById('usScanMinMatch')?.value || '3';
+    const need = minSel === 'all' ? usScanPicked.length : Number(minSel);
+    const scored = usScanRows.map(ctx => ({ ctx, ...usScanEvaluate(ctx) }))
+      .filter(r => r.matched.length >= Math.min(need, usScanPicked.length))
+      .sort((a, b) => b.matched.length - a.matched.length || b.ctx.sig.score - a.ctx.sig.score);
+    if (!scored.length) {
+      box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
+        掃了 ${usScanRows.length} 檔，<strong>沒有一檔符合到 ${need} 項</strong>。<br>
+        把「至少符合」調低，或少勾幾個條件試試。<br>
+        <span style="font-size:11.5px;">（找不到也是一種資訊——代表目前這批股票裡沒有符合你設定的機會。）</span>
+      </div>`;
+      return;
+    }
+    const f = v => '$' + Number(v).toFixed(2);
+    box.innerHTML = `
+      <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px;">
+        共 ${scored.length} 檔符合（掃了 ${usScanRows.length} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序
+      </div>` + scored.map((r, i) => {
+      const c = r.ctx;
+      const stop = c.lv && c.lv.stops[0];
+      const sup = c.lv && c.lv.supports[0];
+      const res = c.lv && c.lv.resists[0];
+      const pct = r.matched.length / usScanPicked.length * 100;
+      const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
+      return `
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid ${pct >= 80 ? 'var(--accent)' : pct >= 60 ? 'var(--accent-deep)' : 'var(--line-strong)'}; border-radius:4px; padding:12px 14px; margin-bottom:8px;">
+          <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+            <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); min-width:20px;">#${i + 1}</span>
+            <span style="font-family:var(--mono); font-size:16px; color:var(--accent); font-weight:600;">${escape(c.symbol)}</span>
+            ${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? `<span style="font-family:var(--serif); font-size:14px; color:var(--ink-primary);">${escape(c.zh || c.name)}</span>` : ''}
+            <span class="${cls}" style="font-family:var(--mono); font-size:11px;">${escape(c.sig.overall)}</span>
+            <span style="margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--accent);">符合 ${r.matched.length}/${usScanPicked.length}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; margin-bottom:8px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目前價（收盤）</div>
+              <div style="font-family:var(--serif); font-size:15px;">${f(c.price)}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損參考</div>
+              <div style="font-family:var(--serif); font-size:15px; color:var(--danger);">${stop ? f(stop.v) : '—'}</div>
+              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? stop.pct.toFixed(1) + '%' : ''}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目標（賠率2:1）</div>
+              <div style="font-family:var(--serif); font-size:15px; color:var(--accent);">${stop ? f(stop.target2r) : '—'}</div>
+              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? '+' + stop.target2rPct.toFixed(1) + '%' : ''}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">下方支撐 / 上方壓力</div>
+              <div style="font-family:var(--mono); font-size:12px;">${sup ? f(sup.v) : '—'} / ${res ? f(res.v) : '—'}</div>
+            </div>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
+            ${r.matched.map(m => `<span style="font-family:var(--mono); font-size:10px; color:var(--accent); border:1px solid var(--accent-deep); border-radius:2px; padding:2px 7px;">✓ ${escape(m.name)}</span>`).join('')}
+            ${r.missed.map(m => `<span style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); border:1px solid var(--line); border-radius:2px; padding:2px 7px;">✕ ${escape(m.name)}</span>`).join('')}
+          </div>
+          <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; padding-top:7px; border-top:1px solid var(--line);">
+            📖 ${escape(c.sig.summary || '')}
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="closeUsScanModal(); openUsAnalysis('${escape(c.symbol)}');">📊 詳細分析</button>
+            <span style="margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); align-self:center;">資料至 ${escape(c.lastDate || '')}</span>
+          </div>
+        </div>`;
+    }).join('');
   }
 
   // ============================================================
