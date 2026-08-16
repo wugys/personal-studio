@@ -3210,8 +3210,59 @@
       <input type="file" id="usStockImport" accept=".json" style="display:none" onchange="importUsStockData(event)">
     </div>
 
+    <!-- 已購買 / 自選股 兩個活頁（與台股同一套） -->
+    <div class="travel-tabs" style="margin-bottom:14px;">
+      <button class="travel-tab active" data-us-tab="own" onclick="setUsTab('own')">◆ 已購買股票</button>
+      <button class="travel-tab" data-us-tab="watch" onclick="setUsTab('watch')">◇ 自選股</button>
+      <span style="margin-left:auto; display:flex; align-items:center; gap:6px; padding-right:4px;">
+        <button class="btn btn-sm btn-primary" id="usAddWatchBtn" onclick="openUsWatchAdd()" style="display:none;">＋ 新增自選股</button>
+      </span>
+    </div>
+
     <!-- 持股列表 -->
     <div id="usHoldingsGrid" class="opp-grid"></div>
+    <!-- 自選股列表 -->
+    <div id="usWatchGrid" style="display:none;"></div>
+  </div>
+
+  <!-- 新增自選股（美股） -->
+  <div class="modal-backdrop" id="usWatchAddModal" style="z-index:2150;">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-head">
+        <h2>＋ 新增 <em>自選股</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeUsWatchAdd()" title="關閉" aria-label="關閉">✕</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:14px;">
+        還沒買、但想放在名單裡看的美股。設了停損／停利之後，<strong>價格碰到時首頁會提醒你</strong>。
+      </div>
+      <form onsubmit="return saveUsWatchAdd(event)">
+        <div class="form-group" style="position:relative;">
+          <label class="form-label">股票代號或名稱</label>
+          <input type="text" class="form-input" id="usWatchSymbol" placeholder="AAPL / 蘋果 / 輝達" autocomplete="off"
+                 oninput="onUsWatchSearch(this.value)" onfocus="onUsWatchSearch(this.value)"
+                 onblur="setTimeout(()=>{const e=document.getElementById('usWatchResults'); if(e) e.style.display='none';},200)" required>
+          <div class="stock-search-results" id="usWatchResults" style="display:none;"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">停損價（跌破提醒 · 可留空）</label>
+            <input type="number" step="any" class="form-input" id="usWatchLow" placeholder="例如 135">
+          </div>
+          <div class="form-group">
+            <label class="form-label">停利價（達標提醒 · 可留空）</label>
+            <input type="number" step="any" class="form-input" id="usWatchHigh" placeholder="例如 160">
+          </div>
+        </div>
+        <div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7; margin-bottom:4px;">
+          價位可以先留空，之後打開這檔的分析畫面按右上角「＋ 加入觀察」會自動帶入系統算的停損與 2:1 目標。
+          現價要有 Finnhub 金鑰才抓得到。
+        </div>
+        <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+          <button type="button" class="btn" onclick="closeUsWatchAdd()">取消</button>
+          <button type="submit" class="btn btn-primary">加入自選股</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- ============ Finnhub 即時報價金鑰 Modal ============ -->
@@ -8364,7 +8415,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.6 · κ</div>
+    <div>v 10.7 · κ</div>
   </footer>
 </div>
 
@@ -13369,6 +13420,187 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
         <div class="stat-sub">REALIZED · ALL · TIME</div>
       </div>
     `;
+  }
+
+  // ===== 美股：已購買 / 自選股（與台股共用同一份名單 analysis_log_v1）=====
+  let usTab = 'own';
+  function setUsTab(tab) {
+    usTab = tab === 'watch' ? 'watch' : 'own';
+    document.querySelectorAll('[data-us-tab]').forEach(b =>
+      b.classList.toggle('active', b.getAttribute('data-us-tab') === usTab));
+    document.getElementById('usHoldingsGrid').style.display = usTab === 'own' ? '' : 'none';
+    document.getElementById('usWatchGrid').style.display = usTab === 'watch' ? '' : 'none';
+    const add = document.getElementById('usAddWatchBtn');
+    if (add) add.style.display = usTab === 'watch' ? '' : 'none';
+    if (usTab === 'watch') renderUsWatchList();
+  }
+  // 美股自選股 = 記錄本裡「不是台股」的那些（台股用代號或 market 判斷，剩下的就是美股）
+  function usWatchSymbols() {
+    const out = [];
+    Object.keys(alogAll || {}).forEach(sym => {
+      const b = alogAll[sym];
+      if (!b) return;
+      const isTw = b.market === 'tw' || (!b.market && isTwCode(sym));
+      if (isTw) return;
+      const p = b.plan || {};
+      if (!(p.low > 0 || p.high > 0 || p.price > 0) && !(b.entries && b.entries.length) && !b.watch) return;
+      out.push(sym);
+    });
+    return out.sort();
+  }
+
+  async function renderUsWatchList() {
+    const grid = document.getElementById('usWatchGrid');
+    if (!grid) return;
+    if (!alogAll || !Object.keys(alogAll).length) { try { await loadAlog(); } catch (e) {} }
+    const syms = usWatchSymbols();
+    if (!syms.length) {
+      grid.innerHTML = `<div class="empty-state"><span class="glyph">◇</span><h3>自選股是空的</h3>
+        <p>還沒買、但想追蹤的美股放這裡。<br>
+        按右上「＋ 新增自選股」，或從「📈 看盤查股」的分析畫面右上角、「🎯 機會掃描」按「＋ 加入觀察」。</p></div>`;
+      return;
+    }
+    const held = {};
+    (usHoldings || []).forEach(h => { if (Number(h.shares) > 0) held[h.symbol] = h; });
+    const money = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+    grid.className = 'opp-grid';
+    grid.innerHTML = syms.map(sym => {
+      const b = alogAll[sym];
+      const p = b.plan || {};
+      const zh = (typeof US_STOCKS !== 'undefined' ? US_STOCKS.find(s => s.symbol === sym) : null);
+      const name = b.name || (zh && (zh.zh || zh.name)) || '';
+      const own = held[sym];
+      const px = own ? Number(own.currentPrice) : Number(b.lastPrice);
+      const stale = !own && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
+      let state = null;
+      if (px > 0) {
+        if (p.low > 0 && px <= p.low) state = { t: '已跌破停損', c: 'var(--danger)' };
+        else if (p.high > 0 && px >= p.high) state = { t: '已達停利', c: 'var(--accent)' };
+        else if (p.low > 0 && Number(((1 - p.low / px) * 100).toFixed(1)) <= 3) state = { t: '快碰到停損', c: 'var(--accent-warm)' };
+        else if (p.high > 0 && Number(((p.high / px - 1) * 100).toFixed(1)) <= 3) state = { t: '快到停利', c: 'var(--accent-warm)' };
+      }
+      let rr = null;
+      if (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price) rr = ((p.high - p.price) / (p.price - p.low)).toFixed(2);
+      const notes = (b.entries || []).length;
+      return `
+        <div class="opp-card" style="${state ? `border-left:2px solid ${state.c};` : ''}">
+          <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
+            <span style="font-family:var(--mono); font-size:17px; color:var(--accent); font-weight:600;">${escape(sym)}</span>
+            ${name ? `<span style="font-family:var(--serif); font-size:15px;">${escape(name)}</span>` : ''}
+            ${own ? '<span style="font-family:var(--mono); font-size:9.5px; color:var(--bg-base); background:var(--accent-deep); border-radius:2px; padding:2px 7px;">也持有中</span>' : ''}
+            ${state ? `<span style="margin-left:auto; font-family:var(--mono); font-size:11px; color:${state.c};">${state.t}</span>` : ''}
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:9px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損</div>
+              <div style="font-family:var(--serif); font-size:14px; color:var(--danger);">${money(p.low)}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">現價${stale ? '（' + stale + '）' : ''}</div>
+              <div style="font-family:var(--serif); font-size:14px;">${px > 0 ? money(px) : '<span style="color:var(--ink-muted); font-size:12px;">需金鑰</span>'}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停利</div>
+              <div style="font-family:var(--serif); font-size:14px; color:var(--accent);">${money(p.high)}</div>
+            </div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:9px;">
+            ${rr ? `賠率 <span style="color:${Number(rr) >= 2 ? 'var(--accent)' : 'var(--danger)'};">1:${rr}</span> · ` : ''}分析記錄 ${notes} 筆
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="openUsAnalysis('${escape(sym)}')">📊 分析</button>
+            ${own ? '' : `<button class="btn btn-sm" onclick="openUsHoldingModalFor('${escape(sym)}','${escape(name)}')" title="已經買了，轉成持股">＋ 我買了</button>`}
+            <button data-tap class="btn btn-sm" onclick="removeUsWatch('${escape(sym)}')" title="從自選股移除" style="margin-left:auto;">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+  function openUsHoldingModalFor(sym, name) {
+    openUsHoldingModal();
+    setTimeout(() => {
+      const s = document.getElementById('usHoldingSymbol'); if (s) s.value = sym;
+      const n = document.getElementById('usHoldingName'); if (n && name) n.value = name;
+    }, 60);
+  }
+  async function removeUsWatch(sym) {
+    await loadAlog();
+    const b = alogAll[sym];
+    if (!b) return;
+    const notes = (b.entries || []).length;
+    if (!confirm(`把 ${sym} 從自選股移除？\n\n· 停損／停利設定會清掉，首頁不再提醒這一檔\n· ${notes ? `先前的 ${notes} 筆分析記錄會保留` : '這檔沒有分析記錄'}`)) return;
+    b.plan = { price: null, high: null, low: null, updatedAt: 0 };
+    b.watch = false;
+    if (!notes) delete alogAll[sym];
+    await saveAlog();
+    showToast(`已把 ${sym} 從自選股移除`);
+    renderUsWatchList();
+    try { renderWatchHeadBtn(); } catch (e) {}
+    try { refreshStudioAlerts(); } catch (e) {}
+  }
+
+  function openUsWatchAdd() {
+    ['usWatchSymbol', 'usWatchLow', 'usWatchHigh'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+    document.getElementById('usWatchAddModal').classList.add('active');
+    setTimeout(() => document.getElementById('usWatchSymbol').focus(), 80);
+  }
+  function closeUsWatchAdd() { document.getElementById('usWatchAddModal').classList.remove('active'); }
+  function onUsWatchSearch(q) {
+    const box = document.getElementById('usWatchResults');
+    if (!box) return;
+    const s = String(q || '').trim();
+    if (!s) { box.style.display = 'none'; return; }
+    const up = s.toUpperCase();
+    const list = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).filter(x =>
+      x.symbol.includes(up) || (x.name || '').toUpperCase().includes(up) || (x.zh || '').includes(s)).slice(0, 8);
+    if (!list.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = list.map(x => `
+      <div class="stock-search-item" onclick="pickUsWatch('${escape(x.symbol)}')">
+        <span style="font-family:var(--mono); color:var(--accent);">${escape(x.symbol)}</span>
+        <span style="margin-left:8px;">${escape(x.zh || x.name || '')}</span>
+      </div>`).join('');
+  }
+  function pickUsWatch(sym) {
+    document.getElementById('usWatchSymbol').value = sym;
+    document.getElementById('usWatchResults').style.display = 'none';
+  }
+  async function saveUsWatchAdd(e) {
+    e.preventDefault();
+    const raw = document.getElementById('usWatchSymbol').value.trim();
+    let sym = raw.toUpperCase();
+    // 打中文名的話查回代號
+    if (!/^[A-Z][A-Z.\-]{0,9}$/.test(sym)) {
+      const hit = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.zh === raw || (x.zh || '').includes(raw) || (x.name || '') === raw);
+      if (hit) sym = hit.symbol;
+    }
+    // ⚠ 台股的判斷要放在格式檢查「之前」。台股代號是純數字，一定通不過美股的
+    //   格式檢查，若順序顛倒就永遠只會看到籠統的「請輸入正確的美股代號」，
+    //   而「這是台股，請到台股個股加」才是使用者真正需要的那句話。
+    if (isTwCode(sym)) { showToast('這看起來是台股代號，請到「台股個股」的自選股加'); return false; }
+    if (!/^[A-Z][A-Z.\-]{0,9}$/.test(sym)) { showToast('請輸入正確的美股代號（例如 AAPL）'); return false; }
+    const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
+    const low = num('usWatchLow'), high = num('usWatchHigh');
+    if (low != null && high != null && low >= high) { showToast('停損價要比停利價低'); return false; }
+
+    await loadAlog();
+    const b = alogBook(sym);
+    b.market = 'us';
+    b.watch = true;
+    if (!b.name) {
+      const hit = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === sym);
+      b.name = (hit && (hit.zh || hit.name)) || sym;
+    }
+    const had = b.plan && (b.plan.low != null || b.plan.high != null);
+    if (low != null || high != null || !had) {
+      b.plan = { price: b.plan && b.plan.price != null ? b.plan.price : null, high, low, updatedAt: Date.now() };
+    }
+    await saveAlog();
+    closeUsWatchAdd();
+    showToast(`✓ ${sym} 已加入自選股`);
+    setUsTab('watch');
+    try { refreshStudioAlerts(); } catch (e2) {}
+    return false;
   }
 
   function renderUsHoldings() {
@@ -23680,6 +23912,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     renderWatchHeadBtn();
     renderPlanBadge('usPlanBadge', sym, market);
     renderPlanBadge('twPlanBadge', sym, market);
+    try { if (usTab === 'watch') renderUsWatchList(); if (twTab === 'watch') renderTwWatchList(); } catch (e) {}
     try { refreshStudioAlerts(); } catch (e) {}
   }
 
@@ -23971,6 +24204,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       : `✓ ${sym} 已加入觀察 · 停損 ${scanCur()}${b.plan.low ?? '—'} / 目標 ${scanCur()}${b.plan.high ?? '—'}`);
     // 重畫掃描結果，讓按鈕變成「已在觀察中」（renderUsScanResults 自己會分派策略／條件模式）
     try { renderUsScanResults(); } catch (e) {}
+    try { if (usTab === 'watch') renderUsWatchList(); if (twTab === 'watch') renderTwWatchList(); } catch (e) {}
     try { refreshStudioAlerts(); } catch (e) {}
   }
   // 這檔已經在觀察名單裡了嗎（有記錄或有設過價位都算）
