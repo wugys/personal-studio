@@ -6699,6 +6699,25 @@
     </div>
   </div>
 
+  <!-- 資料健檢：找出會讓數字算錯的問題 -->
+  <div class="modal-backdrop" id="healthModal" style="z-index:2150;">
+    <div class="modal" style="max-width: 880px;">
+      <div class="modal-head">
+        <h2>🩺 資料 <em>健檢</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeHealthCheck()" title="關閉" aria-label="關閉">✕</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:14px;">
+        總資產、資產配置、挑戰目標、停損提醒全部建立在你輸入的資料上。
+        這裡把<strong>會讓數字算錯</strong>的地方找出來——例如一個沒填的現價，就會讓總資產少算一大塊，而畫面上完全看不出來。
+      </div>
+      <div id="healthBody"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="openHealthCheck()">↻ 重新檢查</button>
+        <button class="btn" onclick="closeHealthCheck()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 年度交易總結：每一年買了多少賣了多少、實際落袋多少、繳了多少費稅 -->
   <div class="modal-backdrop" id="annualModal" style="z-index:2150;">
     <div class="modal" style="max-width: 1020px;">
@@ -7012,6 +7031,7 @@
       </div>
       <div class="api-actions">
         <button class="btn btn-sm" onclick="openAnnualReview()">📅 年度總結</button>
+        <button class="btn btn-sm" onclick="openHealthCheck()">🩺 資料健檢</button>
         <button class="btn btn-sm" onclick="openDivCalendar()">💰 配息行事曆</button>
         <button class="btn" onclick="loadCashflow()">↻ 重新整理</button>
       </div>
@@ -8250,7 +8270,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.2 · κ</div>
+    <div>v 10.3 · κ</div>
   </footer>
 </div>
 
@@ -8937,6 +8957,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '⚡', label: '一鍵更新全部現價（台股／美股／加密／匯率）', action: 'refreshAllPrices()' });
     items.push({ icon: '💰', label: '配息行事曆（哪天除息、能領多少）', action: 'openDivCalendar()' });
     items.push({ icon: '📅', label: '年度交易總結（今年賺賠、費稅、勝率）', action: 'openAnnualReview()' });
+    items.push({ icon: '🩺', label: '資料健檢（找出會讓數字算錯的地方）', action: 'openHealthCheck()' });
     items.push({ icon: '📋', label: '我的下單計畫（看誰踩到停損／停利）', action: 'openPlanWatch()' });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
@@ -23388,6 +23409,192 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     renderPlanBadge('twPlanBadge', alogSymbol, alogMarket);
     renderWatchHeadBtn();
     showToast('✓ 下單決定已儲存');
+  }
+
+  // ===== 資料健檢 =====
+  // 總資產、資產配置、挑戰目標、下單提醒……全部建立在使用者輸入的資料上，
+  // 但沒有任何東西在檢查那些資料合不合理。一個沒填的現價會讓總資產少算幾十萬，
+  // 而畫面上完全看不出來——它只是顯示一個比較小的數字。
+  // 這裡把「會讓數字算錯」的情況一次找出來，每一條都要說清楚：哪裡錯、會怎樣、去哪修。
+  const HEALTH_LEVEL = { bad: 0, warn: 1, info: 2 };
+
+  async function buildHealthCheck() {
+    const F = [];
+    const add = (level, title, detail, view, count) => F.push({ level, title, detail, view, count });
+    const fx = cashflowFx.usdTwd || 32;
+
+    // 先把所有模組的持股與交易讀進來（一次讀完，後面幾個檢查共用）
+    const mods = [];
+    for (const s of CF_SOURCES) {
+      const holdings = await readJson(s.hKey, []);
+      const txns = await readJson(s.tKey, []);
+      mods.push({ s, holdings: Array.isArray(holdings) ? holdings : [], txns: Array.isArray(txns) ? txns : [] });
+    }
+
+    // 1) 有持股但沒填現價 → 現值算成 0，總資產直接少一塊
+    //    ⚠ 不動產例外：它的 currentPrice 是 reSyncDerived 算出來的淨值，不是使用者填的
+    const noPrice = [];
+    mods.forEach(({ s, holdings }) => {
+      if (s.key === 'rental' || s.key === 'commercial') return;
+      holdings.forEach(h => {
+        if (!(Number(h.shares) > 0)) return;
+        if (!(Number(h.currentPrice) > 0)) noPrice.push(`${h.symbol || h.name || '?'}（${s.name}）`);
+      });
+    });
+    if (noPrice.length) {
+      add('bad', `${noPrice.length} 檔有持股但沒填現價`,
+        `這幾檔的現值會被當成 <strong>0</strong>，總資產、報酬率、資產配置全部少算：${escape(noPrice.slice(0, 12).join('、'))}${noPrice.length > 12 ? ` …等 ${noPrice.length} 檔` : ''}。<br>按「⚡ 一鍵更新全部現價」多半就補起來了；基金、貴金屬、外幣要自己填。`,
+        'cashflowView', noPrice.length);
+    }
+
+    // 2) 同一個代號出現在兩個以上的模組 → 很可能被重複計算
+    const where = {};
+    mods.forEach(({ s, holdings }) => holdings.forEach(h => {
+      const sym = String(h.symbol || '').trim().toUpperCase();
+      if (!sym || !(Number(h.shares) > 0)) return;
+      (where[sym] = where[sym] || new Set()).add(s.name);
+    }));
+    const dup = Object.entries(where).filter(([, set]) => set.size > 1);
+    if (dup.length) {
+      add('warn', `${dup.length} 個代號同時出現在多個模組`,
+        `${dup.map(([sym, set]) => `<strong>${escape(sym)}</strong>（${escape([...set].join(' + '))}）`).join('、')}<br>如果是同一筆部位被記了兩次，總資產會<strong>多算</strong>。分開記（例如一部分放台股、一部分放 ETF）則沒問題。`,
+        'cashflowView', dup.length);
+    }
+
+    // 3) 賣出找不到對應的買進成本 → 已實現損益被高估（年度總結那邊也會警告）
+    let orphan = 0; const orphanSyms = new Set();
+    mods.forEach(({ txns }) => {
+      const st = {};
+      txns.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(t => {
+        const sym = String(t.symbol || '').trim(); if (!sym) return;
+        st[sym] = st[sym] || 0;
+        if (t.type === 'buy' || t.type === 'stock_div') st[sym] += Number(t.shares) || 0;
+        else if (t.type === 'sell') {
+          if (!(st[sym] > 0)) { orphan++; orphanSyms.add(sym); }
+          st[sym] = Math.max(0, st[sym] - (Number(t.shares) || 0));
+        }
+      });
+    });
+    if (orphan) {
+      add('warn', `${orphan} 筆賣出找不到買進成本`,
+        `涉及 ${escape([...orphanSyms].slice(0, 10).join('、'))}。這幾筆的<strong>已實現損益會被高估</strong>（整筆賣出金額都被當成賺的）。<br>通常是用「新增持股」直接填股數、沒補上當初的買進交易。把買進補記一筆就準了。`,
+        'cashflowView', orphan);
+    }
+
+    // 4) 交易記錄沒有日期 → 年度總結會歸到「未知」、排序也會亂掉
+    let noDate = 0;
+    mods.forEach(({ txns }) => txns.forEach(t => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(t.date || ''))) noDate++; }));
+    if (noDate) add('warn', `${noDate} 筆交易沒有正確的日期`,
+      '年度交易總結會把它們歸到「未知」年度，成本推算的先後順序也可能算錯。', 'cashflowView', noDate);
+
+    // 5) 下單計畫填反了（最低 ≥ 最高，或現價不在中間）
+    try {
+      const books = await readJson('analysis_log_v1', {});
+      const wrong = [];
+      Object.keys(books || {}).forEach(sym => {
+        const p = books[sym] && books[sym].plan; if (!p) return;
+        const lo = Number(p.low), hi = Number(p.high), px = Number(p.price);
+        if (lo > 0 && hi > 0 && lo >= hi) wrong.push(`${sym}（最低 ${lo} ≥ 最高 ${hi}）`);
+        else if (px > 0 && lo > 0 && hi > 0 && !(lo < px && px < hi)) wrong.push(`${sym}（現價 ${px} 不在 ${lo}~${hi} 之間）`);
+      });
+      if (wrong.length) add('bad', `${wrong.length} 檔的下單價位填反了`,
+        `${escape(wrong.slice(0, 8).join('、'))}<br>停損（最低）要比現價低、停利（最高）要比現價高，填反的話首頁提醒會一直誤報。`,
+        null, wrong.length);
+    } catch (e) {}
+
+    // 6) 現價多久沒更新
+    try {
+      const info = await readJson('studio_price_refresh_v1', null);
+      const anyHolding = mods.some(m => m.holdings.some(h => Number(h.shares) > 0));
+      if (anyHolding) {
+        const days = info && info.at ? Math.floor((Date.now() - info.at) / 86400000) : null;
+        if (days == null) add('warn', '現價從來沒有自動更新過', '所有損益與停損判斷都用你手填的數字。按一次「⚡ 一鍵更新全部現價」就好。', 'cashflowView');
+        else if (days >= 7) add('warn', `現價已經 ${days} 天沒更新`, '損益、資產配置、停損提醒都會失準。', 'cashflowView');
+      }
+    } catch (e) {}
+
+    // 7) 定期定額計畫指到不存在的標的 → 按「記錄扣款」會寫不進去
+    try {
+      const plans = await readJson('dca_plans_v1', []);
+      const bad = [];
+      (Array.isArray(plans) ? plans : []).forEach(p => {
+        if (!p || p.paused) return;
+        const t = DCA_TARGETS[p.target];
+        if (!t) { bad.push(`${p.name || p.symbol || '?'}（找不到「${p.target}」這個模組）`); return; }
+        if (!p.symbol) bad.push(`${p.name || '?'}（沒有填標的代號）`);
+      });
+      if (bad.length) add('bad', `${bad.length} 個定期定額計畫設定不完整`,
+        `${escape(bad.join('、'))}<br>按「✓ 記錄扣款」時會寫不進對應的資產模組。`, 'dcaView', bad.length);
+    } catch (e) {}
+
+    // 8) 備份
+    try {
+      const last = await readJson('studio_last_backup_v1', null);
+      const days = last && last.at ? Math.floor((Date.now() - last.at) / 86400000) : null;
+      const bytes = storageUsedBytes();
+      if (days == null) add('bad', '從來沒有備份過',
+        `資料只存在這台裝置的瀏覽器裡（目前 ${Math.round(bytes / 1024)} KB）。<strong>清快取、換手機、瀏覽器出問題就全沒了。</strong>`, null, null);
+      else if (days >= 30) add('warn', `${days} 天沒備份了`, '這段期間新增的資料都沒有副本。', null);
+      if (bytes > 4 * 1024 * 1024) add('bad', '儲存空間快滿了',
+        `已用 ${Math.round(bytes / 1024)} KB／約 5 MB 上限。<strong>滿了會存不進去。</strong>先備份，再到備份頁按「🧹 清理快取」。`, null);
+    } catch (e) {}
+
+    // 9) 有持股但完全沒有交易記錄 → 年度總結與已實現損益會是空的
+    const noTxn = mods.filter(m => m.holdings.some(h => Number(h.shares) > 0) && m.txns.length === 0);
+    if (noTxn.length) add('info', `${noTxn.length} 個模組有持股但沒有交易記錄`,
+      `${escape(noTxn.map(m => m.s.name).join('、'))}<br>不影響總資產，但「年度交易總結」與「已實現損益」算不出這幾個模組的東西。想要完整記錄的話，把買進補記一筆。`,
+      'cashflowView', noTxn.length);
+
+    F.sort((a, b) => HEALTH_LEVEL[a.level] - HEALTH_LEVEL[b.level]);
+    return F;
+  }
+
+  let healthData = null;
+  async function openHealthCheck() {
+    document.getElementById('healthModal').classList.add('active');
+    document.getElementById('healthBody').innerHTML =
+      '<div style="padding:22px; text-align:center; color:var(--ink-tertiary); font-size:12px;">檢查中…</div>';
+    try { await loadCashflowFx(); healthData = await buildHealthCheck(); }
+    catch (e) { healthData = [{ level: 'warn', title: '檢查時發生問題', detail: escape(String(e && e.message || e)), view: null }]; }
+    renderHealthCheck();
+  }
+  function closeHealthCheck() { document.getElementById('healthModal').classList.remove('active'); }
+
+  function renderHealthCheck() {
+    const F = healthData || [];
+    const body = document.getElementById('healthBody');
+    if (!F.length) {
+      body.innerHTML = `<div style="padding:30px 20px; text-align:center; border:1px dashed var(--line); border-radius:4px; line-height:2;">
+        <div style="font-family:var(--serif); font-size:22px; color:var(--accent); margin-bottom:6px;">✓ 資料看起來都正常</div>
+        <div style="font-size:12.5px; color:var(--ink-secondary);">沒有找到會讓數字算錯的問題。</div>
+        <div style="font-size:11.5px; color:var(--ink-tertiary); margin-top:8px;">
+          檢查了：沒填現價的持股、重複記錄的代號、找不到成本的賣出、缺日期的交易、<br>
+          填反的下單價位、現價新舊、定期定額設定、備份狀態、儲存空間。
+        </div>
+      </div>`;
+      return;
+    }
+    const c = { bad: 'var(--danger)', warn: 'var(--accent-warm)', info: 'var(--ink-tertiary)' };
+    const icon = { bad: '✕', warn: '⚠', info: 'ⓘ' };
+    const label = { bad: '要處理', warn: '注意', info: '參考' };
+    const nBad = F.filter(f => f.level === 'bad').length;
+    body.innerHTML = `
+      <div style="font-size:12.5px; color:var(--ink-secondary); margin-bottom:12px;">
+        找到 <strong style="color:${nBad ? 'var(--danger)' : 'var(--accent-warm)'};">${F.length}</strong> 件${nBad ? `，其中 <strong style="color:var(--danger);">${nBad} 件會讓數字算錯</strong>` : ''}。
+      </div>
+      ${F.map(f => `
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid ${c[f.level]}; border-radius:4px; padding:12px 14px; margin-bottom:8px;">
+          <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+            <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:${c[f.level]};">${icon[f.level]} ${label[f.level]}</span>
+            <span style="font-family:var(--serif); font-size:15px; color:var(--ink-primary);">${escape(f.title)}</span>
+            ${f.view ? `<button class="btn btn-sm" style="margin-left:auto;" onclick="closeHealthCheck(); showView('${escape(f.view)}')">前往 →</button>` : ''}
+          </div>
+          <div style="font-size:12px; color:var(--ink-secondary); line-height:1.75;">${f.detail}</div>
+        </div>`).join('')}
+      <div style="margin-top:10px; font-size:11px; color:var(--ink-tertiary); line-height:1.8;">
+        這裡只找「<strong>會讓數字算錯</strong>」的問題，不會幫你判斷投資決策好不好。
+        每一條都說明了會造成什麼影響，你自己決定要不要修。
+      </div>`;
   }
 
   // ===== 掃描結果 →「加入觀察」=====
