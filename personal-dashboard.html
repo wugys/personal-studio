@@ -8238,7 +8238,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.9 · ι</div>
+    <div>v 10.0 · κ</div>
   </footer>
 </div>
 
@@ -22702,7 +22702,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const oldTxt = btns.map(b => b.textContent);
     btns.forEach(b => { b.disabled = true; b.textContent = '⚡ 更新中…'; });
 
-    const log = { tw: { ok: 0, fail: 0 }, us: { ok: 0, fail: 0, skip: 0 }, crypto: { ok: 0, fail: 0 }, fx: { ok: 0, fail: 0 }, changed: [], firstFill: [] };
+    const log = { tw: { ok: 0, fail: 0 }, us: { ok: 0, fail: 0, skip: 0 }, crypto: { ok: 0, fail: 0 }, fx: { ok: 0, fail: 0 }, watch: { ok: 0, fail: 0, skip: 0 }, changed: [], firstFill: [] };
     const notes = [];
     try {
       // 0) 匯率先更新（外幣存款要用，儀表板換算也要用）
@@ -22732,7 +22732,18 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           jobs.push({ t, h, sym, kind });
         });
       }
-      if (!jobs.length) { if (!silent) showToast('目前沒有任何持股可以更新'); return; }
+      // ⚠ 沒有持股不代表沒事做——可能只有觀察股（分析記錄裡設了價位但沒買）。
+      //    這裡不能直接 return，否則只做觀察的人永遠不會更新到價格。
+      if (!jobs.length) {
+        let anyWatch = false;
+        try {
+          if (!alogAll || !Object.keys(alogAll).length) await loadAlog();
+          anyWatch = Object.keys(alogAll).some(s => {
+            const p = alogAll[s] && alogAll[s].plan; return !!(p && (p.low > 0 || p.high > 0));
+          });
+        } catch (e) {}
+        if (!anyWatch) { if (!silent) showToast('目前沒有任何持股或觀察股可以更新'); return; }
+      }
 
       const setPx = (job, price) => {
         const before = Number(job.h.currentPrice) || 0;
@@ -22820,6 +22831,45 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         }
       }
 
+      // 5b) 觀察股（分析記錄裡設了價位、但自己沒持有的）也要更新。
+      //     不更新的話，v9.4 的下單計畫看守會拿「上次開分析畫面時的舊價」去判斷有沒有跌破停損——
+      //     那等於用過期資料在報警。這些股票不在任何模組的持股裡，所以要獨立跑一趟。
+      try {
+        if (!alogAll || !Object.keys(alogAll).length) await loadAlog();
+        const heldSyms = new Set(jobs.map(j => j.sym.toUpperCase()));
+        const watchJobs = Object.keys(alogAll).filter(sym => {
+          if (heldSyms.has(sym.toUpperCase())) return false;          // 有持股的上面已經更新過了
+          const p = alogAll[sym] && alogAll[sym].plan;
+          return !!(p && (p.low > 0 || p.high > 0));                  // 只更新真的有在看價位的
+        }).map(sym => ({
+          sym,
+          kind: (alogAll[sym].market === 'tw' || isTwCode(sym)) ? 'tw' : 'us'
+        }));
+        if (watchJobs.length) {
+          const setWatch = (sym, price) => {
+            alogAll[sym].lastPrice = Number(price);
+            alogAll[sym].lastPriceAt = Date.now();
+            log.watch.ok++;
+          };
+          const tw = watchJobs.filter(w => w.kind === 'tw');
+          await mapLimit(tw, 5, async w => {
+            try { const q = await quoteTwClose(w.sym); if (q && q.price > 0) setWatch(w.sym, q.price); else log.watch.fail++; }
+            catch (e) { log.watch.fail++; }
+          });
+          const us = watchJobs.filter(w => w.kind === 'us');
+          if (us.length && finnhubKey) {
+            for (const w of us) {
+              try { const q = await finnhubQuote(w.sym); if (q && Number(q.c) > 0) setWatch(w.sym, Number(q.c)); else log.watch.fail++; }
+              catch (e) { log.watch.fail++; break; }
+              await new Promise(r => setTimeout(r, 1100));
+            }
+          } else if (us.length) {
+            log.watch.skip = us.length;
+          }
+          if (log.watch.ok) await saveAlog();
+        }
+      } catch (e) {}
+
       // 6) 存檔 + 推雲端 + 重畫（只重畫正在看的那一頁，避免無謂的 DOM 工作）
       for (const { t, arr } of loaded) {
         try { await writeKey(t.hKey, JSON.stringify(arr)); } catch (e) {}
@@ -22896,6 +22946,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.9;">
           成功更新 <strong style="color:var(--accent);">${total}</strong> 檔
           <span style="color:var(--ink-tertiary);">（台股 ${log.tw.ok}／美股 ${log.us.ok}／加密 ${log.crypto.ok}／外幣 ${log.fx.ok}）</span>
+          ${log.watch.ok || log.watch.skip ? `<br><span style="color:var(--ink-secondary);">另外更新 <strong style="color:var(--accent);">${log.watch.ok}</strong> 檔觀察股</span><span style="color:var(--ink-tertiary);">（有設價位但沒持有的）${log.watch.skip ? ` · ${log.watch.skip} 檔美股要金鑰才抓得到` : ''}</span>` : ''}
           ${fail ? `<span style="color:var(--danger);"> · 失敗 ${fail} 檔</span>` : ''}
           ${fxRate ? `<br>匯率 USD/TWD <strong>${fxRate.toFixed(3)}</strong>` : ''}
           ${log.firstFill.length ? `<br><span style="color:var(--accent-warm);">${log.firstFill.length} 檔是第一次自動帶入</span><span style="color:var(--ink-tertiary);">（之前是手填的，沒有前次自動價可比，所以不算漲跌）</span>` : ''}
@@ -23710,7 +23761,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       <div style="overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--bg-elevated);">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:800px;">
           <thead><tr style="background:var(--bg-card);">
-            ${th('狀態', '116px')}${th('代號', '150px')}${th('停損 低', '96px')}${th('現價', '104px')}${th('停利 高', '96px')}${th('還要跌', '92px')}${th('還要漲', '92px')}${th('賠率', '72px')}${th('設定日', '92px')}
+            ${th('狀態', '116px')}${th('代號', '150px')}${th('停損 低', '96px')}${th('現價', '104px')}${th('停利 高', '96px')}${th('還要跌', '92px')}${th('還要漲', '92px')}${th('賠率', '72px')}${th('設定日', '92px')}${th('', '44px')}
           </tr></thead>
           <tbody>
             ${rows.map(r => {
@@ -23732,6 +23783,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
                 <td style="padding:8px 10px; font-family:var(--mono); color:var(--ink-secondary);">${pct(r.toHighPct, '↑', '已達標')}</td>
                 <td style="padding:8px 10px; font-family:var(--mono); color:${r.rr == null ? 'var(--ink-muted)' : (r.rr >= 2 ? 'var(--accent)' : 'var(--danger)')};">${r.rr == null ? '—' : '1:' + r.rr.toFixed(2)}</td>
                 <td style="padding:8px 10px; font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">${r.updatedAt ? escape(todayISO(r.updatedAt)) : '—'}${r.planAge != null && r.planAge >= 90 ? '<span style="color:var(--accent-warm);"> 舊</span>' : ''}</td>
+                <td style="padding:8px 6px; text-align:center;">
+                  <button title="不再追蹤這檔的買賣價位（先前的分析記錄會保留）" aria-label="移除"
+                          onclick="event.stopPropagation(); removeFromPlanWatch('${escape(r.symbol)}')"
+                          style="background:transparent; border:1px solid var(--line); color:var(--ink-tertiary); border-radius:3px; padding:3px 7px; font-size:11px; cursor:pointer;">✕</button>
+                </td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -23741,6 +23797,26 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         「還要跌」＝現價要再跌幾 % 才碰到你設的最低價（停損）；「還要漲」＝還要漲幾 % 到最高價（停利）。
         標「觀察」＝你沒持有這檔，只是查過；標「舊」的現價是上次看盤時抓的，打開該檔分析畫面就會更新。
       </div>`;
+  }
+
+  // 從觀察名單移除：只清掉價位，**不刪分析記錄**——那是使用者花時間寫的東西，
+  // 而且以後想重新追蹤時，當初的判斷還在。
+  async function removeFromPlanWatch(sym) {
+    await loadAlog();
+    const b = alogAll[sym];
+    if (!b) { showToast('找不到這一檔'); return; }
+    const notes = (b.entries || []).length;
+    if (!confirm(`不再追蹤 ${sym} 的買賣價位？\n\n` +
+                 `· 停損／停利設定會清掉，首頁不再提醒這一檔\n` +
+                 `· ${notes ? `先前的 ${notes} 筆分析記錄會保留` : '這檔沒有分析記錄'}\n` +
+                 `· 想重新追蹤，打開這檔的分析畫面再設一次價位就好`)) return;
+    b.plan = { price: null, high: null, low: null, updatedAt: 0 };
+    if (!notes) delete alogAll[sym];        // 什麼都沒有的空本子就別留著佔位
+    await saveAlog();
+    showToast(`已把 ${sym} 從觀察名單移除`);
+    planWatchRows = await buildPlanWatch();
+    renderPlanWatch();
+    try { refreshStudioAlerts(); } catch (e) {}
   }
 
   function copyPlanWatch() {
