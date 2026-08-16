@@ -860,6 +860,16 @@
     .hc-actions { gap: 7px; }
     .form-select, .form-input { min-height: 40px; }
     .bc-back, .bc-item { min-height: 34px; display: inline-flex; align-items: center; }
+    /* v8.8 只涵蓋 .btn 系列，漏掉這兩種「分頁」按鈕：
+       .filter-tab 實測只有 28px、.travel-tab 只有 27px，手指按不準。
+       它們常常一整排並列（分類篩選、模組分頁），按錯的機會更高。
+       ⚠ 用 38px 不是 36px：min-height:36 量出來會是 35.98（子像素），
+       剛好卡在門檻上，之後檢查很難判斷到底過了沒。留一點餘裕。 */
+    .filter-tab { min-height: 38px; padding: 8px 12px; display: inline-flex; align-items: center; justify-content: center; }
+    .travel-tab { min-height: 38px; }
+    /* 表格／卡片裡那些自己寫 inline style 的小圖示鈕（🔕 靜音、✕ 移除…）
+       沒有 class 可以掛，統一用這個屬性標記，才不會每加一顆就漏一顆。 */
+    [data-tap] { min-height: 38px; min-width: 38px; display: inline-flex; align-items: center; justify-content: center; }
   }
 
   /* === 台股動態新聞區塊 === */
@@ -8238,7 +8248,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.0 · κ</div>
+    <div>v 10.1 · κ</div>
   </footer>
 </div>
 
@@ -9364,7 +9374,7 @@ alter publication supabase_realtime add table party_locations;</pre>
             <span style="font-size:13px; line-height:1.5;">${a.icon}</span>
             <span style="flex:1; min-width:0; font-size:12.5px; color:var(--ink-secondary); line-height:1.55;">${a.text}</span>
             ${a.view || a.extra ? '<span style="font-family:var(--mono); font-size:10px; color:var(--accent); white-space:nowrap; align-self:center;">前往 →</span>' : ''}
-            <button title="我知道了，7 天內別再提這件事" aria-label="靜音這則提醒"
+            <button data-tap title="我知道了，7 天內別再提這件事" aria-label="靜音這則提醒"
                     onclick="event.stopPropagation(); snoozeAlert('${escape(a.id)}', 7)"
                     style="flex-shrink:0; align-self:center; background:transparent; border:1px solid var(--line); color:var(--ink-tertiary); border-radius:3px; padding:3px 7px; font-size:11px; cursor:pointer;">🔕</button>
           </div>`).join('')}
@@ -23784,7 +23794,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
                 <td style="padding:8px 10px; font-family:var(--mono); color:${r.rr == null ? 'var(--ink-muted)' : (r.rr >= 2 ? 'var(--accent)' : 'var(--danger)')};">${r.rr == null ? '—' : '1:' + r.rr.toFixed(2)}</td>
                 <td style="padding:8px 10px; font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">${r.updatedAt ? escape(todayISO(r.updatedAt)) : '—'}${r.planAge != null && r.planAge >= 90 ? '<span style="color:var(--accent-warm);"> 舊</span>' : ''}</td>
                 <td style="padding:8px 6px; text-align:center;">
-                  <button title="不再追蹤這檔的買賣價位（先前的分析記錄會保留）" aria-label="移除"
+                  <button data-tap title="不再追蹤這檔的買賣價位（先前的分析記錄會保留）" aria-label="移除"
                           onclick="event.stopPropagation(); removeFromPlanWatch('${escape(r.symbol)}')"
                           style="background:transparent; border:1px solid var(--line); color:var(--ink-tertiary); border-radius:3px; padding:3px 7px; font-size:11px; cursor:pointer;">✕</button>
                 </td>
