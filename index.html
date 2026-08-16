@@ -6688,6 +6688,24 @@
     </div>
   </div>
 
+  <!-- 年度交易總結：每一年買了多少賣了多少、實際落袋多少、繳了多少費稅 -->
+  <div class="modal-backdrop" id="annualModal" style="z-index:2150;">
+    <div class="modal" style="max-width: 1020px;">
+      <div class="modal-head">
+        <h2>📅 年度交易 <em>總結</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeAnnualReview()" title="關閉" aria-label="關閉">✕</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:14px;">
+        把全部模組的交易記錄依年度重新算一次：<strong>真正賣掉落袋的賺賠</strong>、配息、手續費與稅、當年的淨現金流。
+      </div>
+      <div id="annualBody"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="copyAnnualReview()">📋 複製總結</button>
+        <button class="btn" onclick="closeAnnualReview()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 配息行事曆：接下來哪天除息、大概領多少、要扣多少健保費 -->
   <div class="modal-backdrop" id="divCalModal" style="z-index:2150;">
     <div class="modal" style="max-width: 980px;">
@@ -6982,6 +7000,8 @@
         <p>台股 · 美股 · 加密貨幣 · 高股息 ETF · 市值型 ETF 全部聚合，統一換算台幣。</p>
       </div>
       <div class="api-actions">
+        <button class="btn btn-sm" onclick="openAnnualReview()">📅 年度總結</button>
+        <button class="btn btn-sm" onclick="openDivCalendar()">💰 配息行事曆</button>
         <button class="btn" onclick="loadCashflow()">↻ 重新整理</button>
       </div>
     </div>
@@ -8218,7 +8238,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.8 · ι</div>
+    <div>v 9.9 · ι</div>
   </footer>
 </div>
 
@@ -8904,6 +8924,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ sep: true });
     items.push({ icon: '⚡', label: '一鍵更新全部現價（台股／美股／加密／匯率）', action: 'refreshAllPrices()' });
     items.push({ icon: '💰', label: '配息行事曆（哪天除息、能領多少）', action: 'openDivCalendar()' });
+    items.push({ icon: '📅', label: '年度交易總結（今年賺賠、費稅、勝率）', action: 'openAnnualReview()' });
     items.push({ icon: '📋', label: '我的下單計畫（看誰踩到停損／停利）', action: 'openPlanWatch()' });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
@@ -23232,6 +23253,234 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     showToast('✓ 下單決定已儲存');
   }
 
+  // ===== 掃描結果 →「加入觀察」=====
+  // 掃描器找出候選股之後，先前只能按「詳細分析」，看完就沒了，沒有地方把它留下來。
+  // 這裡不另外做一份觀察名單——直接寫進「分析策略記錄」(analysis_log_v1)：
+  //   · 把掃描器已經算好的 現價／停損／目標(賠率2:1) 存成這檔的「下單決定」
+  //   · 把符合哪些條件、技術面白話總結存成一筆系統記錄，之後回來看得到當初為什麼挑它
+  // 於是它自動被 v9.4 的下單計畫看守與首頁提醒盯著——跌破停損／到達目標都會通知。
+  // usScanRows 存的就是 ctx 本身（欄位：symbol/name/zh/price/lv/sig/fund/lastDate）
+  const scanRowBySymbol = sym => (usScanRows || []).find(c => c && c.symbol === sym) || null;
+  async function addScanToWatch(sym) {
+    const c = scanRowBySymbol(sym);
+    if (!c) { showToast('找不到這檔的掃描結果，請重新掃描'); return; }
+    const market = usScanMarket === 'tw' ? 'tw' : 'us';
+    const stop = (c.lv && c.lv.stops && c.lv.stops[0]) || null;
+    // 「為什麼挑它」現算：條件模式看符合哪些條件，策略模式看符合哪些策略
+    let matched = [], strategies = [];
+    try { matched = (usScanEvaluate(c).matched || []).map(m => m.name); } catch (e) {}
+    try {
+      strategies = US_STRATEGY_LIST.filter(s => usScanStrategies.includes(s.key))
+        .filter(s => usStrategyHit(c, s).pass).map(s => s.name);
+    } catch (e) {}
+    await loadAlog();
+    const b = alogBook(sym);
+    b.market = market;
+    b.name = c.zh || c.name || sym;
+    if (Number(c.price) > 0) { b.lastPrice = Number(c.price); b.lastPriceAt = Date.now(); }
+    // 已經自己設過價位就不要蓋掉——那是使用者自己的決定，比掃描器的建議重要
+    const hadPlan = b.plan && (b.plan.price != null || b.plan.high != null || b.plan.low != null);
+    if (!hadPlan) {
+      b.plan = {
+        price: Number(c.price) || null,
+        high: stop && stop.target2r > 0 ? Number(stop.target2r.toFixed(2)) : null,
+        low: stop && stop.v > 0 ? Number(stop.v.toFixed(2)) : null,
+        updatedAt: Date.now()
+      };
+    }
+    const lines = [
+      `【機會掃描帶入】${todayISO()}　${usScanMarket === 'tw' ? '台股' : '美股'}`,
+      `收盤價 ${scanCur()}${c.price}${c.lastDate ? `（資料至 ${c.lastDate}）` : ''}`,
+      stop ? `停損參考 ${scanCur()}${stop.v.toFixed(2)}（${stop.pct.toFixed(1)}%）　目標(賠率2:1) ${scanCur()}${stop.target2r.toFixed(2)}（+${stop.target2rPct.toFixed(1)}%）` : '',
+      strategies.length ? `符合策略：${strategies.join('、')}` : '',
+      matched.length ? `符合條件：${matched.join('、')}` : '',
+      c.fund ? `基本面：本益比 ${c.fund.pe == null ? '—' : c.fund.pe.toFixed(2)}　股價淨值比 ${c.fund.pb == null ? '—' : c.fund.pb.toFixed(2)}　ROE ${c.fund.roe == null ? '—' : c.fund.roe.toFixed(1) + '%'}　殖利率 ${c.fund.dy == null ? '—' : c.fund.dy.toFixed(2) + '%'}` : '',
+      c.sig && c.sig.summary ? `技術面：${c.sig.summary}` : ''
+    ].filter(Boolean);
+    b.entries.unshift({
+      id: 'al_' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+      tab: 'system', date: todayISO(), type: '機會掃描',
+      content: lines.join('\n'),
+      insight: '', memo: '從機會掃描加入觀察',
+      createdAt: Date.now(), updatedAt: Date.now()
+    });
+    await saveAlog();
+    showToast(hadPlan
+      ? `✓ ${sym} 已加入觀察（保留你原本設的價位）`
+      : `✓ ${sym} 已加入觀察 · 停損 ${scanCur()}${b.plan.low ?? '—'} / 目標 ${scanCur()}${b.plan.high ?? '—'}`);
+    // 重畫掃描結果，讓按鈕變成「已在觀察中」（renderUsScanResults 自己會分派策略／條件模式）
+    try { renderUsScanResults(); } catch (e) {}
+    try { refreshStudioAlerts(); } catch (e) {}
+  }
+  // 這檔已經在觀察名單裡了嗎（有記錄或有設過價位都算）
+  function scanIsWatched(sym) {
+    const b = alogAll && alogAll[sym];
+    if (!b) return false;
+    const p = b.plan;
+    return (b.entries && b.entries.length > 0) || !!(p && (p.price != null || p.high != null || p.low != null));
+  }
+  function scanWatchBtn(sym) {
+    const on = scanIsWatched(sym);
+    return on
+      ? `<button class="btn btn-sm" onclick="openPlanWatch()" title="已經在觀察名單裡，點看全部下單計畫"
+                 style="border-color:var(--accent-deep); color:var(--accent);">✓ 已在觀察中</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="addScanToWatch('${escape(sym)}')"
+                 title="把掃描器算好的停損與目標存成這檔的下單決定，之後跌破或達標會在首頁提醒你">＋ 加入觀察</button>`;
+  }
+
+  // ===== 年度交易總結 =====
+  // 各模組只存一個「已實現損益總數」，看不出「今年賣掉的賺賠多少」「今年繳了多少手續費和稅」。
+  // 這裡從交易記錄重新推一次：依代號、依日期重播，用移動平均成本法算每一筆賣出的損益，
+  // 再依「賣出當天」歸到那一年。跟模組內的 recompute 用同一套算法，數字才對得起來。
+  //
+  // ⚠ 已知的資料陷阱：手動建的持股（直接填股數、沒有對應買進交易）之後如果賣出，
+  //   這裡會找不到成本、把賣出金額整筆當成獲利。所以要另外數出來、明白地警告，不能默默算錯。
+  function replayTxnsForYear(txns, rateOf) {
+    const bySym = {};
+    txns.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(t => {
+      const sym = String(t.symbol || '').trim() || '(未指定)';
+      if (!bySym[sym]) bySym[sym] = { shares: 0, cost: 0 };
+      const st = bySym[sym];
+      const n = Number(t.shares) || 0;
+      const px = Number(t.price) || 0;
+      const fee = Number(t.fee) || 0;
+      const tax = Number(t.tax) || 0;
+      const rate = rateOf(t);
+      const y = String(t.date || '').slice(0, 4) || '未知';
+      if (!YR[y]) YR[y] = { year: y, buy: 0, sell: 0, realized: 0, div: 0, fee: 0, tax: 0, trades: 0, wins: 0, losses: 0, orphanSells: 0, orphanSyms: new Set() };
+      const Y = YR[y];
+      if (t.type === 'sell') {
+        const avg = st.shares > 0 ? st.cost / st.shares : 0;
+        if (!(st.shares > 0)) { Y.orphanSells++; Y.orphanSyms.add(sym); }
+        const used = Math.min(n, st.shares);
+        const proceeds = n * px;
+        const pnl = proceeds - used * avg - fee - tax;
+        st.shares = Math.max(0, st.shares - n);
+        st.cost = Math.max(0, st.cost - used * avg);
+        Y.sell += proceeds * rate;
+        Y.realized += pnl * rate;
+        Y.fee += fee * rate; Y.tax += tax * rate;
+        Y.trades++;
+        if (pnl > 0) Y.wins++; else if (pnl < 0) Y.losses++;
+      } else if (t.type === 'buy') {
+        st.shares += n; st.cost += n * px + fee;
+        Y.buy += (n * px + fee) * rate;
+        Y.fee += fee * rate;
+      } else if (t.type === 'dividend') {
+        Y.div += n * px * rate;          // 不動產的支出是負的 price，加總起來自然變成淨額
+        Y.fee += fee * rate; Y.tax += tax * rate;
+      } else if (t.type === 'stock_div') {
+        st.shares += n;                   // 配股只增加股數、不動成本
+      }
+    });
+  }
+  let YR = {};   // replayTxnsForYear 共用的累加器（每次 build 前重設）
+
+  async function buildAnnualReview() {
+    YR = {};
+    const fx = cashflowFx.usdTwd || 32;
+    for (const s of CF_SOURCES) {
+      let txns = [];
+      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) { txns = []; }
+      if (!Array.isArray(txns) || !txns.length) continue;
+      replayTxnsForYear(txns, t => cfItemRate(s, t, fx));
+    }
+    const years = Object.values(YR).map(y => ({
+      ...y,
+      orphanSyms: [...y.orphanSyms],
+      net: y.div + y.sell - y.buy,                              // 那一年的淨現金流
+      winRate: y.trades > 0 ? (y.wins / y.trades * 100) : null
+    })).sort((a, b) => String(b.year).localeCompare(String(a.year)));
+    return years;
+  }
+
+  let annualData = null;
+  async function openAnnualReview() {
+    document.getElementById('annualModal').classList.add('active');
+    document.getElementById('annualBody').innerHTML =
+      '<div style="padding:22px; text-align:center; color:var(--ink-tertiary); font-size:12px;">整理交易記錄中…</div>';
+    try { await loadCashflowFx(); annualData = await buildAnnualReview(); }
+    catch (e) { annualData = []; }
+    renderAnnualReview();
+  }
+  function closeAnnualReview() { document.getElementById('annualModal').classList.remove('active'); }
+
+  function renderAnnualReview() {
+    const rows = annualData || [];
+    const body = document.getElementById('annualBody');
+    const money = n => (n < 0 ? '−' : '') + 'NT$' + Math.abs(Math.round(Number(n) || 0)).toLocaleString('en-US');
+    const signed = n => `<span style="color:${n > 0 ? 'var(--accent)' : n < 0 ? 'var(--danger)' : 'var(--ink-tertiary)'};">${n > 0 ? '+' : ''}${money(n)}</span>`;
+    if (!rows.length) {
+      body.innerHTML = `<div style="padding:26px 20px; text-align:center; color:var(--ink-tertiary); font-size:12.5px; line-height:1.9; border:1px dashed var(--line); border-radius:4px;">
+        還沒有任何交易記錄。<br><span style="font-size:11.5px;">在各資產模組裡新增買進／賣出／配息的交易，這裡就會依年度整理出來。</span>
+      </div>`;
+      return;
+    }
+    const all = rows.reduce((a, y) => ({
+      realized: a.realized + y.realized, div: a.div + y.div, fee: a.fee + y.fee,
+      tax: a.tax + y.tax, trades: a.trades + y.trades, wins: a.wins + y.wins
+    }), { realized: 0, div: 0, fee: 0, tax: 0, trades: 0, wins: 0 });
+    const orphan = rows.filter(y => y.orphanSells > 0);
+
+    const th = (t, w, right) => `<th style="padding:8px 10px; text-align:${right ? 'right' : 'left'}; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); ${w ? 'width:' + w + ';' : ''} white-space:nowrap;">${t}</th>`;
+    const td = (html, right) => `<td style="padding:9px 10px; font-family:var(--mono); text-align:${right ? 'right' : 'left'}; white-space:nowrap;">${html}</td>`;
+    body.innerHTML = `
+      <div style="overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--bg-elevated);">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:820px;">
+          <thead><tr style="background:var(--bg-card);">
+            ${th('年度', '70px')}${th('買進', '', true)}${th('賣出', '', true)}${th('已實現損益', '', true)}${th('配息收入', '', true)}${th('手續費+稅', '', true)}${th('淨現金流', '', true)}${th('賣出次數', '', true)}${th('勝率', '', true)}
+          </tr></thead>
+          <tbody>
+            ${rows.map(y => `<tr style="border-bottom:1px solid var(--line);">
+              ${td(`<strong style="color:var(--accent); font-size:13px;">${escape(y.year)}</strong>`)}
+              ${td(`<span style="color:var(--ink-secondary);">${money(y.buy)}</span>`, true)}
+              ${td(`<span style="color:var(--ink-secondary);">${money(y.sell)}</span>`, true)}
+              ${td(signed(y.realized), true)}
+              ${td(`<span style="color:${y.div >= 0 ? 'var(--ink-primary)' : 'var(--danger)'};">${money(y.div)}</span>`, true)}
+              ${td(`<span style="color:var(--danger);">−${money(y.fee + y.tax).replace('NT$', 'NT$')}</span>`, true)}
+              ${td(signed(y.net), true)}
+              ${td(`<span style="color:var(--ink-tertiary);">${y.trades}</span>`, true)}
+              ${td(y.winRate == null ? '<span style="color:var(--ink-muted);">—</span>'
+                   : `<span style="color:${y.winRate >= 50 ? 'var(--accent)' : 'var(--danger)'};">${y.winRate.toFixed(0)}%</span><span style="color:var(--ink-muted); font-size:10px;"> ${y.wins}/${y.trades}</span>`, true)}
+            </tr>`).join('')}
+            <tr style="background:var(--bg-card);">
+              ${td('<strong>合計</strong>')}${td('')}${td('')}
+              ${td(`<strong>${signed(all.realized)}</strong>`, true)}
+              ${td(`<strong>${money(all.div)}</strong>`, true)}
+              ${td(`<strong style="color:var(--danger);">−${money(all.fee + all.tax)}</strong>`, true)}
+              ${td('')}
+              ${td(`<span style="color:var(--ink-tertiary);">${all.trades}</span>`, true)}
+              ${td(all.trades ? `<span style="color:${all.wins / all.trades >= 0.5 ? 'var(--accent)' : 'var(--danger)'};">${(all.wins / all.trades * 100).toFixed(0)}%</span>` : '—', true)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ${orphan.length ? `<div style="margin-top:10px; padding:10px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); font-size:11.5px; color:var(--ink-secondary); line-height:1.8;">
+        <strong>⚠ 有 ${orphan.reduce((a, y) => a + y.orphanSells, 0)} 筆賣出找不到對應的買進成本</strong>，那幾筆的「已實現損益」會被高估（整筆賣出金額都被當成賺的）。<br>
+        涉及：${escape([...new Set(orphan.flatMap(y => y.orphanSyms))].join('、'))}<br>
+        通常是因為<strong>用「新增持股」直接填股數、沒有補上買進交易</strong>。想讓這裡準確，就把當初的買進也記一筆。
+      </div>` : ''}
+      <div style="margin-top:10px; font-size:11px; color:var(--ink-tertiary); line-height:1.8;">
+        <strong>已實現損益</strong>＝賣出當下真正落袋的賺賠（用移動平均成本法，已扣掉手續費與證交稅），依<strong>賣出日</strong>歸年度。
+        還沒賣的部位不算在這裡——那是「未實現損益」，在儀表板上看。<br>
+        <strong>⚠ 跟各模組裡那個「已實現損益」數字會不一樣</strong>：模組是把<strong>配息也加進同一個數字</strong>，
+        這裡故意拆成「已實現損益」與「配息收入」兩欄（配息不是買賣賺的錢，混在一起看不出來到底是會挑股票還是只是領息）。
+        兩欄相加就會跟模組對得起來。<br>
+        <strong>淨現金流</strong>＝配息 ＋ 賣出 − 買進，也就是那一年你的口袋實際進出多少。
+        <strong>勝率</strong>只看賣出次數，不看金額大小（賺 10 次小的輸 1 次大的，勝率還是很好看）。<br>
+        外幣的交易用<strong>目前匯率</strong>換算，不是當時的匯率，所以歷史年度會有誤差。<strong>報稅請以券商對帳單為準。</strong>
+      </div>`;
+  }
+
+  function copyAnnualReview() {
+    const rows = annualData;
+    if (!rows || !rows.length) { showToast('沒有資料可複製'); return; }
+    const m = n => (n < 0 ? '-' : '') + 'NT$' + Math.abs(Math.round(n)).toLocaleString('en-US');
+    const lines = rows.map(y => `${y.year}｜買 ${m(y.buy)}｜賣 ${m(y.sell)}｜已實現 ${m(y.realized)}｜配息 ${m(y.div)}｜費稅 ${m(y.fee + y.tax)}｜淨 ${m(y.net)}｜賣出 ${y.trades} 次${y.winRate != null ? `（勝率 ${y.winRate.toFixed(0)}%）` : ''}`);
+    const txt = `年度交易總結（${todayISO()}）\n${'─'.repeat(30)}\n${lines.join('\n')}\n${'─'.repeat(30)}\n※ 移動平均成本法試算，報稅請以券商對帳單為準。`;
+    navigator.clipboard.writeText(txt).then(() => showToast('✓ 已複製年度總結')).catch(() => showToast('複製失敗'));
+  }
+
   // ===== 配息行事曆 =====
   // App 記得到「已經領了多少」，但不會告訴你「接下來哪天除息、大概領多少」。
   // 除息日很重要——那天之前要持有才領得到，之後買就沒了。
@@ -24001,6 +24250,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   };
 
   function openUsScanModal(market) {
+    // 「＋ 加入觀察 / ✓ 已在觀察中」要靠 alogAll 判斷，先確保它載入過再畫結果
+    if (!alogAll || !Object.keys(alogAll).length) {
+      loadAlog().then(() => { try { renderUsScanResults(); } catch (e) {} }).catch(() => {});
+    }
     const m = market === 'tw' ? 'tw' : 'us';
     if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; }   // 換市場先清結果，避免混在一起
     const lab = document.getElementById('usScanMarketLabel');
@@ -24343,6 +24596,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           </div>
           <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
             <button class="btn btn-sm" onclick="closeUsScanModal(); ${usScanMarket === 'tw' ? `openTvChartModal('${escape(c.symbol)}','${escape(c.name || '')}','TWSE')` : `openUsAnalysis('${escape(c.symbol)}')`};">📊 詳細分析</button>
+            ${scanWatchBtn(c.symbol)}
             <span style="margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); align-self:center;">資料至 ${escape(c.lastDate || '')}</span>
           </div>
         </div>`;
@@ -24439,6 +24693,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; padding-top:7px; border-top:1px solid var(--line);">📖 ${escape(c.sig.summary || '')}</div>
           <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
             <button class="btn btn-sm" onclick="closeUsScanModal(); ${usScanMarket === 'tw' ? `openTvChartModal('${escape(c.symbol)}','${escape(c.name || '')}','TWSE')` : `openUsAnalysis('${escape(c.symbol)}')`};">📊 詳細分析</button>
+            ${scanWatchBtn(c.symbol)}
             <span style="margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); align-self:center;">資料至 ${escape(c.lastDate || '')}</span>
           </div>
         </div>`;
