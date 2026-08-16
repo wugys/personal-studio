@@ -90,6 +90,29 @@
   .hero-subtitle { font-size: 13.5px; color: var(--ink-tertiary); max-width: 580px; line-height: 1.6; }
 
   /* === 快速入口 chip 列 === */
+  /* 首頁的投資工具列 */
+  .tool-row {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px; margin-bottom: 22px;
+  }
+  .tool-chip {
+    display: flex; align-items: center; gap: 10px; text-align: left;
+    padding: 11px 14px; background: var(--bg-card); border: 1px solid var(--line);
+    border-radius: 4px; cursor: pointer; transition: all 0.25s; min-height: 56px;
+  }
+  .tool-chip:hover {
+    background: var(--bg-card-hover); border-color: var(--line-strong);
+    transform: translateY(-2px);
+  }
+  .tool-chip-icon { font-size: 17px; flex-shrink: 0; }
+  .tool-chip-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tool-chip-name { font-family: var(--serif); font-size: 14px; color: var(--ink-primary); }
+  .tool-chip-desc {
+    font-size: 10.5px; color: var(--ink-tertiary); line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  body.dense-page .tool-row, body.dense-page #studioTools { display: none !important; }
+
   .quick-access {
     display: flex; gap: 8px; flex-wrap: nowrap;
     overflow-x: auto; padding: 4px 2px 12px;
@@ -1098,6 +1121,11 @@
 
     .quick-access { margin-bottom: 14px; padding-bottom: 10px; }
     .qa-chip { padding: 8px 12px; font-size: 12.5px; }
+    /* 手機固定 2 欄——auto-fill 在 393px 只排得下 1 欄，6 個工具會佔掉整個螢幕 */
+    .tool-row { grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 16px; }
+    .tool-chip { padding: 10px 11px; gap: 8px; min-height: 54px; }
+    .tool-chip-name { font-size: 13px; }
+    .tool-chip-desc { font-size: 9.5px; }
     .control-right { justify-content: space-between; }
     .api-header { flex-direction: column; align-items: flex-start; }
     .modal { padding: 26px 20px; max-width: calc(100vw - 24px); }
@@ -2600,6 +2628,10 @@
 
     <!-- 今日提醒：跨模組把「需要你處理的事」集中到首頁 -->
     <div id="studioAlerts"></div>
+
+    <!-- 投資工具列：這些工具本來全躲在漢堡選單裡，等於做了也沒人知道。
+         手機也要顯示——手機反而更難翻選單。 -->
+    <div id="studioTools"></div>
 
     <!-- 快速入口 chip 列（手機隱藏 · 桌面顯示） -->
     <div class="quick-access hide-on-mobile" id="quickAccess"></div>
@@ -8270,7 +8302,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.3 · κ</div>
+    <div>v 10.4 · κ</div>
   </footer>
 </div>
 
@@ -8986,7 +9018,7 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   function renderDashboard() {
-    renderQuickAccess();
+    renderQuickAccess(); renderStudioTools();
     if (viewMode === 'grouped') renderGrouped();
     else renderUnified();
     updateApiCount();
@@ -9337,7 +9369,14 @@ alter publication supabase_realtime add table party_locations;</pre>
       const hasData = (await readJson('tw_holdings_v1', [])).length || (await readJson('us_holdings_v1', [])).length
                    || (await readJson('assoc_members_v1', [])).length || (await readJson('re_rental_props_v1', [])).length;
       if (hasData && !localStorage.getItem('studio_last_backup_v1')) {
-        push('warn', '💾', `你還沒做過全站備份。<strong>資料只存在這台裝置的瀏覽器裡</strong>，清掉就沒了`, null, 'backup');
+        // 直接放一顆會下載的按鈕。點擊本身就是使用者手勢，所以下載不會被瀏覽器擋；
+        // 從這裡按會產出「不含金鑰」的檔案（exportFullBackup 讀不到那個勾選框 → 預設排除），
+        // 剛好是最安全的預設值。
+        push('warn', '💾',
+          `你還沒做過全站備份。<strong>資料只存在這台裝置的瀏覽器裡</strong>，清掉就沒了。
+           <button data-tap onclick="event.stopPropagation(); exportFullBackup();"
+                   style="margin-left:6px; background:var(--accent); border:none; color:var(--bg-base); border-radius:3px; padding:4px 11px; font-size:11.5px; font-weight:600; cursor:pointer;">↓ 立即備份</button>`,
+          null, 'backup');
       }
     } catch (e) {}
 
@@ -9414,6 +9453,35 @@ alter publication supabase_realtime add table party_locations;</pre>
     } else {
       el.textContent = '核心模組';
     }
+  }
+
+  // 首頁的投資工具列。跟 renderQuickAccess 一樣只在群組總覽層顯示。
+  const STUDIO_TOOLS = [
+    { icon: '⚡', name: '更新現價', desc: '台股／美股／加密／匯率一次抓', act: 'refreshAllPrices()' },
+    { icon: '📋', name: '下單計畫', desc: '誰踩到停損／停利了', act: 'openPlanWatch()' },
+    { icon: '💰', name: '配息行事曆', desc: '哪天除息、能領多少', act: 'openDivCalendar()' },
+    { icon: '📅', name: '年度總結', desc: '賺賠、費稅、勝率', act: 'openAnnualReview()' },
+    { icon: '🩺', name: '資料健檢', desc: '找出會讓數字算錯的地方', act: 'openHealthCheck()' },
+    { icon: '💾', name: '備份 / 還原', desc: '一個檔存全部', act: 'openBackupModal()' }
+  ];
+  function renderStudioTools() {
+    const el = document.getElementById('studioTools');
+    if (!el) return;
+    if (dashLevel !== 'overview') { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:8px;">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">投資工具 · TOOLS</span>
+      </div>
+      <div class="tool-row">
+        ${STUDIO_TOOLS.map(t => `
+          <button class="tool-chip" onclick="${t.act}" title="${escape(t.desc)}">
+            <span class="tool-chip-icon">${t.icon}</span>
+            <span class="tool-chip-text">
+              <span class="tool-chip-name">${escape(t.name)}</span>
+              <span class="tool-chip-desc">${escape(t.desc)}</span>
+            </span>
+          </button>`).join('')}
+      </div>`;
   }
 
   function renderQuickAccess() {
