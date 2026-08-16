@@ -8417,7 +8417,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.8 · κ</div>
+    <div>v 10.9 · κ</div>
   </footer>
 </div>
 
@@ -9391,6 +9391,76 @@ alter publication supabase_realtime add table party_locations;</pre>
             else push('info', '💰', `${who} ${dd} 天後除息（${escape(d.ex)}），預估領 ${m}`, own.view, 'div');
           });
         });
+      }
+    } catch (e) {}
+
+    // 1d) 挑戰目標落後了嗎
+    //     目標模組自己會算「照這樣幾年會到」，但那要點進去才看得到——
+    //     而「進度落後」正是最需要早知道的事（越晚發現要補的錢越多）。
+    //     ⚠ 這裡刻意重算一次而不是讀模組的全域，因為使用者可能從來沒點進過那個模組。
+    try {
+      const goals = await readJson('goals_v1', []);
+      if (Array.isArray(goals) && goals.length) {
+        const rows = await cfCompute();
+        // ⚠ 直接用模組自己的 goalCompute(g)，不要在這裡重寫一次算式——
+        //   兩邊分岔的話，首頁說落後、點進去說沒落後，那比不提醒更糟。
+        //   goalCompute 讀的是 goalAssetRows 快取，所以先把它補上。
+        goalAssetRows = rows;   // goalTotalAssets() 就是從這個算的，補這一個就夠
+        goals.filter(g => g && Number(g.target) > 0 && g.status !== '已完成' && g.status !== '已放棄').forEach(g => {
+          const name = escape(g.name || '未命名');
+          let c;
+          try { c = goalCompute(g); } catch (e) { return; }
+          if (c.done) {
+            push('info', '🎯', `挑戰目標「${name}」<strong>已經達成了</strong>（${money(c.current)} / ${money(c.target)}）`, 'goalsView', 'goal');
+            return;
+          }
+          if (c.monthsLeft == null) return;                     // 沒設目標日期就沒有「落後」可言
+          if (c.monthsLeft <= 0) {
+            push('warn', '🎯', `挑戰目標「${name}」<strong>目標日期已經過了</strong>，目前 ${money(c.current)} / ${money(c.target)}（還差 ${money(c.remain)}）`, 'goalsView', 'goal');
+            return;
+          }
+          if (c.nMonths == null) {
+            push('warn', '🎯', `挑戰目標「${name}」<strong>照目前的投入永遠到不了</strong>——沒有每月投入也沒有報酬率${c.needMonthly ? `，想準時要每月投 ${money(c.needMonthly)}` : ''}`, 'goalsView', 'goal');
+            return;
+          }
+          const behind = -c.aheadBy;                            // aheadBy 正＝提前，所以取負號才是落後幾個月
+          if (behind >= 12) push('warn', '🎯', `挑戰目標「${name}」<strong>落後 ${(behind / 12).toFixed(1)} 年</strong>（照現在的速度還要 ${c.nMonths} 個月，但只剩 ${c.monthsLeft} 個月）${c.needMonthly ? `。想準時要每月投 <strong>${money(c.needMonthly)}</strong>` : ''}`, 'goalsView', 'goal');
+          else if (behind >= 3) push('info', '🎯', `挑戰目標「${name}」落後 ${behind} 個月${c.needMonthly ? `，想準時每月要投 ${money(c.needMonthly)}` : ''}`, 'goalsView', 'goal');
+        });
+      }
+    } catch (e) {}
+
+    // 1e) 資產配置偏離目標太多 → 該考慮再平衡了
+    //     這是 60-10-30 模型的核心動作，但一樣要點進去才知道。
+    try {
+      const cfg = await readJson('alloc_config_v1', null);
+      const rows = await cfCompute();
+      const byKey = {}; rows.forEach(r => byKey[r.key] = r.value);
+      const fundBondish = rows.reduce((a, r) => a + (Number(r.bondish) || 0), 0);
+      const c = { cash: 0, bond: 0, realEstate: 0, otherAlt: 0, tEquity: 60, tBondCash: 10, tAlt: 30, ...(cfg || {}) };
+      const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0) + (byKey.mketf || 0) + (byKey.fund || 0) - fundBondish;
+      const alt = CF_ALT_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + (Number(c.realEstate) || 0) + (Number(c.otherAlt) || 0);
+      const bondCash = CF_BOND_CASH_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + fundBondish + (Number(c.cash) || 0) + (Number(c.bond) || 0);
+      const total = equity + bondCash + alt;
+      // 資產太小的時候談配置沒有意義（差幾個百分點只是幾千塊）
+      if (total > 100000) {
+        const cats = [
+          { n: '公開市場股票', v: equity, t: Number(c.tEquity) || 0 },
+          { n: '債券／現金', v: bondCash, t: Number(c.tBondCash) || 0 },
+          { n: '另類資產', v: alt, t: Number(c.tAlt) || 0 }
+        ];
+        const off = cats.map(x => ({ ...x, pct: x.v / total * 100 }))
+                        .map(x => ({ ...x, gap: x.pct - x.t }))
+                        .filter(x => x.t > 0 && Math.abs(x.gap) >= 10)
+                        .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+        if (off.length) {
+          const w = off[0];
+          const amt = Math.abs(w.gap) / 100 * total;
+          push(Math.abs(w.gap) >= 20 ? 'warn' : 'info', '◐',
+            `資產配置偏離目標：<strong>${escape(w.n)} 佔 ${w.pct.toFixed(0)}%</strong>（目標 ${w.t}%），` +
+            `${w.gap > 0 ? '多了' : '少了'} ${money(amt)}${off.length > 1 ? `，另有 ${off.length - 1} 項也偏離` : ''}`,
+            'allocationView', 'alloc');
+        }
       }
     } catch (e) {}
 
