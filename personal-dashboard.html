@@ -6876,6 +6876,7 @@
       <div id="annualBody"></div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" onclick="copyAnnualReview()">📋 複製總結</button>
+        <button class="btn btn-sm" onclick="exportAnnualCsv()" title="逐筆交易明細，Excel 可直接開">↓ 匯出明細 CSV</button>
         <button class="btn" onclick="closeAnnualReview()">關閉</button>
       </div>
     </div>
@@ -6895,6 +6896,7 @@
       <div id="divCalBody"></div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" onclick="copyDivCalendar()">📋 複製清單</button>
+        <button class="btn btn-sm" onclick="exportDivCsv()" title="Excel 可直接開">↓ 匯出 CSV</button>
         <button class="btn" onclick="closeDivCalendar()">關閉</button>
       </div>
     </div>
@@ -8415,7 +8417,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.7 · κ</div>
+    <div>v 10.8 · κ</div>
   </footer>
 </div>
 
@@ -24365,6 +24367,75 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         <strong>勝率</strong>只看賣出次數，不看金額大小（賺 10 次小的輸 1 次大的，勝率還是很好看）。<br>
         外幣的交易用<strong>目前匯率</strong>換算，不是當時的匯率，所以歷史年度會有誤差。<strong>報稅請以券商對帳單為準。</strong>
       </div>`;
+  }
+
+  // ⚠ Excel 讀 UTF-8 CSV 一定要加 BOM，否則中文全變亂碼。
+  //   使用者只會看到「你的程式輸出壞掉」，不會知道是編碼問題。
+  function downloadCsv(filename, rows) {
+    const esc = v => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const text = rows.map(r => r.map(esc).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // 年度總結的逐筆明細（給報稅／給會計師／自己對帳用）。
+  // 這裡重跑一次移動平均成本，把「每一筆賣出賺賠多少」算出來寫進該列——
+  // 畫面上的年度數字就是這些列加總起來的，兩邊一定對得起來。
+  async function exportAnnualCsv() {
+    const fx = cashflowFx.usdTwd || 32;
+    const out = [['日期', '模組', '代號', '類型', '股數', '單價', '幣別', '手續費', '稅', '金額(台幣)', '已實現損益(台幣)', '備註']];
+    const typeName = { buy: '買進', sell: '賣出', dividend: '配息/收入', stock_div: '股票股利' };
+    for (const s of CF_SOURCES) {
+      let txns = [];
+      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) {}
+      if (!Array.isArray(txns) || !txns.length) continue;
+      const st = {};
+      txns.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(t => {
+        const sym = String(t.symbol || '').trim() || '(未指定)';
+        st[sym] = st[sym] || { shares: 0, cost: 0 };
+        const n = Number(t.shares) || 0, px = Number(t.price) || 0;
+        const fee = Number(t.fee) || 0, tax = Number(t.tax) || 0;
+        const rate = cfItemRate(s, t, fx);
+        const ccy = s.cur === 'MIXED' ? (t.ccy === 'USD' ? 'USD' : 'TWD') : s.cur;
+        let amt = 0, pnl = '';
+        let note = '';
+        if (t.type === 'buy') { amt = -(n * px + fee); st[sym].shares += n; st[sym].cost += n * px + fee; }
+        else if (t.type === 'sell') {
+          const avg = st[sym].shares > 0 ? st[sym].cost / st[sym].shares : 0;
+          if (!(st[sym].shares > 0)) note = '找不到買進成本，損益被高估';
+          const used = Math.min(n, st[sym].shares);
+          amt = n * px - fee - tax;
+          pnl = Math.round((n * px - used * avg - fee - tax) * rate);
+          st[sym].shares = Math.max(0, st[sym].shares - n);
+          st[sym].cost = Math.max(0, st[sym].cost - used * avg);
+        } else if (t.type === 'dividend') { amt = n * px; }
+        else if (t.type === 'stock_div') { st[sym].shares += n; note = '只增加股數、不動成本'; }
+        out.push([t.date || '', s.name, sym, typeName[t.type] || t.type,
+          n || '', px || '', ccy, fee || '', tax || '',
+          Math.round(amt * rate), pnl, note]);
+      });
+    }
+    if (out.length === 1) { showToast('沒有交易記錄可以匯出'); return; }
+    out.sort((a, b) => a === out[0] ? -1 : b === out[0] ? 1 : String(b[0]).localeCompare(String(a[0])));
+    downloadCsv(`交易明細-${todayISO()}.csv`, out);
+    showToast(`✓ 已匯出 ${out.length - 1} 筆交易明細`);
+  }
+
+  async function exportDivCsv() {
+    const d = divCalData;
+    if (!d || !d.rows.length) { showToast('沒有配息資料可以匯出'); return; }
+    const out = [['除息日', '代號', '名稱', '每股配息', '持有股數', '預估領到(台幣)', '二代健保補充保費', '發放日', '狀態']];
+    d.rows.forEach(r => out.push([r.ex, r.symbol, r.name, r.perShare, r.shares,
+      r.cash, r.nhi || 0, r.pay || '', (r.daysToEx != null && r.daysToEx >= 0) ? `${r.daysToEx} 天後除息` : '已除息']));
+    downloadCsv(`配息明細-${todayISO()}.csv`, out);
+    showToast(`✓ 已匯出 ${d.rows.length} 筆配息`);
   }
 
   function copyAnnualReview() {
