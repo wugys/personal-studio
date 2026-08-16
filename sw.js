@@ -16,10 +16,12 @@
  *
  * 3) 換版本只要改 CACHE_VER，activate 時會把舊的整批刪掉。
  */
-const CACHE_VER = 'studio-v10-5';
+const CACHE_VER = 'studio-v10-6';
+// 頁面本身固定用這個 key 存，取用時也用它——不要用 './index.html'，
+// Vercel 的 clean URL 會把 /index.html 308 轉到 /，快取比對會對不上。
+const DOC_KEY = './';
 const CORE = [
-  './',
-  './index.html',
+  DOC_KEY,
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
@@ -27,20 +29,37 @@ const CORE = [
 ];
 
 self.addEventListener('install', e => {
-  // 預先抓好核心檔案，第一次安裝完就能離線開
-  e.waitUntil(
-    caches.open(CACHE_VER)
-      .then(c => c.addAll(CORE).catch(() => {}))   // 任何一個抓不到都不要讓安裝整個失敗
-      .then(() => self.skipWaiting())
-  );
+  // ⚠ 不要用 cache.addAll()——它是全有全無，**任何一個檔案 404 或被轉址，
+  //   整批就全部失敗、快取留成空的，而且 SW 會卡在 installing 永遠不 active**。
+  //   （實測就是這樣：線上有一個 404，結果離線完全打不開。）
+  //   改成一個一個加、各自 catch，壞掉的那個不會拖垮其他人。
+  //   ⚠⚠ 而且整段要包 try/catch。install 的 waitUntil 只要 reject 一次，
+  //   SW 就直接變 redundant、**永遠不會 active**，離線功能整個不存在——
+  //   而畫面上什麼錯都看不到（實測 CDP 才看到「event.waitUntil Promise rejected」）。
+  //   預先快取只是「有更好」，絕對不該讓它有能力擋下安裝。
+  e.waitUntil((async () => {
+    try {
+      const c = await caches.open(CACHE_VER);
+      for (const u of CORE) {
+        try {
+          const r = await fetch(u, { cache: 'reload' });
+          if (r && r.ok) await c.put(u, r);
+        } catch (err) { /* 這個檔沒抓到就算了，不影響其他檔與安裝 */ }
+      }
+    } catch (err) { /* 連 caches 都開不了也不要擋安裝 */ }
+    try { await self.skipWaiting(); } catch (err) {}
+  })());
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_VER).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  // 同上：activate 的 waitUntil 也不能 reject
+  e.waitUntil((async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k !== CACHE_VER).map(k => caches.delete(k).catch(() => {})));
+    } catch (err) {}
+    try { await self.clients.claim(); } catch (err) {}
+  })());
 });
 
 self.addEventListener('fetch', e => {
@@ -58,11 +77,13 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(req)
         .then(resp => {
-          const copy = resp.clone();
-          caches.open(CACHE_VER).then(c => c.put('./index.html', copy)).catch(() => {});
+          if (resp && resp.ok) {
+            const copy = resp.clone();
+            caches.open(CACHE_VER).then(c => c.put(DOC_KEY, copy)).catch(() => {});
+          }
           return resp;
         })
-        .catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
+        .catch(() => caches.match(DOC_KEY).then(r => r || Response.error()))
     );
     return;
   }
