@@ -2,8 +2,16 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>個人工作室 · Personal Studio</title>
+<!-- 加到主畫面 / 離線可開。資料本來就全在 localStorage，只差頁面載得進來 -->
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0e0d0b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="工作室">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -2626,6 +2634,9 @@
       <h1 class="hero-title">屬於你的<em>數位書房</em>。</h1>
     </section>
 
+    <!-- 加到主畫面的提示（已安裝、或使用者關掉過就不顯示） -->
+    <div id="installHint"></div>
+
     <!-- 今日提醒：跨模組把「需要你處理的事」集中到首頁 -->
     <div id="studioAlerts"></div>
 
@@ -2812,8 +2823,58 @@
       <input type="file" id="twStockImport" accept=".json" style="display:none" onchange="importTwStockData(event)">
     </div>
 
+    <!-- 已購買 / 自選股 兩個活頁 -->
+    <div class="travel-tabs" style="margin-bottom:14px;">
+      <button class="travel-tab active" data-tw-tab="own" onclick="setTwTab('own')">◆ 已購買股票</button>
+      <button class="travel-tab" data-tw-tab="watch" onclick="setTwTab('watch')">◇ 自選股</button>
+      <span style="margin-left:auto; display:flex; align-items:center; gap:6px; padding-right:4px;">
+        <button class="btn btn-sm btn-primary" id="twAddWatchBtn" onclick="openTwWatchAdd()" style="display:none;">＋ 新增自選股</button>
+      </span>
+    </div>
+
     <!-- 持股列表 -->
     <div id="holdingsGrid" class="opp-grid"></div>
+    <!-- 自選股列表 -->
+    <div id="twWatchGrid" style="display:none;"></div>
+  </div>
+
+  <!-- 新增自選股 -->
+  <div class="modal-backdrop" id="twWatchAddModal" style="z-index:2150;">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-head">
+        <h2>＋ 新增 <em>自選股</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeTwWatchAdd()" title="關閉" aria-label="關閉">✕</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:14px;">
+        還沒買、但想放在名單裡看的股票。加進來之後可以設停損／停利，<strong>價格碰到時首頁會提醒你</strong>。
+      </div>
+      <form onsubmit="return saveTwWatchAdd(event)">
+        <div class="form-group" style="position:relative;">
+          <label class="form-label">股票代號或名稱</label>
+          <input type="text" class="form-input" id="twWatchSymbol" placeholder="2330 / 台積電 / 0050" autocomplete="off"
+                 oninput="onTwWatchSearch(this.value)" onfocus="onTwWatchSearch(this.value)"
+                 onblur="setTimeout(()=>{const e=document.getElementById('twWatchResults'); if(e) e.style.display='none';},200)" required>
+          <div class="stock-search-results" id="twWatchResults" style="display:none;"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">停損價（跌破提醒 · 可留空）</label>
+            <input type="number" step="any" class="form-input" id="twWatchLow" placeholder="例如 550">
+          </div>
+          <div class="form-group">
+            <label class="form-label">停利價（達標提醒 · 可留空）</label>
+            <input type="number" step="any" class="form-input" id="twWatchHigh" placeholder="例如 700">
+          </div>
+        </div>
+        <div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7; margin-bottom:4px;">
+          價位可以先留空，之後在「📓 分析策略記錄」或打開走勢圖再設。現價會在下次「⚡ 一鍵更新全部現價」時自動抓。
+        </div>
+        <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+          <button type="button" class="btn" onclick="closeTwWatchAdd()">取消</button>
+          <button type="submit" class="btn btn-primary">加入自選股</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- ============ 台股新聞 Modal ============ -->
@@ -8302,7 +8363,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.4 · κ</div>
+    <div>v 10.5 · κ</div>
   </footer>
 </div>
 
@@ -10958,6 +11019,193 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
   }
 
   // === 持股列表 ===
+  // ===== 台股：已購買 / 自選股 兩個活頁 =====
+  // 自選股不另外開一份儲存——沿用「分析策略記錄」(analysis_log_v1) 那套，
+  // 這樣機會掃描的「＋ 加入觀察」、分析畫面右上角那顆、跟這裡手動加的，
+  // 全都是同一份名單，也自動被下單計畫看守與首頁提醒盯著。
+  let twTab = 'own';
+  function setTwTab(tab) {
+    twTab = tab === 'watch' ? 'watch' : 'own';
+    document.querySelectorAll('[data-tw-tab]').forEach(b =>
+      b.classList.toggle('active', b.getAttribute('data-tw-tab') === twTab));
+    document.getElementById('holdingsGrid').style.display = twTab === 'own' ? '' : 'none';
+    document.getElementById('twWatchGrid').style.display = twTab === 'watch' ? '' : 'none';
+    const add = document.getElementById('twAddWatchBtn');
+    if (add) add.style.display = twTab === 'watch' ? '' : 'none';
+    if (twTab === 'watch') renderTwWatchList();
+  }
+
+  // 這個代號算不算「台股自選股」：在記錄本裡、是台股、而且有設價位或有留過記錄
+  function twWatchSymbols() {
+    const out = [];
+    Object.keys(alogAll || {}).forEach(sym => {
+      const b = alogAll[sym];
+      if (!b) return;
+      const isTw = b.market === 'tw' || (!b.market && isTwCode(sym));
+      if (!isTw) return;
+      const p = b.plan || {};
+      const hasPlan = p.low > 0 || p.high > 0 || p.price > 0;
+      if (!hasPlan && !(b.entries && b.entries.length) && !b.watch) return;
+      out.push(sym);
+    });
+    return out.sort();
+  }
+
+  async function renderTwWatchList() {
+    const grid = document.getElementById('twWatchGrid');
+    if (!grid) return;
+    if (!alogAll || !Object.keys(alogAll).length) { try { await loadAlog(); } catch (e) {} }
+    const syms = twWatchSymbols();
+    if (!syms.length) {
+      grid.innerHTML = `<div class="empty-state"><span class="glyph">◇</span><h3>自選股是空的</h3>
+        <p>還沒買、但想追蹤的股票放這裡。<br>
+        按右上「＋ 新增自選股」，或從「🎯 機會掃描」與走勢圖右上角的「＋ 加入觀察」加進來。</p></div>`;
+      return;
+    }
+    const held = {};
+    (twHoldings || []).forEach(h => { if (Number(h.shares) > 0) held[h.symbol] = h; });
+    const money = v => v == null ? '—' : 'NT$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+    grid.className = 'opp-grid';
+    grid.innerHTML = syms.map(sym => {
+      const b = alogAll[sym];
+      const p = b.plan || {};
+      const name = b.name || (TW_STOCKS.find(s => s.symbol === sym) || {}).name || '';
+      const own = held[sym];
+      const px = own ? Number(own.currentPrice) : Number(b.lastPrice);
+      const stale = !own && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
+      // 現在踩到哪一格（跟下單計畫看守同一套判斷，避免兩邊講不同的話）
+      let state = null;
+      if (px > 0) {
+        if (p.low > 0 && px <= p.low) state = { t: '已跌破停損', c: 'var(--danger)' };
+        else if (p.high > 0 && px >= p.high) state = { t: '已達停利', c: 'var(--accent)' };
+        else if (p.low > 0 && Number(((1 - p.low / px) * 100).toFixed(1)) <= 3) state = { t: '快碰到停損', c: 'var(--accent-warm)' };
+        else if (p.high > 0 && Number(((p.high / px - 1) * 100).toFixed(1)) <= 3) state = { t: '快到停利', c: 'var(--accent-warm)' };
+      }
+      let rr = null;
+      if (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price) rr = ((p.high - p.price) / (p.price - p.low)).toFixed(2);
+      const notes = (b.entries || []).length;
+      return `
+        <div class="opp-card" style="${state ? `border-left:2px solid ${state.c};` : ''}">
+          <div style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
+            <span style="font-family:var(--mono); font-size:17px; color:var(--accent); font-weight:600;">${escape(sym)}</span>
+            ${name ? `<span style="font-family:var(--serif); font-size:15px;">${escape(name)}</span>` : ''}
+            ${own ? '<span style="font-family:var(--mono); font-size:9.5px; color:var(--bg-base); background:var(--accent-deep); border-radius:2px; padding:2px 7px;">也持有中</span>' : ''}
+            ${state ? `<span style="margin-left:auto; font-family:var(--mono); font-size:11px; color:${state.c};">${state.t}</span>` : ''}
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:9px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損</div>
+              <div style="font-family:var(--serif); font-size:14px; color:var(--danger);">${money(p.low)}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">現價${stale ? '（' + stale + '）' : ''}</div>
+              <div style="font-family:var(--serif); font-size:14px;">${px > 0 ? money(px) : '<span style="color:var(--ink-muted); font-size:12px;">按⚡更新</span>'}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停利</div>
+              <div style="font-family:var(--serif); font-size:14px; color:var(--accent);">${money(p.high)}</div>
+            </div>
+          </div>
+          <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:9px;">
+            ${rr ? `賠率 <span style="color:${Number(rr) >= 2 ? 'var(--accent)' : 'var(--danger)'};">1:${rr}</span> · ` : ''}分析記錄 ${notes} 筆
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="openTvChartModal('${escape(sym)}','${escape(name)}','TWSE')">📊 走勢圖</button>
+            <button class="btn btn-sm" onclick="openTwWatchLog('${escape(sym)}','${escape(name)}')">📓 分析記錄</button>
+            ${own ? '' : `<button class="btn btn-sm" onclick="openHoldingModalFor('${escape(sym)}','${escape(name)}')" title="已經買了，轉成持股">＋ 我買了</button>`}
+            <button data-tap class="btn btn-sm" onclick="removeTwWatch('${escape(sym)}')" title="從自選股移除" style="margin-left:auto;">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // 從自選股直接開分析記錄（不必先打開走勢圖）
+  async function openTwWatchLog(sym, name) {
+    lastAnalysisSnapshot = { symbol: sym, name: name || sym, market: 'tw',
+      price: Number((alogAll[sym] || {}).lastPrice) || 0, snap: '', tech: '', techSummary: '', check: '', levels: '' };
+    await openAnalysisLog();
+  }
+  // 「我買了」→ 直接開新增持股表單並把代號帶進去
+  function openHoldingModalFor(sym, name) {
+    openHoldingModal();
+    setTimeout(() => {
+      const s = document.getElementById('holdingSymbol'); if (s) s.value = sym;
+      const n = document.getElementById('holdingName'); if (n && name) n.value = name;
+    }, 60);
+  }
+  async function removeTwWatch(sym) {
+    await loadAlog();
+    const b = alogAll[sym];
+    if (!b) return;
+    const notes = (b.entries || []).length;
+    if (!confirm(`把 ${sym} 從自選股移除？\n\n· 停損／停利設定會清掉，首頁不再提醒這一檔\n· ${notes ? `先前的 ${notes} 筆分析記錄會保留` : '這檔沒有分析記錄'}`)) return;
+    b.plan = { price: null, high: null, low: null, updatedAt: 0 };
+    b.watch = false;
+    if (!notes) delete alogAll[sym];
+    await saveAlog();
+    showToast(`已把 ${sym} 從自選股移除`);
+    renderTwWatchList();
+    try { refreshStudioAlerts(); } catch (e) {}
+  }
+
+  // ── 新增自選股 ──
+  function openTwWatchAdd() {
+    ['twWatchSymbol', 'twWatchLow', 'twWatchHigh'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+    document.getElementById('twWatchAddModal').classList.add('active');
+    setTimeout(() => document.getElementById('twWatchSymbol').focus(), 80);
+  }
+  function closeTwWatchAdd() { document.getElementById('twWatchAddModal').classList.remove('active'); }
+  function onTwWatchSearch(q) {
+    const box = document.getElementById('twWatchResults');
+    if (!box) return;
+    const s = String(q || '').trim();
+    if (!s) { box.style.display = 'none'; return; }
+    const list = twScanList().filter(x =>
+      x.symbol.includes(s) || (x.name || '').includes(s)).slice(0, 8);
+    if (!list.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = list.map(x => `
+      <div class="stock-search-item" onclick="pickTwWatch('${escape(x.symbol)}')">
+        <span style="font-family:var(--mono); color:var(--accent);">${escape(x.symbol)}</span>
+        <span style="margin-left:8px;">${escape(x.name || '')}</span>
+      </div>`).join('');
+  }
+  function pickTwWatch(sym) {
+    document.getElementById('twWatchSymbol').value = sym;
+    document.getElementById('twWatchResults').style.display = 'none';
+  }
+  async function saveTwWatchAdd(e) {
+    e.preventDefault();
+    const raw = document.getElementById('twWatchSymbol').value.trim();
+    // 使用者可能打的是名稱，查回代號
+    let sym = raw;
+    if (!isTwCode(sym)) {
+      const hit = twScanList().find(x => x.name === raw || (x.name || '').includes(raw));
+      if (hit) sym = hit.symbol;
+    }
+    if (!isTwCode(sym)) { showToast('請輸入正確的台股代號（例如 2330）'); return false; }
+    const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
+    const low = num('twWatchLow'), high = num('twWatchHigh');
+    if (low != null && high != null && low >= high) { showToast('停損價要比停利價低'); return false; }
+
+    await loadAlog();
+    const b = alogBook(sym);
+    b.market = 'tw';
+    b.watch = true;
+    if (!b.name) b.name = (twScanList().find(x => x.symbol === sym) || {}).name || sym;
+    const had = b.plan && (b.plan.low != null || b.plan.high != null);
+    if (low != null || high != null || !had) {
+      b.plan = { price: b.plan && b.plan.price != null ? b.plan.price : null, high, low, updatedAt: Date.now() };
+    }
+    await saveAlog();
+    closeTwWatchAdd();
+    showToast(`✓ ${sym} 已加入自選股`);
+    setTwTab('watch');
+    try { refreshStudioAlerts(); } catch (e2) {}
+    return false;
+  }
+
   function renderHoldings() {
     const grid = document.getElementById('holdingsGrid');
     if (twHoldings.length === 0) {
@@ -30660,8 +30908,75 @@ ${daysBrief}
     } catch (e) {}
   }
 
+  // ===== 加到主畫面 / 離線可開 =====
+  // ⚠ 只在 https 或 localhost 註冊（Service Worker 的硬性限制）。
+  //   用 file:// 直接開的話 location.protocol 是 'file:'，註冊會丟例外，所以要擋掉。
+  // ⚠ SW 的頁面策略是 network-first（見 sw.js 內的說明）——這個專案一天部署好幾次，
+  //   cache-first 會讓使用者卡在舊版而且完全不知道為什麼。
+  function initPWA() {
+    try {
+      const ok = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      if (!ok || !('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    } catch (e) {}
+  }
+
+  // Chrome/Edge 會在條件符合時丟 beforeinstallprompt，把它接住，
+  // 使用者按我們自己的按鈕時才叫出安裝視窗（瀏覽器不允許自動彈）
+  let deferredInstall = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredInstall = e;
+    renderInstallHint();
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstall = null;
+    writeKey('studio_pwa_installed_v1', '1');
+    renderInstallHint();
+    showToast('✓ 已加到主畫面');
+  });
+
+  const isStandalone = () =>
+    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+  async function renderInstallHint() {
+    const el = document.getElementById('installHint');
+    if (!el) return;
+    // 已經是從主畫面開的、或使用者關掉過提示，就不要再囉唆
+    if (isStandalone() || dashLevel !== 'overview') { el.innerHTML = ''; return; }
+    let dismissed = false;
+    try { dismissed = !!(await readKey('studio_pwa_hint_off_v1')); } catch (e) {}
+    if (dismissed) { el.innerHTML = ''; return; }
+
+    const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (!deferredInstall && !iOS) { el.innerHTML = ''; return; }   // 不支援就別給假希望
+
+    el.innerHTML = `
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:11px 14px; margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span style="font-size:15px;">📲</span>
+        <span style="flex:1; min-width:180px; font-size:12.5px; color:var(--ink-secondary); line-height:1.6;">
+          <strong>把工作室加到手機主畫面</strong>，像一般 App 一樣開，<strong>沒網路也打得開</strong>（你的資料本來就存在手機裡）。
+          ${iOS && !deferredInstall ? '<br><span style="color:var(--ink-tertiary); font-size:11.5px;">iPhone：按下面那排的「分享 ⬆」→ 往下找「加入主畫面」。</span>' : ''}
+        </span>
+        ${deferredInstall ? '<button class="btn btn-sm btn-primary" onclick="doInstallPWA()">加到主畫面</button>' : ''}
+        <button data-tap class="btn btn-sm" onclick="dismissInstallHint()" title="不要再顯示">✕</button>
+      </div>`;
+  }
+  async function doInstallPWA() {
+    if (!deferredInstall) return;
+    deferredInstall.prompt();
+    try { await deferredInstall.userChoice; } catch (e) {}
+    deferredInstall = null;
+    renderInstallHint();
+  }
+  async function dismissInstallHint() {
+    await writeKey('studio_pwa_hint_off_v1', '1');
+    renderInstallHint();
+  }
+
+  initPWA();
   loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam())
-           .then(() => maybeAutoRefreshPrices());
+           .then(() => { renderInstallHint(); return maybeAutoRefreshPrices(); });
 </script>
 
 </body>
