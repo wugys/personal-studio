@@ -3193,6 +3193,7 @@
     <div class="modal" style="max-width:680px;">
       <div class="modal-head">
         <h2 id="usAnalysisTitle">個股 <em>分析</em></h2>
+        <button class="btn btn-sm btn-primary" type="button" id="usWatchHeadBtn" style="display:none; flex-shrink:0;">＋ 加入觀察</button>
         <button class="modal-head-x" type="button" onclick="closeUsAnalysisModal()" title="關閉" aria-label="關閉">✕</button>
       </div>
       <div class="form-group" style="margin-bottom:14px; position:relative;">
@@ -7054,6 +7055,7 @@
     <div class="modal" style="max-width:680px;">
       <div class="modal-head">
         <h2 id="tvChartTitle">走勢 <em>圖</em></h2>
+        <button class="btn btn-sm btn-primary" type="button" id="twWatchHeadBtn" style="display:none; flex-shrink:0;">＋ 加入觀察</button>
         <button class="modal-head-x" type="button" onclick="closeTvChartModal()" title="關閉" aria-label="關閉">✕</button>
       </div>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
@@ -8248,7 +8250,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.1 · κ</div>
+    <div>v 10.2 · κ</div>
   </footer>
 </div>
 
@@ -11993,6 +11995,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       lastAnalysisSnapshot = { symbol: code, name: name || code, market: 'tw', price: price || 0,
         snap: `收盤 NT$${price}`, tech: '', techSummary: (sig && sig.summary) || '', check: '', levels: '' };
       alogTouchMeta(code, 'tw', name || code, price);   // 讓首頁提醒拿得到最新市價
+      loadAlog().then(renderWatchHeadBtn).catch(() => {});   // 同上，要在 snapshot 之後
       const chk = document.getElementById('twCheckPanel');
       const lvl = document.getElementById('twLevelsPanel');
       if (chk) chk.innerHTML = renderUsBeginnerCheck(code, price, null, sig, 'tw');   // 先用技術面畫一次
@@ -12059,6 +12062,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (ai) { ai.style.display = 'none'; ai.innerHTML = ''; }
     document.getElementById('tvChartModal').classList.add('active');
     tvChartPrompt = buildAnalysisPrompt(symbol, name || symbol); // 重用台股技術/籌碼分析框架
+    { const wb = document.getElementById('twWatchHeadBtn'); if (wb) wb.style.display = 'none'; }
     renderPlanBadge('twPlanBadge', symbol, 'tw');   // 圖表列右邊顯示已記下的買賣價位
     loadTwCandleChart('tvChartBox', symbol, name);
   }
@@ -12791,6 +12795,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       <div id="usTvChart" style="height:360px; margin-bottom:16px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
       <div id="usAnalysisData" style="text-align:center; padding:18px; color:var(--ink-tertiary);">載入即時資料中…</div>`;
     usChartMode = 'tv';
+    // 資料還沒載好之前先藏起來，免得顯示上一檔的狀態被誤按
+    { const wb = document.getElementById('usWatchHeadBtn'); if (wb) wb.style.display = 'none'; }
     renderPlanBadge('usPlanBadge', h.symbol, 'us');   // 圖表列右邊顯示已記下的買賣價位
     loadUsTvChart(h, seq); // 獨立載入，不擋資料區
     if (!finnhubKey) await loadFinnhubKey();
@@ -12816,6 +12822,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     // 給「分析策略記錄」的「↓ 從系統帶入」用
     lastAnalysisSnapshot = { symbol: h.symbol, name: h.name, market: 'us', price: (quote && quote.c) || 0, snap, tech: '', techSummary: '', check: '', levels: '' };
     alogTouchMeta(h.symbol, 'us', h.name, (quote && quote.c) || 0);   // 讓首頁提醒拿得到最新市價
+    // ⚠ 一定要在 lastAnalysisSnapshot 設好之後才畫——這顆按鈕靠它才知道現在是哪一檔
+    loadAlog().then(renderWatchHeadBtn).catch(() => {});
     usAnalysisPrompt = buildUsAnalysisPrompt(h.symbol, h.name, snap, 'general');
     // 新手體檢要用到：使用者先前填的答案 + 總資產（用來算「這筆佔你多少 %」）
     await loadUsCheckAnswers();
@@ -23286,6 +23294,73 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     el.innerHTML = (bits.join('　·　') || '') + verdict;
   }
+  // 分析畫面右上角的「＋ 加入觀察」——跟掃描器那顆同一件事，
+  // 只是價位改用這個畫面自己算的「參考價位帶」（usLevelsCache）。
+  // 台股（走勢圖視窗）與美股（分析視窗）共用。
+  async function addCurrentToWatch() {
+    const s = lastAnalysisSnapshot;
+    if (!s || !s.symbol) { showToast('請先打開一檔股票的分析畫面'); return; }
+    const sym = s.symbol;
+    const market = s.market === 'tw' ? 'tw' : 'us';
+    const cur = market === 'tw' ? 'NT$' : '$';
+    const L = (usLevelsCache && usLevelsCache.c && lastAnalysisSnapshot.symbol === sym) ? usLevelsCache : null;
+    const stop = L && L.stops && L.stops[0];
+    const price = Number(L ? L.c : s.price) || 0;
+
+    await loadAlog();
+    const b = alogBook(sym);
+    b.market = market;
+    b.name = s.name || sym;
+    if (price > 0) { b.lastPrice = price; b.lastPriceAt = Date.now(); }
+    const hadPlan = b.plan && (b.plan.price != null || b.plan.high != null || b.plan.low != null);
+    if (!hadPlan) {
+      b.plan = {
+        price: price > 0 ? price : null,
+        high: stop && stop.target2r > 0 ? Number(stop.target2r.toFixed(2)) : null,
+        low: stop && stop.v > 0 ? Number(stop.v.toFixed(2)) : null,
+        updatedAt: Date.now()
+      };
+    }
+    b.entries.unshift({
+      id: 'al_' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+      tab: 'system', date: todayISO(), type: '加入觀察',
+      content: [
+        `【從分析畫面加入觀察】${todayISO()}　${market === 'tw' ? '台股' : '美股'}`,
+        price > 0 ? `當時價格 ${cur}${price}` : '',
+        stop ? `停損參考 ${cur}${stop.v.toFixed(2)}（${stop.pct.toFixed(1)}%）　目標(賠率2:1) ${cur}${stop.target2r.toFixed(2)}（+${stop.target2rPct.toFixed(1)}%）` : '（這次沒算出參考價位帶，價位要自己填）',
+        s.techSummary ? `技術面：${s.techSummary}` : '',
+        s.snap ? `市場快照：${s.snap}` : ''
+      ].filter(Boolean).join('\n'),
+      insight: '', memo: '從分析畫面加入觀察',
+      createdAt: Date.now(), updatedAt: Date.now()
+    });
+    await saveAlog();
+    showToast(hadPlan
+      ? `✓ ${sym} 已加入觀察（保留你原本設的價位）`
+      : (stop ? `✓ ${sym} 已加入觀察 · 停損 ${cur}${b.plan.low} / 目標 ${cur}${b.plan.high}`
+              : `✓ ${sym} 已加入觀察（還沒有價位，記得去分析記錄設）`));
+    renderWatchHeadBtn();
+    renderPlanBadge('usPlanBadge', sym, market);
+    renderPlanBadge('twPlanBadge', sym, market);
+    try { refreshStudioAlerts(); } catch (e) {}
+  }
+
+  // 兩個視窗標題列上那顆按鈕的狀態（開啟分析畫面與加入後都要重畫）
+  function renderWatchHeadBtn() {
+    const sym = lastAnalysisSnapshot && lastAnalysisSnapshot.symbol;
+    ['usWatchHeadBtn', 'twWatchHeadBtn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!sym) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      const on = scanIsWatched(sym);
+      el.className = 'btn btn-sm' + (on ? '' : ' btn-primary');
+      el.textContent = on ? '✓ 已在觀察中' : '＋ 加入觀察';
+      el.title = on ? '已經在觀察名單裡，點看全部下單計畫' : '把這檔的停損與目標存起來，跌破或達標時首頁會提醒你';
+      el.onclick = on ? () => openPlanWatch() : () => addCurrentToWatch();
+    });
+  }
+
   function alogFillFromLevels() {
     const L = usLevelsCache;
     const s = lastAnalysisSnapshot;
@@ -23311,6 +23386,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     // 兩個圖表列的徽章都更新（哪個開著就更新哪個），存完馬上看得到
     renderPlanBadge('usPlanBadge', alogSymbol, alogMarket);
     renderPlanBadge('twPlanBadge', alogSymbol, alogMarket);
+    renderWatchHeadBtn();
     showToast('✓ 下單決定已儲存');
   }
 
@@ -23826,6 +23902,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     showToast(`已把 ${sym} 從觀察名單移除`);
     planWatchRows = await buildPlanWatch();
     renderPlanWatch();
+    try { renderWatchHeadBtn(); } catch (e) {}   // 分析視窗開著的話，那顆按鈕要變回「＋ 加入觀察」
     try { refreshStudioAlerts(); } catch (e) {}
   }
 
