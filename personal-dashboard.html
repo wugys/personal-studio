@@ -6971,6 +6971,7 @@
       <button class="btn btn-sm btn-primary" data-refresh-prices onclick="refreshAllPrices()"
               title="台股走 FinMind 收盤、美股走 Finnhub 即時、加密走 CoinGecko、外幣走即時匯率">⚡ 一鍵更新全部現價</button>
       <span id="cfPriceAge" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);"></span>
+      <button class="btn btn-sm" id="cfAutoPriceBtn" onclick="toggleAutoPrice()" title="開 App 時自動更新（最多 6 小時一次，背景進行）">⟳ 自動更新</button>
       <span style="flex:1;"></span>
       <span id="cfFxLabel" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.05em;">USD/TWD —</span>
       <button class="btn btn-sm" onclick="refreshCashflowFxAndRender()">↻ 只更新匯率</button>
@@ -8198,7 +8199,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.6 · ι</div>
+    <div>v 9.7 · ι</div>
   </footer>
 </div>
 
@@ -9029,9 +9030,45 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
   const planMoney = (r, v) => v == null ? '—' : r.cur + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
+  // 提醒的靜音：同一件事講一次就好，使用者決定不理它就該閉嘴一陣子。
+  // ⚠ id 必須「同一件事每次重算都算出一樣的值」，但價格會一直變 →
+  //   先把數字、標籤、空白全部拿掉再做雜湊，這樣「TSLA 現價 $310 已跌破…」跟
+  //   隔天的「TSLA 現價 $305 已跌破…」會是同一個 id，不會被當成新提醒又冒出來。
+  const ALERT_SNOOZE_KEY = 'studio_alert_snooze_v1';
+  let alertSnooze = {};
+  function alertKeyOf(icon, view, text) {
+    const base = String(icon || '') + '|' + String(view || '') + '|' +
+      String(text || '').replace(/<[^>]+>/g, '').replace(/[\d.,%$＄]+/g, '#').replace(/\s+/g, '');
+    let h = 5381;
+    for (let i = 0; i < base.length; i++) h = ((h * 33) ^ base.charCodeAt(i)) >>> 0;
+    return 'a' + h.toString(36);
+  }
+  async function loadAlertSnooze() {
+    alertSnooze = await readJson(ALERT_SNOOZE_KEY, {}) || {};
+    // 順手清掉過期的，不然這個物件會一直長大
+    const now = Date.now();
+    let dirty = false;
+    Object.keys(alertSnooze).forEach(k => { if (!(alertSnooze[k] > now)) { delete alertSnooze[k]; dirty = true; } });
+    if (dirty) await writeKey(ALERT_SNOOZE_KEY, JSON.stringify(alertSnooze));
+    return alertSnooze;
+  }
+  async function snoozeAlert(id, days) {
+    await loadAlertSnooze();
+    alertSnooze[id] = Date.now() + days * 86400000;
+    await writeKey(ALERT_SNOOZE_KEY, JSON.stringify(alertSnooze));
+    showToast(`🔕 這則提醒 ${days} 天內不再出現`);
+    refreshStudioAlerts();
+  }
+  async function unsnoozeAllAlerts() {
+    alertSnooze = {};
+    await writeKey(ALERT_SNOOZE_KEY, JSON.stringify({}));
+    showToast('已恢復全部靜音的提醒');
+    refreshStudioAlerts();
+  }
+
   async function buildStudioAlerts() {
     const A = [];
-    const push = (level, icon, text, view, extra) => A.push({ level, icon, text, view, extra });
+    const push = (level, icon, text, view, extra) => A.push({ level, icon, text, view, extra, id: alertKeyOf(icon, view, text) });
     const money = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
 
     // 1) 停損被跌破（美股 + 台股，用「新手體檢」裡自己填的停損價）
@@ -9198,7 +9235,11 @@ alter publication supabase_realtime add table party_locations;</pre>
       }
     } catch (e) {}
 
-    return A.sort((a, b) => ALERT_LEVEL[a.level] - ALERT_LEVEL[b.level]);
+    await loadAlertSnooze();
+    const now = Date.now();
+    const kept = A.filter(a => !(alertSnooze[a.id] > now));
+    kept.snoozedCount = A.length - kept.length;   // 給畫面顯示「已靜音 N 則」
+    return kept.sort((a, b) => ALERT_LEVEL[a.level] - ALERT_LEVEL[b.level]);
   }
 
   let studioAlertsCollapsed = false;
@@ -9222,9 +9263,15 @@ alter publication supabase_realtime add table party_locations;</pre>
     const el = document.getElementById('studioAlerts');
     if (!el) return;
     if (dashLevel !== 'overview') { el.innerHTML = ''; return; }
+    const muted = Number(list.snoozedCount) || 0;
+    const mutedBar = muted
+      ? `<div style="font-size:11.5px; color:var(--ink-tertiary); margin-top:8px;">🔕 有 ${muted} 則已靜音
+           <button class="btn btn-sm" onclick="unsnoozeAllAlerts()" style="margin-left:6px;">全部恢復</button></div>`
+      : '';
     if (!list.length) {
       el.innerHTML = `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:10px 14px; margin-bottom:18px; font-size:12.5px; color:var(--ink-secondary);">
-        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查下單計畫的停損／停利、租約、會費、活動、定存到期、備份狀態）</span>
+        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查下單計畫的停損／停利、現價新不新、租約、會費、活動、定存到期、備份狀態）</span>
+        ${mutedBar}
       </div>`;
       return;
     }
@@ -9244,7 +9291,11 @@ alter publication supabase_realtime add table party_locations;</pre>
             <span style="font-size:13px; line-height:1.5;">${a.icon}</span>
             <span style="flex:1; min-width:0; font-size:12.5px; color:var(--ink-secondary); line-height:1.55;">${a.text}</span>
             ${a.view || a.extra ? '<span style="font-family:var(--mono); font-size:10px; color:var(--accent); white-space:nowrap; align-self:center;">前往 →</span>' : ''}
+            <button title="我知道了，7 天內別再提這件事" aria-label="靜音這則提醒"
+                    onclick="event.stopPropagation(); snoozeAlert('${escape(a.id)}', 7)"
+                    style="flex-shrink:0; align-self:center; background:transparent; border:1px solid var(--line); color:var(--ink-tertiary); border-radius:3px; padding:3px 7px; font-size:11px; cursor:pointer;">🔕</button>
           </div>`).join('')}
+        ${mutedBar}
       </div>`;
   }
 
@@ -22569,8 +22620,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   let priceRefreshBusy = false;
-  async function refreshAllPrices() {
-    if (priceRefreshBusy) { showToast('正在更新中…'); return; }
+  // opts.silent = 背景自動更新：不跳 toast、不畫結果卡，只默默把價格換新
+  async function refreshAllPrices(opts) {
+    const silent = !!(opts && opts.silent);
+    if (priceRefreshBusy) { if (!silent) showToast('正在更新中…'); return; }
     priceRefreshBusy = true;
     const btns = [...document.querySelectorAll('[data-refresh-prices]')];
     const oldTxt = btns.map(b => b.textContent);
@@ -22606,7 +22659,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           jobs.push({ t, h, sym, kind });
         });
       }
-      if (!jobs.length) { showToast('目前沒有任何持股可以更新'); return; }
+      if (!jobs.length) { if (!silent) showToast('目前沒有任何持股可以更新'); return; }
 
       const setPx = (job, price) => {
         const before = Number(job.h.currentPrice) || 0;
@@ -22705,7 +22758,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       }
       await writeKey('studio_price_refresh_v1', JSON.stringify({ at: Date.now(), ok: log.tw.ok + log.us.ok + log.crypto.ok + log.fx.ok }));
 
-      renderPriceRefreshResult(log, notes, fxRate);
+      if (!silent) renderPriceRefreshResult(log, notes, fxRate);
+      renderPriceAge();
       // 現金流頁與首頁提醒的數字都跟現價有關，順手重算
       try { if (document.getElementById('cashflowView').classList.contains('active')) loadCashflow(); } catch (e) {}
       try { refreshStudioAlerts(); } catch (e) {}
@@ -22713,6 +22767,39 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       priceRefreshBusy = false;
       btns.forEach((b, i) => { b.disabled = false; b.textContent = oldTxt[i]; });
     }
+  }
+
+  // 開 App 時自動更新現價。使用者記不記得按不該影響數字準不準。
+  // 刻意保守，不要一開就打一堆 API：
+  //  · 團友模式（guest）完全不做——那是別人的裝置，不該替他打 API
+  //  · 手動關掉的話就不做（studio_autoprice_v1.off）
+  //  · 距上次更新未滿 6 小時就不做
+  //  · 沒有任何持股就不做
+  //  · 延遲 2.5 秒才開始，讓首頁先畫出來（背景跑，不擋畫面、不跳提示）
+  const AUTOPRICE_KEY = 'studio_autoprice_v1';
+  const AUTOPRICE_MIN_GAP_H = 6;
+  async function maybeAutoRefreshPrices() {
+    try {
+      if (document.body.classList.contains('guest-mode')) return;
+      const cfg = await readJson(AUTOPRICE_KEY, {}) || {};
+      if (cfg.off) return;
+      const last = await readJson('studio_price_refresh_v1', null);
+      if (last && last.at && (Date.now() - last.at) < AUTOPRICE_MIN_GAP_H * 3600000) return;
+      let any = false;
+      for (const t of PRICE_TARGETS) {
+        const hs = await readJson(t.hKey, []);
+        if (Array.isArray(hs) && hs.length) { any = true; break; }
+      }
+      if (!any) return;
+      setTimeout(() => { refreshAllPrices({ silent: true }).catch(() => {}); }, 2500);
+    } catch (e) {}
+  }
+  async function toggleAutoPrice() {
+    const cfg = await readJson(AUTOPRICE_KEY, {}) || {};
+    cfg.off = !cfg.off;
+    await writeKey(AUTOPRICE_KEY, JSON.stringify(cfg));
+    showToast(cfg.off ? '已關閉自動更新現價' : `已開啟自動更新（開 App 時，最多 ${AUTOPRICE_MIN_GAP_H} 小時一次）`);
+    renderAutoPriceBtn();
   }
 
   function renderPriceRefreshResult(log, notes, fxRate) {
@@ -22777,9 +22864,17 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const color = mins > 1440 * 3 ? 'var(--danger)' : mins > 1440 ? 'var(--accent-warm)' : 'var(--ink-tertiary)';
     el.innerHTML = `<span style="color:${color};">現價更新於 ${escape(txt)}</span>`;
   }
+  // 自動更新開關的按鈕外觀（開＝琥珀色實心，關＝一般）
+  async function renderAutoPriceBtn() {
+    const b = document.getElementById('cfAutoPriceBtn');
+    if (!b) return;
+    const cfg = await readJson(AUTOPRICE_KEY, {}) || {};
+    b.className = 'btn btn-sm' + (cfg.off ? '' : ' btn-primary');
+    b.textContent = cfg.off ? '⟳ 自動更新：關' : '⟳ 自動更新：開';
+  }
 
   async function loadCashflow() {
-    renderPriceAge();
+    renderPriceAge(); renderAutoPriceBtn();
     await loadCashflowFx();
     if (!cashflowFx.updatedAt) await refreshCashflowFx(); // 首次自動抓匯率
     const rows = await cfCompute();
@@ -29634,7 +29729,8 @@ ${daysBrief}
     } catch (e) {}
   }
 
-  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam());
+  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam())
+           .then(() => maybeAutoRefreshPrices());
 </script>
 
 </body>
