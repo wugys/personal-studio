@@ -6688,6 +6688,25 @@
     </div>
   </div>
 
+  <!-- 配息行事曆：接下來哪天除息、大概領多少、要扣多少健保費 -->
+  <div class="modal-backdrop" id="divCalModal" style="z-index:2150;">
+    <div class="modal" style="max-width: 980px;">
+      <div class="modal-head">
+        <h2>💰 配息 <em>行事曆</em></h2>
+        <button class="modal-head-x" type="button" onclick="closeDivCalendar()" title="關閉" aria-label="關閉">✕</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:12px;">
+        你的台股持股接下來什麼時候除息、大概可以領多少。<strong>除息日之前要持有才領得到。</strong>
+      </div>
+      <div id="divCalStats" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;"></div>
+      <div id="divCalBody"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="copyDivCalendar()">📋 複製清單</button>
+        <button class="btn" onclick="closeDivCalendar()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 我的下單計畫：把所有設過買賣價位的股票排在一起，看誰踩到停損/停利了 -->
   <div class="modal-backdrop" id="planWatchModal" style="z-index:2150;">
     <div class="modal" style="max-width: 980px;">
@@ -8199,7 +8218,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 9.7 · ι</div>
+    <div>v 9.8 · ι</div>
   </footer>
 </div>
 
@@ -8884,6 +8903,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '+', label: '新增模組', action: 'openModuleModal()' });
     items.push({ sep: true });
     items.push({ icon: '⚡', label: '一鍵更新全部現價（台股／美股／加密／匯率）', action: 'refreshAllPrices()' });
+    items.push({ icon: '💰', label: '配息行事曆（哪天除息、能領多少）', action: 'openDivCalendar()' });
     items.push({ icon: '📋', label: '我的下單計畫（看誰踩到停損／停利）', action: 'openPlanWatch()' });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
@@ -9139,6 +9159,38 @@ alter publication supabase_realtime add table party_locations;</pre>
           push('info', '📓', `${who} 的下單計畫是 <strong>${r.planAge} 天前</strong>設的，要不要重看一次？`, r.view, 'plan');
         }
       });
+    } catch (e) {}
+
+    // 1c) 快除息了。除息日「之前」要持有才領得到，所以這個提醒必須提早出現。
+    //     只用快取，不在首頁載入時打 API——不然每次開 App 都要等一堆網路請求。
+    try {
+      const cache = await readJson(DIV_CACHE_KEY, {});
+      if (cache && Object.keys(cache).length) {
+        const shares = {};
+        for (const s of DIV_SOURCES) {
+          const hs = await readJson(s.hKey, []);
+          (Array.isArray(hs) ? hs : []).forEach(h => {
+            const sym = String(h.symbol || '').trim();
+            if (!sym || !isTwCode(sym)) return;
+            if (s.twOnly && h.ccy === 'USD') return;
+            shares[sym] = { n: (shares[sym] ? shares[sym].n : 0) + (Number(h.shares) || 0), name: h.name || '', view: s.view };
+          });
+        }
+        Object.keys(cache).forEach(sym => {
+          const own = shares[sym];
+          if (!own || !(own.n > 0)) return;
+          ((cache[sym] && cache[sym].rows) || []).forEach(d => {
+            const dd = daysBetweenToday(d.ex);
+            if (dd == null || dd < 0 || dd > 14 || !(d.cash > 0)) return;
+            const amt = Math.round(d.cash * own.n);
+            const who = `${sym}${own.name ? ' ' + own.name : ''}`;
+            const m = 'NT$' + amt.toLocaleString('en-US');
+            if (dd === 0) push('urgent', '💰', `${who} <strong>今天就是除息日</strong>，預估領 ${m}`, own.view, 'div');
+            else if (dd <= 5) push('warn', '💰', `${who} <strong>${dd} 天後除息</strong>（${escape(d.ex)}），預估領 ${m}`, own.view, 'div');
+            else push('info', '💰', `${who} ${dd} 天後除息（${escape(d.ex)}），預估領 ${m}`, own.view, 'div');
+          });
+        });
+      }
     } catch (e) {}
 
     // 2) 租約快到期
@@ -22791,7 +22843,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         if (Array.isArray(hs) && hs.length) { any = true; break; }
       }
       if (!any) return;
-      setTimeout(() => { refreshAllPrices({ silent: true }).catch(() => {}); }, 2500);
+      setTimeout(() => {
+        refreshAllPrices({ silent: true })
+          // 順手把除權息資料也備好（自己有 12 小時快取，不會每次都打）。
+          // 首頁的「快除息了」提醒只讀快取、不打 API，所以一定要有人先幫它熱身。
+          .then(() => buildDividendCalendar().then(() => refreshStudioAlerts()))
+          .catch(() => {});
+      }, 2500);
     } catch (e) {}
   }
   async function toggleAutoPrice() {
@@ -23172,6 +23230,186 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     renderPlanBadge('usPlanBadge', alogSymbol, alogMarket);
     renderPlanBadge('twPlanBadge', alogSymbol, alogMarket);
     showToast('✓ 下單決定已儲存');
+  }
+
+  // ===== 配息行事曆 =====
+  // App 記得到「已經領了多少」，但不會告訴你「接下來哪天除息、大概領多少」。
+  // 除息日很重要——那天之前要持有才領得到，之後買就沒了。
+  // 資料走 FinMind TaiwanStockDividend（免金鑰、CORS *），只有台股有；美股沒有免費來源。
+  const DIV_CACHE_KEY = 'div_cache_v1';
+  const DIV_CACHE_HOURS = 12;
+  let divCache = null;
+  // 台股類的持股都要看（個股、高股息 ETF、市值型 ETF、債券 ETF）
+  const DIV_SOURCES = [
+    { hKey: 'tw_holdings_v1', view: 'twStockView', name: '台股個股' },
+    { hKey: 'hdetf_holdings_v1', view: 'hdEtfView', name: '高股息 ETF' },
+    { hKey: 'mketf_holdings_v1', view: 'mkEtfView', name: '市值型 ETF', twOnly: true },
+    { hKey: 'bond_holdings_v1', view: 'bondView', name: '債券 ETF', twOnly: true }
+  ];
+
+  async function fetchTwDividend(code) {
+    if (!divCache) divCache = await readJson(DIV_CACHE_KEY, {}) || {};
+    const hit = divCache[code];
+    if (hit && (Date.now() - hit.at) < DIV_CACHE_HOURS * 3600000) return hit.rows;
+    const start = todayISO(Date.now() - 400 * 864e5);
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockDividend&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const rows = ((j && j.data) || []).map(x => ({
+      cash: Number(x.CashEarningsDistribution) || 0,      // 每股配現金
+      stock: Number(x.StockEarningsDistribution) || 0,    // 每股配股票（張數比例）
+      ex: x.CashExDividendTradingDate || x.StockExDividendTradingDate || '',
+      pay: x.CashDividendPaymentDate || '',
+      year: x.year || ''
+    })).filter(x => x.ex && (x.cash > 0 || x.stock > 0));
+    divCache[code] = { at: Date.now(), rows };
+    await writeKey(DIV_CACHE_KEY, JSON.stringify(divCache));
+    return rows;
+  }
+
+  // 二代健保補充保費：單筆給付 ≥ 2 萬要扣 2.11%（上限單筆 1000 萬）。
+  // 這是機械式規則，算得出來就算；所得稅要看你全年所得，這裡不猜。
+  const NHI_RATE = 0.0211, NHI_MIN = 20000, NHI_MAX = 10000000;
+  const nhiPremium = amount => amount >= NHI_MIN ? Math.round(Math.min(amount, NHI_MAX) * NHI_RATE) : 0;
+
+  async function buildDividendCalendar() {
+    const held = {};   // symbol -> { shares, name, view }
+    for (const s of DIV_SOURCES) {
+      const hs = await readJson(s.hKey, []);
+      (Array.isArray(hs) ? hs : []).forEach(h => {
+        const sym = String(h.symbol || '').trim();
+        if (!sym || !isTwCode(sym)) return;
+        if (s.twOnly && h.ccy === 'USD') return;          // 混合幣別模組只看台幣那些
+        const sh = Number(h.shares) || 0;
+        if (sh <= 0) return;
+        if (!held[sym]) held[sym] = { shares: 0, name: h.name || '', view: s.view };
+        held[sym].shares += sh;
+      });
+    }
+    const syms = Object.keys(held);
+    if (!syms.length) return { rows: [], symbols: 0, failed: [] };
+
+    const failed = [];
+    const all = [];
+    await mapLimit(syms, 5, async sym => {
+      try {
+        const rows = await fetchTwDividend(sym);
+        rows.forEach(d => {
+          const cash = d.cash * held[sym].shares;
+          all.push({
+            symbol: sym, name: held[sym].name, view: held[sym].view, shares: held[sym].shares,
+            perShare: d.cash, stockPerShare: d.stock, ex: d.ex, pay: d.pay, year: d.year,
+            cash: Math.round(cash),
+            nhi: nhiPremium(cash),
+            daysToEx: daysBetweenToday(d.ex)
+          });
+        });
+      } catch (e) { failed.push(sym); }
+    });
+    // 未來的由近到遠排前面，過去的由新到舊排後面
+    all.sort((a, b) => {
+      const fa = (a.daysToEx != null && a.daysToEx >= 0) ? 0 : 1;
+      const fb = (b.daysToEx != null && b.daysToEx >= 0) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return fa === 0 ? (a.daysToEx - b.daysToEx) : (b.ex < a.ex ? -1 : 1);
+    });
+    return { rows: all, symbols: syms.length, failed };
+  }
+
+  let divCalData = null;
+  async function openDivCalendar() {
+    document.getElementById('divCalModal').classList.add('active');
+    document.getElementById('divCalBody').innerHTML =
+      '<div style="padding:22px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查詢除權息資料中…</div>';
+    document.getElementById('divCalStats').innerHTML = '';
+    try { divCalData = await buildDividendCalendar(); }
+    catch (e) { divCalData = { rows: [], symbols: 0, failed: [] }; }
+    renderDivCalendar();
+  }
+  function closeDivCalendar() { document.getElementById('divCalModal').classList.remove('active'); }
+
+  function renderDivCalendar() {
+    const d = divCalData || { rows: [], symbols: 0, failed: [] };
+    const body = document.getElementById('divCalBody');
+    const stats = document.getElementById('divCalStats');
+    const money = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+    if (!d.rows.length) {
+      stats.innerHTML = '';
+      body.innerHTML = `<div style="padding:26px 20px; text-align:center; color:var(--ink-tertiary); font-size:12.5px; line-height:1.9; border:1px dashed var(--line); border-radius:4px;">
+        ${d.symbols ? `查了 ${d.symbols} 檔台股持股，近一年都沒有除權息公告。` : '目前沒有台股類持股（個股／高股息 ETF／市值型 ETF／債券 ETF）。'}<br>
+        <span style="font-size:11.5px;">美股與加密貨幣沒有免費的配息資料來源，這裡只看台股。</span>
+      </div>`;
+      return;
+    }
+    const future = d.rows.filter(r => r.daysToEx != null && r.daysToEx >= 0);
+    const thisYear = String(new Date().getFullYear());
+    const past = d.rows.filter(r => !(r.daysToEx != null && r.daysToEx >= 0));
+    const yearRows = d.rows.filter(r => String(r.ex).slice(0, 4) === thisYear);
+    const yearCash = yearRows.reduce((a, r) => a + r.cash, 0);
+    const yearNhi = yearRows.reduce((a, r) => a + r.nhi, 0);
+    const futureCash = future.reduce((a, r) => a + r.cash, 0);
+
+    const chip = (label, val, sub, color) => `
+      <div style="flex:1; min-width:150px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:11px 13px;">
+        <div style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.12em; color:var(--ink-tertiary); margin-bottom:5px;">${label}</div>
+        <div style="font-family:var(--serif); font-size:19px; color:${color || 'var(--ink-primary)'};">${val}</div>
+        ${sub ? `<div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:3px;">${sub}</div>` : ''}
+      </div>`;
+    // ⚠ 過去那幾次是用「你現在的股數」回推的，不是當時真正領到的錢。
+    //   標籤一定要講清楚是估的，不然會被當成實際數字（真正領到多少要看各模組的配息交易記錄）。
+    stats.innerHTML =
+      chip('接下來會領到', money(futureCash), `${future.length} 次除息 · 估`, 'var(--accent)') +
+      chip(`${thisYear} 年配息（估）`, money(yearCash), `${yearRows.length} 次 · 用現在股數回推`, 'var(--ink-primary)') +
+      chip('二代健保補充保費（估）', yearNhi ? '−' + money(yearNhi) : 'NT$0', yearNhi ? '單筆滿 2 萬才會扣' : '每筆都沒到 2 萬', yearNhi ? 'var(--danger)' : 'var(--ink-tertiary)');
+
+    const row = r => {
+      const soon = r.daysToEx != null && r.daysToEx >= 0;
+      const badge = !soon ? '<span style="color:var(--ink-muted);">已除息</span>'
+        : r.daysToEx === 0 ? '<span style="color:var(--danger);">就是今天</span>'
+        : r.daysToEx <= 7 ? `<span style="color:var(--danger);">${r.daysToEx} 天後</span>`
+        : `<span style="color:var(--accent-warm);">${r.daysToEx} 天後</span>`;
+      return `<tr onclick="closeDivCalendar(); showView('${escape(r.view)}')" style="cursor:pointer; border-bottom:1px solid var(--line); ${soon ? '' : 'opacity:0.62;'}">
+        <td style="padding:8px 10px; font-family:var(--mono); font-size:11px; white-space:nowrap;">${escape(r.ex)}<br>${badge}</td>
+        <td style="padding:8px 10px;">
+          <span style="font-family:var(--mono); color:var(--accent); font-weight:600;">${escape(r.symbol)}</span>
+          ${r.name ? `<span style="color:var(--ink-tertiary); font-size:11px;"> ${escape(r.name)}</span>` : ''}
+        </td>
+        <td style="padding:8px 10px; font-family:var(--mono); color:var(--ink-secondary);">${r.perShare ? r.perShare.toFixed(3) : '—'}${r.stockPerShare ? `<br><span style="font-size:10px; color:var(--accent-warm);">配股 ${r.stockPerShare}</span>` : ''}</td>
+        <td style="padding:8px 10px; font-family:var(--mono); color:var(--ink-tertiary);">${Number(r.shares).toLocaleString('en-US')}</td>
+        <td style="padding:8px 10px; font-family:var(--mono); color:${soon ? 'var(--accent)' : 'var(--ink-secondary)'}; font-weight:600;">${money(r.cash)}</td>
+        <td style="padding:8px 10px; font-family:var(--mono); font-size:11px; color:${r.nhi ? 'var(--danger)' : 'var(--ink-muted)'};">${r.nhi ? '−' + money(r.nhi) : '—'}</td>
+        <td style="padding:8px 10px; font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">${escape(r.pay || '—')}</td>
+      </tr>`;
+    };
+    const th = (t, w) => `<th style="padding:8px 10px; text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); border-bottom:1px solid var(--line); ${w ? 'width:' + w + ';' : ''} white-space:nowrap;">${t}</th>`;
+    body.innerHTML = `
+      <div style="overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--bg-elevated);">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:760px;">
+          <thead><tr style="background:var(--bg-card);">
+            ${th('除息日', '112px')}${th('代號', '160px')}${th('每股配', '86px')}${th('你的股數', '92px')}${th('預估領到', '108px')}${th('健保費', '92px')}${th('發放日', '96px')}
+          </tr></thead>
+          <tbody>${d.rows.map(row).join('')}</tbody>
+        </table>
+      </div>
+      ${d.failed.length ? `<div style="margin-top:8px; font-size:11.5px; color:var(--accent-warm);">這幾檔查不到除權息資料：${escape(d.failed.join('、'))}</div>` : ''}
+      <div style="margin-top:10px; font-size:11px; color:var(--ink-tertiary); line-height:1.8;">
+        <strong>除息日當天之前要持有才領得到</strong>，那天（含）之後才買就沒有這次的。發放日是錢真正入帳的日子。<br>
+        <strong>所有金額都是「每股配息 × 你現在的股數」估出來的</strong>——已經過去的那幾次，當時你的股數可能不一樣，
+        所以那不是你真正領到的錢。<strong>實際領到多少請看各模組裡的配息交易記錄。</strong><br>
+        <strong>二代健保補充保費</strong>：單筆股利給付滿 NT$20,000 才會被扣 2.11%（單筆上限 1000 萬）。
+        <strong>股利所得稅另計</strong>——可選「合併計稅（8.5% 抵減、上限 8 萬）」或「分開計稅 28%」，要看你全年所得才知道哪個划算，這裡不試算。
+        資料來自公開的除權息公告，<strong>僅供參考，請以券商對帳單與國稅局為準</strong>。
+      </div>`;
+  }
+
+  function copyDivCalendar() {
+    const d = divCalData;
+    if (!d || !d.rows.length) { showToast('沒有資料可複製'); return; }
+    const money = n => 'NT$' + Math.round(n).toLocaleString('en-US');
+    const lines = d.rows.map(r => `${r.ex}｜${r.symbol}${r.name ? ' ' + r.name : ''}｜每股 ${r.perShare}｜${Number(r.shares).toLocaleString('en-US')} 股｜約 ${money(r.cash)}${r.nhi ? `（健保費 −${money(r.nhi)}）` : ''}｜發放 ${r.pay || '—'}`);
+    const txt = `配息行事曆（${todayISO()}）\n${'─'.repeat(30)}\n${lines.join('\n')}\n${'─'.repeat(30)}\n※ 預估值，以券商對帳單為準。`;
+    navigator.clipboard.writeText(txt).then(() => showToast('✓ 已複製配息行事曆')).catch(() => showToast('複製失敗'));
   }
 
   // ===== 我的下單計畫（總覽）=====
