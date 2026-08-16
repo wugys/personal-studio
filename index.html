@@ -8417,7 +8417,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 10.9 · κ</div>
+    <div>v 11.0 · λ</div>
   </footer>
 </div>
 
@@ -9574,10 +9574,20 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   let studioAlertsCollapsed = false;
   let studioAlertsCache = null;   // 收合／展開時直接用快取重畫，不要再讀一次全部 storage
+  // ⚠ 提醒種類加到 15 種之後，真實資料很容易一次出現 13 則——
+  //   實測手機上面板高 894px、螢幕才 852px，**整個首頁都是提醒、模組被推到看不見**。
+  //   所以預設只顯示前幾則，其餘收在「還有 N 則」後面。
+  //   緊急的一律全部顯示，不管幾則——那是不能被藏起來的東西。
+  const ALERTS_PREVIEW = 5;
+  let studioAlertsShowAll = false;
   function toggleStudioAlerts() {
     studioAlertsCollapsed = !studioAlertsCollapsed;
     if (studioAlertsCache) paintStudioAlerts(studioAlertsCache);   // 同步，按了立刻有反應
     else refreshStudioAlerts();
+  }
+  function toggleAlertsShowAll() {
+    studioAlertsShowAll = !studioAlertsShowAll;
+    if (studioAlertsCache) paintStudioAlerts(studioAlertsCache);
   }
   async function refreshStudioAlerts() {
     const el = document.getElementById('studioAlerts');
@@ -9607,12 +9617,23 @@ alter publication supabase_realtime add table party_locations;</pre>
     }
     const urgent = list.filter(a => a.level === 'urgent').length;
     const color = { urgent: 'var(--danger)', warn: 'var(--accent-warm)', info: 'var(--ink-tertiary)' };
-    const shown = studioAlertsCollapsed ? [] : list;
+    // 緊急的全留，剩下的補到 ALERTS_PREVIEW 則為止（list 已依嚴重度排序）
+    const previewCount = Math.max(urgent, ALERTS_PREVIEW);
+    const truncated = !studioAlertsShowAll && list.length > previewCount;
+    const shown = studioAlertsCollapsed ? [] : (truncated ? list.slice(0, previewCount) : list);
+    const hiddenCount = list.length - shown.length;
+    const moreBar = (studioAlertsCollapsed || !(truncated || studioAlertsShowAll)) ? '' : `
+      <div style="padding-top:8px;">
+        <button class="btn btn-sm" onclick="toggleAlertsShowAll()">
+          ${studioAlertsShowAll ? '只看前幾則' : `還有 ${hiddenCount} 則 · 全部顯示`}
+        </button>
+      </div>`;
     el.innerHTML = `
       <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid ${urgent ? 'var(--danger)' : 'var(--accent-warm)'}; border-radius:4px; padding:12px 14px; margin-bottom:18px;">
         <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:${studioAlertsCollapsed ? '0' : '8px'};">
           <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">今日提醒 · NEEDS ATTENTION</span>
           <span style="font-family:var(--serif); font-size:15px; color:${urgent ? 'var(--danger)' : 'var(--accent)'};">${list.length} 件${urgent ? `（${urgent} 件緊急）` : ''}</span>
+          ${truncated && !studioAlertsCollapsed ? `<span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">顯示前 ${shown.length} 則</span>` : ''}
           <button class="btn btn-sm" onclick="toggleStudioAlerts()" style="margin-left:auto;">${studioAlertsCollapsed ? '展開' : '收起'}</button>
         </div>
         ${shown.map(a => `
@@ -9625,6 +9646,7 @@ alter publication supabase_realtime add table party_locations;</pre>
                     onclick="event.stopPropagation(); snoozeAlert('${escape(a.id)}', 7)"
                     style="flex-shrink:0; align-self:center; background:transparent; border:1px solid var(--line); color:var(--ink-tertiary); border-radius:3px; padding:3px 7px; font-size:11px; cursor:pointer;">🔕</button>
           </div>`).join('')}
+        ${moreBar}
         ${mutedBar}
       </div>`;
   }
