@@ -8421,7 +8421,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.2 · λ</div>
+    <div>v 11.3 · λ</div>
   </footer>
 </div>
 
@@ -24284,6 +24284,39 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (noTxn.length) add('info', `${noTxn.length} 個模組有持股但沒有交易記錄`,
       `${escape(noTxn.map(m => m.s.name).join('、'))}<br>不影響總資產，但「年度交易總結」與「已實現損益」算不出這幾個模組的東西。想要完整記錄的話，把買進補記一筆。`,
       'cashflowView', noTxn.length);
+
+
+    // 10) 這檔的股數，可能在 v11.2 之前就被交易記錄蓋掉過（已經發生的傷，修法救不回來，只能找出來）
+    //     v11.2 的 ensureOpeningTxn 只防未來：在那之前補過交易的持股，手填的部位早就沒了，
+    //     而且畫面上看不出來——它只是顯示一個比較小的數字。
+    //     ⚠ 判斷依據用 createdAt（程式自己蓋的時間戳），不要用 buyDate（使用者填的，不可靠）：
+    //       持股記錄比它自己的第一筆交易還早出現 ＝ 當初是手動輸入的部位，後來才被 recompute 覆蓋。
+    //       反過來（交易先、持股後）是 recompute 自動建立的持股，那本來就對。
+    //     ⚠ 已經有 opening 交易的要跳過——那是 v11.2 補過的，是好的。
+    const maybeWiped = [];
+    mods.forEach(({ s, holdings, txns }) => {
+      holdings.forEach(h => {
+        if (!(Number(h.shares) > 0)) return;
+        const hc = Number(h.createdAt);
+        if (!(hc > 0)) return;                                  // 沒有時間戳就無從判斷，寧可不講
+        const mine = txns.filter(t => t && t.symbol === h.symbol);
+        if (!mine.length) return;                               // 沒有交易 → 沒有被覆蓋的機會（第 9 項會提）
+        if (mine.some(t => t.opening)) return;                  // 已經補過期初持股，是好的
+        const first = Math.min(...mine.map(t => Number(t.createdAt) || Infinity));
+        if (!isFinite(first) || !(hc < first)) return;
+        maybeWiped.push(`${h.symbol || '?'} ${h.name || ''}（${s.name}）· 現在 ${h.shares}`.replace(/\s+/g, ' '));
+      });
+    });
+    if (maybeWiped.length) {
+      add('warn', `${maybeWiped.length} 檔的股數可能被交易記錄蓋掉過`,
+        `${escape(maybeWiped.slice(0, 10).join('、'))}${maybeWiped.length > 10 ? ` …等 ${maybeWiped.length} 檔` : ''}<br>` +
+        `這幾檔是<strong>先手動建立持股、之後才補交易</strong>的。v11.2 以前，補交易時程式會用交易記錄重算股數，` +
+        `把當初手填的部位<strong>直接蓋掉，而且不會提醒</strong>（例如手填 5000 股、之後補一筆買 1000 股 → 只剩 1000 股，總資產跟著少）。<br>` +
+        `<strong>請拿券商庫存對一下股數。</strong>對得起來就沒事（代表你當初把買進都補齊了）；` +
+        `少了的話，到該模組按「+ 交易」補一筆當初的買進（日期填當時的），數字就會回來。<br>` +
+        `v11.2 之後再新增交易，會先問你要不要補「期初持股」，不會再發生這件事。`,
+        'cashflowView', maybeWiped.length);
+    }
 
     F.sort((a, b) => HEALTH_LEVEL[a.level] - HEALTH_LEVEL[b.level]);
     return F;
