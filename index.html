@@ -888,8 +888,12 @@
   @media (max-width: 768px) {
     .btn { min-height: 40px; padding: 10px 16px; }
     .btn-sm { min-height: 38px; padding: 8px 12px; font-size: 11.5px; }
-    .hc-mini-btn { min-height: 36px; padding: 8px 12px; font-size: 11px; }
+    /* v8.8 訂 36px，但 v10.1 之後全站門檻改成 38px，這條沒跟上。
+       實測台股個股一頁就有 25 顆（編輯／+交易／📈圖表…），是模組頁最常按的一排。 */
+    .hc-mini-btn { min-height: 38px; padding: 8px 12px; font-size: 11px; }
     .hc-actions { gap: 7px; }
+    /* 每個模組頁都有一顆，但從 v8.8 到現在都沒被涵蓋過，實測只有 37px。 */
+    .back-btn { min-height: 40px; }
     .form-select, .form-input { min-height: 40px; }
     .bc-back, .bc-item { min-height: 34px; display: inline-flex; align-items: center; }
     /* v8.8 只涵蓋 .btn 系列，漏掉這兩種「分頁」按鈕：
@@ -8417,7 +8421,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.0 · λ</div>
+    <div>v 11.1 · λ</div>
   </footer>
 </div>
 
@@ -22687,8 +22691,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           <span style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.1em; color:${stColor}; border:1px solid var(--line); border-radius:2px; padding:2px 7px; white-space:nowrap;">${escape(m.level || '會員')}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:8px;">
-          ${m.phone ? `<a href="tel:${escape(m.phone)}" onclick="event.stopPropagation();" style="color:var(--accent); text-decoration:none;">☎ ${escape(m.phone)}</a>` : ''}
-          ${m.email ? `<a href="mailto:${escape(m.email)}" onclick="event.stopPropagation();" style="color:var(--accent); text-decoration:none;">✉ ${escape(m.email)}</a>` : ''}
+          ${m.phone ? `<a data-tap href="tel:${escape(m.phone)}" onclick="event.stopPropagation();" style="color:var(--accent); text-decoration:none;">☎ ${escape(m.phone)}</a>` : ''}
+          ${m.email ? `<a data-tap href="mailto:${escape(m.email)}" onclick="event.stopPropagation();" style="color:var(--accent); text-decoration:none;">✉ ${escape(m.email)}</a>` : ''}
           ${m.line ? `<span>LINE ${escape(m.line)}</span>` : ''}
           ${m.birthday ? `<span style="color:${isBirth ? 'var(--accent-warm)' : 'var(--ink-tertiary)'};">生日 ${escape(m.birthday)}</span>` : ''}
         </div>
@@ -31371,6 +31375,44 @@ ${daysBrief}
     await writeKey('studio_pwa_hint_off_v1', '1');
     renderInstallHint();
   }
+
+  // === 讓每一個視窗都有置頂標題列與常駐 ✕（v11.1）===
+  // v9.5 替 8 個「用看的」長視窗做了 .modal-head，但「用填的」那 70 個表單視窗全部漏掉。
+  // 實測手機 393×852：想按到「儲存」要捲 269–2096px（新增出租物件要捲 2.5 個螢幕），
+  // 而想放棄只能捲到底找「取消」——點旁邊的黑底不會關（backdrop 沒有 onclick），
+  // Esc 雖然有效但手機根本沒有 Esc 鍵。
+  //
+  // ⚠ 用一段程式自動套，不是手改 70 個地方：漏掉一個使用者就會卡在那個視窗裡，
+  //   而且以後每新增一個視窗都要記得加，遲早會再漏。
+  // ⚠ ✕ 呼叫的是「這個視窗原本就有的關閉函式」（底部取消鈕的 onclick），
+  //   不是自己去拿掉 active——那樣會跳過各視窗的狀態清理（編輯中的 id、暫存的選取…）。
+  function upgradeModalHeads() {
+    let done = 0, fallback = 0;
+    document.querySelectorAll('.modal-backdrop > .modal').forEach(box => {
+      if (box.querySelector('.modal-head')) return;      // v9.5 已經做過的那幾個
+      const h2 = box.querySelector(':scope > h2');
+      if (!h2) return;                                    // 沒有標題可以掛，跳過
+      const closer = Array.from(box.querySelectorAll('[onclick]'))
+        .map(b => b.getAttribute('onclick') || '')
+        .find(s => /^\s*close[A-Za-z]*\s*\(/.test(s));
+      if (!closer) fallback++;
+      const head = document.createElement('div');
+      head.className = 'modal-head';
+      box.insertBefore(head, box.firstChild);             // 一律放最上面，標題才會停在頂端
+      head.appendChild(h2);
+      const x = document.createElement('button');
+      x.type = 'button';                                  // ⚠ 不寫 type 的話，在 <form> 裡會變成送出鈕
+      x.className = 'modal-head-x';
+      x.title = '關閉';
+      x.setAttribute('aria-label', '關閉');
+      x.textContent = '✕';
+      x.setAttribute('onclick', closer || "this.closest('.modal-backdrop').classList.remove('active')");
+      head.appendChild(x);
+      done++;
+    });
+    return { done, fallback };
+  }
+  upgradeModalHeads();
 
   initPWA();
   loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam())
