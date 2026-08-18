@@ -8421,7 +8421,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.1 · λ</div>
+    <div>v 11.2 · λ</div>
   </footer>
 </div>
 
@@ -9175,6 +9175,69 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
   async function readJson(key, fallback) {
     try { const v = await readKey(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+  }
+
+  // ===== 期初持股：手動填的股數不能被交易記錄默默蓋掉（v11.2）=====
+  // 這個 App 把「交易記錄」當成股數的唯一真相：只要某個代號出現任何一筆交易，
+  // recompute*Holding() 就會用交易重新算股數，把使用者手動輸入的部位整個覆蓋掉。
+  // 於是「先手動把現有部位輸進來 → 之後補登最近的一筆買進」這個最自然的用法，
+  // 會讓股數直接掉成那一筆的數量——實測 5000 股 → 1000 股、總資產少 368,000，
+  // 而畫面上只跳「已新增交易」，**沒有任何警告**。
+  // 更糟的是 v10.3 的資料健檢正好在建議使用者「去把交易補上」，等於帶著他踩。
+  //
+  // 修法：第一次替某個代號記交易之前先問一句，同意就把現有的手動持股轉成一筆
+  // 「期初持股」買進交易。之後所有計算（加總、年度總結、已實現損益）就都對得起來，
+  // 而且那筆交易在交易記錄裡看得到、改得動、刪得掉，不是藏起來的黑箱。
+  //
+  // ⚠ 九個模組的 recompute 是同一套鏡像程式碼，所以九個都要接，只接台股等於沒修。
+  // ⚠ 兩條路徑都要接：使用者手動存交易（save*Txn）＋ 定期定額自動寫入（dcaWriteBuyToModule）。
+  const OPENING_TXN_MODULES = {
+    tw:     { name: '台股個股',   idp: 't_',   unit: '股',   holdings: () => twHoldings,     txns: () => twTxns,     push: t => pushTransactionToSupabase(t) },
+    us:     { name: '美股個股',   idp: 'ut_',  unit: '股',   holdings: () => usHoldings,     txns: () => usTxns,     push: t => pushUsTransactionToSupabase(t) },
+    crypto: { name: '加密貨幣',   idp: 'ct_',  unit: '單位', holdings: () => cryptoHoldings, txns: () => cryptoTxns, push: t => pushCryptoTransactionToSupabase(t) },
+    hdetf:  { name: '高股息 ETF', idp: 'ht_',  unit: '股',   holdings: () => hdEtfHoldings,  txns: () => hdEtfTxns,  push: t => pushHdEtfTransactionToSupabase(t) },
+    mketf:  { name: '市值型 ETF', idp: 'mt_',  unit: '股',   holdings: () => mkEtfHoldings,  txns: () => mkEtfTxns,  push: t => pushMkEtfTransactionToSupabase(t) },
+    bond:   { name: '債券',       idp: 'bt_',  unit: '股',   holdings: () => bondHoldings,   txns: () => bondTxns,   push: t => pushBondTransactionToSupabase(t) },
+    fxdep:  { name: '外幣存款',   idp: 'ft_',  unit: '元',   holdings: () => fxDepHoldings,  txns: () => fxDepTxns,  push: t => pushFxDepTransactionToSupabase(t) },
+    fund:   { name: '主動式基金', idp: 'ft2_', unit: '單位', holdings: () => fundHoldings,   txns: () => fundTxns,   push: t => pushFundTransactionToSupabase(t) },
+    metal:  { name: '貴金屬',     idp: 'mtx_', unit: '單位', holdings: () => metalHoldings,  txns: () => metalTxns,  push: t => pushMetalTransactionToSupabase(t) }
+  };
+  function ensureOpeningTxn(kind, symbol, opts = {}) {
+    if (opts.isEdit) return null;                      // 改舊的那一筆不算「第一次」
+    const cfg = OPENING_TXN_MODULES[kind];
+    if (!cfg || !symbol) return null;
+    let holdings, txns;
+    try { holdings = cfg.holdings(); txns = cfg.txns(); } catch (e) { return null; }
+    if (!Array.isArray(holdings) || !Array.isArray(txns)) return null;
+    const h = holdings.find(x => x && x.symbol === symbol);
+    const have = Number(h && h.shares) || 0;
+    if (!(have > 0)) return null;                      // 本來就沒有部位，不用補
+    if (txns.some(t => t && t.symbol === symbol)) return null;  // 已經有交易了，交易本來就是真相
+    const cost = Number(h.avgCost) || 0;
+    const u = cfg.unit || '股';
+    const ok = confirm(
+      `「${h.name || symbol}（${symbol}）」現在記著 ${have} ${u}，但還沒有任何交易記錄。\n\n` +
+      `存下這筆交易之後，股數會改成「照交易記錄重算」，你手動輸入的 ${have} ${u} 會被蓋掉。\n\n` +
+      `要不要先補一筆「期初持股」交易（${have} ${u} × 成本 ${cost}）？\n\n` +
+      `【確定】補上 —— 加起來才是你真正的部位\n` +
+      `【取消】不補 —— 股數只會剩下交易記錄裡的數量`
+    );
+    if (!ok) return null;
+    const txn = {
+      id: (cfg.idp || 'op_') + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      type: 'buy',
+      date: h.buyDate || todayISO(),
+      symbol, symbolName: h.name || symbol,
+      shares: have, price: cost, fee: 0, tax: 0,
+      notes: '期初持股（系統補登：把原本手動輸入的持股轉成交易記錄）',
+      opening: true,
+      createdAt: Date.now(), updatedAt: Date.now()
+    };
+    if (h.ccy) txn.ccy = h.ccy;                        // 混合幣別的模組要把幣別帶著
+    txns.unshift(txn);                                 // 放最前面：同一天時排序才會排在新交易之前
+    try { if (cfg.push) cfg.push(txn); } catch (e) { console.warn('push opening txn fail', e); }
+    try { showToast(`已補一筆「期初持股」${have} ${u}`); } catch (e) {}
+    return txn;
   }
 
   // ===== 下單計畫看守 =====
@@ -11674,6 +11737,9 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       notes: document.getElementById('txnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('tw', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = twTxns.findIndex(t => t.id === id);
@@ -14010,6 +14076,9 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       notes: document.getElementById('usTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('us', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = usTxns.findIndex(t => t.id === id);
@@ -14744,6 +14813,9 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
       notes: document.getElementById('cryptoTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('crypto', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = cryptoTxns.findIndex(t => t.id === id);
@@ -15541,6 +15613,9 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
       notes: document.getElementById('hdEtfTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('hdetf', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = hdEtfTxns.findIndex(t => t.id === id);
@@ -16418,6 +16493,9 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       notes: document.getElementById('mkEtfTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('mketf', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = mkEtfTxns.findIndex(t => t.id === id);
@@ -17461,6 +17539,8 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
       createdAt: Date.now(), updatedAt: Date.now()
     };
     if (t.cur === 'MIXED') txn.ccy = exec.ccy;   // 混合幣別模組（市值型 ETF / 基金 / 貴金屬）要記下這筆的幣別
+    // 定期定額寫進去的也是交易 → 同樣會觸發 recompute 覆蓋手填持股，所以這條路徑也要先補期初
+    ensureOpeningTxn(exec.target, exec.symbol, { isEdit: false });
     txns.push(txn);
     t.recompute(exec.symbol);
     await t.saveT(); await t.saveH(); await t.saveR();
@@ -18897,6 +18977,9 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
       notes: document.getElementById('bondTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('bond', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = bondTxns.findIndex(t => t.id === id);
@@ -19772,6 +19855,9 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
       notes: document.getElementById('fxDepTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('fxdep', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = fxDepTxns.findIndex(t => t.id === id);
@@ -20675,6 +20761,9 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
       notes: document.getElementById('fundTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('fund', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = fundTxns.findIndex(t => t.id === id);
@@ -21571,6 +21660,9 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
       notes: document.getElementById('metalTxnNotes').value.trim()
     };
     const isEdit = !!id;
+    // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
+    // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
+    ensureOpeningTxn('metal', symbol, { isEdit });
     let savedTxn;
     if (isEdit) {
       const i = metalTxns.findIndex(t => t.id === id);
