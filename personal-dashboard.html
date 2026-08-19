@@ -8422,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.5 · λ</div>
+    <div>v 11.6 · λ</div>
   </footer>
 </div>
 
@@ -13269,25 +13269,50 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const universe = US_STOCKS.slice();
     let done = 0;
     results.innerHTML = `<div style="color:var(--ink-tertiary); font-size:12px; padding:10px;">抓取基本面 0/${universe.length}…</div>`;
+    let stopped = '';
+    let failedN = 0;
     for (const s of universe) {
       if (!usScreenerCache[s.symbol]) {
         try { const mm = await finnhubMetrics(s.symbol); usScreenerCache[s.symbol] = (mm && mm.metric) || {}; }
-        catch (e) { usScreenerCache[s.symbol] = {}; if (/401|金鑰|429/.test(String(e.message))) { showToast('☒ ' + e.message); break; } }
+        catch (e) {
+          // ⚠ **不要把失敗寫進快取**。原本寫 `{}`，而外面是 `if (!usScreenerCache[sym])`，
+          //   於是這檔股整個 session 都「沒有基本面」——**重按「開始篩選」也不會重抓**。
+          failedN++;
+          if (/401|金鑰|429/.test(String(e.message))) { stopped = e.message; showToast('☒ ' + e.message); break; }
+        }
         await new Promise(r => setTimeout(r, 110));
       }
       done++;
       if (done % 4 === 0) results.innerHTML = `<div style="color:var(--ink-tertiary); font-size:12px; padding:10px;">抓取基本面 ${done}/${universe.length}…</div>`;
     }
     const selected = US_SCREENS.filter(x => usScreenerSelected.has(x.key));
-    const matches = universe.filter(s => selected.every(cond => cond.test(usScreenerCache[s.symbol] || {})));
-    renderScreenerResults(matches, selected);
+    // ⚠ 只拿**真的抓到基本面**的來比對。原本用 `|| {}`，抓不到的會默默變成「不符合」，
+    //   於是額度用盡時畫面會說「沒有符合的標的」——那是拿殘缺資料算出來的結論。
+    const fetched = universe.filter(s => usScreenerCache[s.symbol]);
+    const matches = fetched.filter(s => selected.every(cond => cond.test(usScreenerCache[s.symbol])));
+    renderScreenerResults(matches, selected, { total: universe.length, fetched: fetched.length, stopped, failedN });
     if (btn) { btn.disabled = false; btn.textContent = '🔎 開始篩選'; }
   }
-  function renderScreenerResults(matches, selected) {
+  function renderScreenerResults(matches, selected, info) {
     const results = document.getElementById('usScreenerResults');
     if (!results) return;
-    if (!matches.length) { results.innerHTML = '<div style="color:var(--ink-tertiary); font-size:12px; padding:12px;">內建清單中沒有同時符合全部條件的標的，試試減少條件。</div>'; return; }
-    results.innerHTML = `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:8px; letter-spacing:0.1em;">符合 ${matches.length} 檔 · ${selected.map(s => s.name).join(' + ')}</div>` +
+    const inf = info || {};
+    const missing = Math.max(0, (inf.total || 0) - (inf.fetched || 0));
+    // 資料沒抓齊就要講，不管有沒有符合的——不然使用者會把殘缺的結果當成完整的。
+    const warn = missing > 0 ? `<div style="margin-bottom:10px; padding:11px 13px; border:1px solid var(--danger); border-radius:4px; background:rgba(201,123,106,0.08); font-size:12px; line-height:1.8; color:var(--ink-secondary);">
+      <strong style="color:var(--ink-primary);">這次只抓到 ${inf.fetched} / ${inf.total} 檔的基本面，還有 ${missing} 檔沒比到。</strong><br>
+      ${inf.stopped ? escape(inf.stopped) + '，所以提前停下來了。' : '那幾檔拉不到資料。'}<br>
+      <span style="color:var(--ink-tertiary);">下面的結果只代表已經抓到的那些，<strong>不是全部</strong>。等一下再按一次就會補齊。</span>
+    </div>` : '';
+    if (!matches.length) {
+      results.innerHTML = warn + `<div style="color:var(--ink-tertiary); font-size:12px; padding:12px;">${
+        missing > 0
+          ? '已經抓到的那些裡面沒有同時符合全部條件的。資料補齊之後可能就有了。'
+          : '內建清單中沒有同時符合全部條件的標的，試試減少條件。'
+      }</div>`;
+      return;
+    }
+    results.innerHTML = warn + `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:8px; letter-spacing:0.1em;">符合 ${matches.length} 檔 · ${selected.map(s => s.name).join(' + ')}</div>` +
       matches.map(s => {
         const m = usScreenerCache[s.symbol] || {};
         const pe = +(m.peTTM ?? m.peBasicExclExtraTTM), dy = +(m.currentDividendYieldTTM ?? m.dividendYieldIndicatedAnnual), roe = +(m.roeTTM ?? m.roeRfy);
