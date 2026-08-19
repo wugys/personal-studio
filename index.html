@@ -25424,11 +25424,19 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   let usScanRows = [];       // 掃完的結果（含 ctx），改條件時直接重算不重抓
   let usScanPicked = US_SCAN_PRESETS.pullback.slice();
   let usScanRunning = false;
-  // 上一次掃描被「拉不到資料」提前停掉時，存「還要等多久」的短句。
+  // 上一次掃描沒成功時，存 `{why, wait}`（原因、還要等多久）；成功或還沒掃過則為 null。
   // 沒這個的話，結果區會繼續顯示「還沒掃描」，跟紅框「掃描提前停在 0 檔」直接矛盾（使用者截圖回報）。
-  // ⚠ 存字串而不是布林值：使用者一改條件就會重畫結果區、**紅框會被洗掉**，
+  // ⚠ 不能只存布林值：使用者一改條件就會重畫結果區、**紅框會被洗掉**，
   //   所以空狀態不能寫「上面寫了原因」（會指到不存在的東西），要自己把話講完。
-  let usScanBlocked = '';
+  let usScanBlocked = null;
+  // 把例外譯成「原因 + 要等多久」。不是額度問題的就老實說是別的毛病，不要一律推給額度。
+  function usScanFailInfo(e) {
+    if (e && (e.finmindQuota || e.finmindBlocked)) return {
+      why: '不是程式壞掉，是<strong>抓資料被擋住了</strong>（免費來源每小時有次數上限）。',
+      wait: e.retryMins > 0 ? `大約 ${e.retryMins} 分鐘` : (e.finmindQuota ? '大約一小時' : '大約 10–20 分鐘')
+    };
+    return { why: escape(String((e && e.message) || e || '不知道為什麼')), wait: '' };
+  }
   let usScanMarket = 'us';   // 'us' | 'tw' —— 13 個技術條件都只吃日線，兩邊完全共用
   let usScanUseFund = false; // 是否同時檢查基本面（要多打 API，預設關）
   let usScanFundCache = {};  // { 'market:symbol': { fund, ts } }
@@ -25516,7 +25524,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       loadAlog().then(() => { try { renderUsScanResults(); } catch (e) {} }).catch(() => {});
     }
     const m = market === 'tw' ? 'tw' : 'us';
-    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; usScanBlocked = ''; }   // 換市場先清結果，避免混在一起
+    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; usScanBlocked = null; }   // 換市場先清結果，避免混在一起
     const lab = document.getElementById('usScanMarketLabel');
     if (lab) lab.textContent = m === 'tw' ? '台股短線' : '美股短線';
     const src = document.getElementById('usScanSourceLabel');
@@ -25665,7 +25673,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     el.innerHTML = tip ? tip + why : '';
   }
   function clearUsScanCache() {
-    usScanCache = {}; usScanRows = []; usScanBlocked = '';
+    usScanCache = {}; usScanRows = []; usScanBlocked = null;
     renderUsScanResults();
     showToast('快取已清除，下次掃描會重新抓資料');
   }
@@ -25786,11 +25794,23 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function runUsScan() {
     if (usScanRunning) return;
     let universe;
+    // ⚠ 這兩條失敗路徑原本只跳 toast 就 return——toast 一閃就沒了，結果區還寫「還沒掃描」，
+    //   使用者會以為按鈕壞掉。跟下面「掃到一半被擋」是同一種問題，要一起留下話。
     try { universe = await usScanUniverse(); }
-    catch (e) { showToast('抓不到掃描名單：' + (e && e.message || e)); return; }
-    if (!universe || !universe.length) { showToast('掃描範圍是空的'); return; }
+    catch (e) {
+      usScanBlocked = usScanFailInfo(e);
+      renderUsScanResults();
+      showToast('抓不到掃描名單');
+      return;
+    }
+    if (!universe || !universe.length) {
+      usScanBlocked = { why: '這個掃描範圍裡一檔股票都沒有。自訂代號要打完才算，「只掃我的持股」則要先有持股。', wait: '' };
+      renderUsScanResults();
+      showToast('掃描範圍是空的');
+      return;
+    }
     usScanRunning = true;
-    usScanBlocked = '';
+    usScanBlocked = null;
     // 條件模式看開關；策略模式只要選到含基本面的策略就要抓
     const needFund = usScanMode === 'strategy' ? usScanStrategyNeedsFund() : usScanUseFund;
     const btn = document.getElementById('usScanRunBtn');
@@ -25847,9 +25867,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (btn) { btn.disabled = false; btn.textContent = '▶ 重新掃描'; }
     if (prog) prog.style.display = 'none';
     // ⚠ 要在 renderUsScanResults() **之前**設，它會先畫空狀態
-    usScanBlocked = quotaStop
-      ? (quotaStop.retryMins > 0 ? `大約 ${quotaStop.retryMins} 分鐘` : (quotaStop.finmindQuota ? '大約一小時' : '10–20 分鐘'))
-      : '';
+    usScanBlocked = quotaStop ? usScanFailInfo(quotaStop) : null;
     renderUsScanResults();
     if (quotaStop) {
       // ⚠ 「還沒掃到的」= 總數 − **真的拿到資料的**，不能再扣掉 failed——
@@ -25919,8 +25937,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       box.innerHTML = usScanBlocked
         ? `<div style="text-align:center; padding:28px 10px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
         <div style="font-family:var(--serif); font-size:17px; color:var(--ink-secondary); margin-bottom:6px;">這次一檔都沒抓到</div>
-        不是程式壞掉，是<strong>抓資料被擋住了</strong>（免費來源每小時有次數上限）。<br>
-        <strong>你勾的條件都還在</strong>——等 ${escape(usScanBlocked)} 再按「▶ 重新掃描」就好。
+        ${usScanBlocked.why}<br>
+        <strong>你勾的條件都還在</strong>——${usScanBlocked.wait ? `等${escape(usScanBlocked.wait)}後再按` : '處理完再按'}「▶ 重新掃描」就好。
       </div>`
         : `<div style="text-align:center; padding:28px 10px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
         <div style="font-family:var(--serif); font-size:17px; color:var(--ink-secondary); margin-bottom:6px;">還沒掃描</div>
