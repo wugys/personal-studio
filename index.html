@@ -12469,9 +12469,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const base = 'https://api.finmindtrade.com/api/v4/data?dataset=';
     try {
       const s = todayISO(Date.now() - 45 * 864e5);
-      const r = await fetch(`${base}TaiwanStockPER&data_id=${encodeURIComponent(code)}&start_date=${s}`, { cache: 'no-store' });
-      const j = await r.json();
-      const rows = (j && j.data) || [];
+      const rows = await finmindFetch(`${base}TaiwanStockPER&data_id=${encodeURIComponent(code)}&start_date=${s}`);
       const last = rows[rows.length - 1];
       if (last) {
         out.per = Number(last.PER) > 0 ? Number(last.PER) : null;
@@ -12479,12 +12477,10 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         out.dy = last.dividend_yield != null ? Number(last.dividend_yield) : null;
         out.perDate = last.date;
       }
-    } catch (e) {}
+    } catch (e) { if (e && (e.finmindQuota || e.finmindBlocked)) out.blocked = true; }
     try {
       const s = todayISO(Date.now() - 400 * 864e5);
-      const r = await fetch(`${base}TaiwanStockFinancialStatements&data_id=${encodeURIComponent(code)}&start_date=${s}`, { cache: 'no-store' });
-      const j = await r.json();
-      const rows = (j && j.data) || [];
+      const rows = await finmindFetch(`${base}TaiwanStockFinancialStatements&data_id=${encodeURIComponent(code)}&start_date=${s}`);
       if (rows.length) {
         const latest = rows.reduce((a, b) => (b.date > a ? b.date : a), rows[0].date);
         const pick = t => { const x = rows.find(v => v.date === latest && v.type === t); return x ? Number(x.value) : null; };
@@ -12495,8 +12491,10 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         }
         out.fsDate = latest;
       }
-    } catch (e) {}
-    twFundCache[code] = { data: out, ts: Date.now() };
+    } catch (e) { if (e && (e.finmindQuota || e.finmindBlocked)) out.blocked = true; }
+    // ⚠ 拉不到資料就**不要快取**。原本不管成不成功都存 6 小時，
+    //   於是額度掛一次，這檔股的基本面就「查無資料」六小時——**就算額度早就恢復了**。
+    if (!out.blocked) twFundCache[code] = { data: out, ts: Date.now() };
     return out;
   }
   // 把台股資料組成跟 Finnhub 一樣的形狀，這樣 usPriceLevels / usCheckItems 完全不用改
@@ -24732,10 +24730,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (hit && (Date.now() - hit.at) < DIV_CACHE_HOURS * 3600000) return hit.rows;
     const start = todayISO(Date.now() - 400 * 864e5);
     const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockDividend&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    const rows = ((j && j.data) || []).map(x => ({
+    const rows = (await finmindFetch(url)).map(x => ({
       cash: Number(x.CashEarningsDistribution) || 0,      // 每股配現金
       stock: Number(x.StockEarningsDistribution) || 0,    // 每股配股票（張數比例）
       ex: x.CashExDividendTradingDate || x.StockExDividendTradingDate || '',
@@ -24771,6 +24766,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
     const failed = [];
     const all = [];
+    let blocked = null;
     await mapLimit(syms, 5, async sym => {
       try {
         const rows = await fetchTwDividend(sym);
@@ -24784,7 +24780,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             daysToEx: daysBetweenToday(d.ex)
           });
         });
-      } catch (e) { failed.push(sym); }
+      } catch (e) {
+        failed.push(sym);
+        // ⚠ 分清楚「查不到」跟「拉不到」。額度掛了的話**每一檔都會失敗**，
+        //   而空狀態原本會寫「近一年都沒有除權息公告」——對 0056、00878 這種年年配的完全是謊言。
+        if (e && (e.finmindQuota || e.finmindBlocked)) blocked = e;
+      }
     });
     // 未來的由近到遠排前面，過去的由新到舊排後面
     all.sort((a, b) => {
@@ -24793,7 +24794,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       if (fa !== fb) return fa - fb;
       return fa === 0 ? (a.daysToEx - b.daysToEx) : (b.ex < a.ex ? -1 : 1);
     });
-    return { rows: all, symbols: syms.length, failed };
+    return { rows: all, symbols: syms.length, failed, blocked: blocked ? (blocked.message || '拉不到資料') : '' };
   }
 
   let divCalData = null;
@@ -24803,19 +24804,25 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       '<div style="padding:22px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查詢除權息資料中…</div>';
     document.getElementById('divCalStats').innerHTML = '';
     try { divCalData = await buildDividendCalendar(); }
-    catch (e) { divCalData = { rows: [], symbols: 0, failed: [] }; }
+    catch (e) { divCalData = { rows: [], symbols: 0, failed: [], blocked: (e && (e.finmindQuota || e.finmindBlocked)) ? (e.message || '拉不到資料') : '' }; }
     renderDivCalendar();
   }
   function closeDivCalendar() { document.getElementById('divCalModal').classList.remove('active'); }
 
   function renderDivCalendar() {
-    const d = divCalData || { rows: [], symbols: 0, failed: [] };
+    const d = divCalData || { rows: [], symbols: 0, failed: [], blocked: '' };
     const body = document.getElementById('divCalBody');
     const stats = document.getElementById('divCalStats');
     const money = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
     if (!d.rows.length) {
       stats.innerHTML = '';
-      body.innerHTML = `<div style="padding:26px 20px; text-align:center; color:var(--ink-tertiary); font-size:12.5px; line-height:1.9; border:1px dashed var(--line); border-radius:4px;">
+      body.innerHTML = d.blocked
+        ? `<div style="padding:26px 20px; text-align:center; color:var(--ink-secondary); font-size:12.5px; line-height:1.9; border:1px solid var(--danger); border-radius:4px; background:rgba(201,123,106,0.08);">
+        <strong style="color:var(--ink-primary);">拉不到除權息資料，不是你的股票沒配息。</strong><br>
+        ${escape(d.blocked)}<br>
+        <span style="font-size:11.5px; color:var(--ink-tertiary);">等一下重新打開這個畫面就會重抓。</span>
+      </div>`
+        : `<div style="padding:26px 20px; text-align:center; color:var(--ink-tertiary); font-size:12.5px; line-height:1.9; border:1px dashed var(--line); border-radius:4px;">
         ${d.symbols ? `查了 ${d.symbols} 檔台股持股，近一年都沒有除權息公告。` : '目前沒有台股類持股（個股／高股息 ETF／市值型 ETF／債券 ETF）。'}<br>
         <span style="font-size:11.5px;">美股與加密貨幣沒有免費的配息資料來源，這裡只看台股。</span>
       </div>`;
@@ -24871,7 +24878,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           <tbody>${d.rows.map(row).join('')}</tbody>
         </table>
       </div>
-      ${d.failed.length ? `<div style="margin-top:8px; font-size:11.5px; color:var(--accent-warm);">這幾檔查不到除權息資料：${escape(d.failed.join('、'))}</div>` : ''}
+      ${d.failed.length ? `<div style="margin-top:8px; font-size:11.5px; color:var(--accent-warm);">${d.blocked ? `這幾檔拉不到資料（不是沒配息）：` : '這幾檔查不到除權息資料：'}${escape(d.failed.join('、'))}</div>` : ''}
       <div style="margin-top:10px; font-size:11px; color:var(--ink-tertiary); line-height:1.8;">
         <strong>除息日當天之前要持有才領得到</strong>，那天（含）之後才買就沒有這次的。發放日是錢真正入帳的日子。<br>
         <strong>所有金額都是「每股配息 × 你現在的股數」估出來的</strong>——已經過去的那幾次，當時你的股數可能不一樣，
@@ -25446,9 +25453,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   //   91 檔 × 2 支 API 容易撞到 FinMind 免費層的用量上限。細節在個股頁面看就好。
   async function scanFundTw(sym) {
     const s = todayISO(Date.now() - 45 * 864e5);
-    const r = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPER&data_id=${encodeURIComponent(sym)}&start_date=${s}`, { cache: 'no-store' });
-    const j = await r.json();
-    const rows = (j && j.data) || [];
+    const rows = await finmindFetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPER&data_id=${encodeURIComponent(sym)}&start_date=${s}`);
     const last = rows[rows.length - 1];
     if (!last) return null;
     const pe = Number(last.PER) > 0 ? Number(last.PER) : null;
@@ -25474,8 +25479,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const ck = market + ':' + sym;
     const c = usScanFundCache[ck];
     if (c && Date.now() - c.ts < US_SCAN_CACHE_TTL) return c.fund;
+    // ⚠ 額度/連線類的錯誤要**往上丟**，不能吞掉也不能快取：
+    //   吞掉 → 每一檔都「沒有基本面」→ 畫面說「沒有股票符合」，看起來像真的沒機會。
+    //   快取 → 就算額度恢復了，4 小時內還是查不到。
     let fund = null;
-    try { fund = market === 'tw' ? await scanFundTw(sym) : await scanFundUs(sym); } catch (e) { fund = null; }
+    try { fund = market === 'tw' ? await scanFundTw(sym) : await scanFundUs(sym); }
+    catch (e) { if (e && (e.finmindQuota || e.finmindBlocked)) throw e; fund = null; }
     usScanFundCache[ck] = { fund, ts: Date.now() };
     return fund;
   }
@@ -25842,12 +25851,19 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           let bars;
           if (c && (now - c.ts) < US_SCAN_CACHE_TTL) { bars = c.bars; cached++; }
           else { bars = await scanFetch(usScanMarket, item.symbol); usScanCache[ck] = { bars, ts: Date.now() }; }
-          netFail = 0;
           const ctx = usScanCtx(item, bars);
           if (ctx) {
             // 策略模式時，只要有選到含基本面的策略就一定要抓
-            if (needFund) { try { ctx.fund = await scanFetchFund(usScanMarket, item.symbol); } catch (e) { ctx.fund = null; } }
+            // ⚠ 基本面拉不到不能一律吞掉：額度掛了的話**每一檔都會惄惄不符合基本面條件**，
+            //   畫面變成「沒有股票符合」——使用者會以為真的沒機會，而不是資料沒拉到。
+            if (needFund) {
+              try { ctx.fund = await scanFetchFund(usScanMarket, item.symbol); }
+              catch (e) { ctx.fund = null; if (e && (e.finmindQuota || e.finmindBlocked)) throw e; }
+            }
             rows.push(ctx);
+            // ⚠ 要等整檔都完成才能清連續失敗計數。原本放在「價格抓到」就清，
+            //   於是**只有基本面被擋時永遠累不到 3 次**，掃描不會停。
+            netFail = 0;
           } else failed++;
         } catch (e) {
           // 402（額度用完）一次就確定；「連不上」則要連續 3 次才算——單一次可能只是網路抖一下，
