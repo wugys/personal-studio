@@ -8422,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.4 · λ</div>
+    <div>v 11.5 · λ</div>
   </footer>
 </div>
 
@@ -24294,6 +24294,35 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       }
     } catch (e) {}
 
+    // 6b) 匯率多久沒更新。美元部位全靠它換算成台幣，**匯率一舊，總資產就默默算錯**，
+    //   而畫面上看不出來——它只是顯示一個不對的數字。價格有這種提醒，匯率一直沒有。
+    //   ⚠ **沒有美元資產就完全不提**——對只有台股的人而言這件事不存在，講了只是雜訊（v11.0 的教訓）。
+    //   ⚠ 判斷哪些是美元部位直接用 `cfItemRate()`，**不另外寫一套判斷**，
+    //     兩邊分岔的話健檢跟總資產會對不起來（v10.9 的教訓）。
+    try {
+      let usdPart = 0;
+      mods.forEach(m => m.holdings.forEach(h => {
+        const rate = cfItemRate(m.s, h, fx);
+        if (rate !== 1) usdPart += holdingValue(h) * rate;
+      }));
+      if (usdPart > 0) {
+        const per1 = Math.round(usdPart / fx);   // 匯率每差 1 元，總資產就差這么多台幣
+        const impact = `你的美元資產約 NT$${Math.round(usdPart).toLocaleString('en-US')}，<strong>匯率每差 1 元，總資產就差 NT$${per1.toLocaleString('en-US')}</strong>。`;
+        const days = cashflowFx.updatedAt ? Math.floor((Date.now() - cashflowFx.updatedAt) / 86400000) : null;
+        if (days == null) {
+          add('bad', '匯率從來沒有更新過',
+            `現在用的是預設值 ${fx}，不是真實匯率。${impact}到現金流儀表板按一下「↻ 更新匯率」就好。`, 'cashflowView');
+        } else if (cashflowFx.manual) {
+          if (days >= 90) add('info', `手填的匯率已經 ${days} 天沒改過`,
+            `${impact}你當初是手動設定的，系統不會自己換掉。`, 'cashflowView');
+        } else if (days >= 30) {
+          add('warn', `匯率已經 ${days} 天沒更新`, `${impact}`, 'cashflowView');
+        } else if (days >= 7) {
+          add('info', `匯率已經 ${days} 天沒更新`, `${impact}`, 'cashflowView');
+        }
+      }
+    } catch (e) {}
+
     // 7) 定期定額計畫指到不存在的標的 → 按「記錄扣款」會寫不進去
     try {
       const plans = await readJson('dca_plans_v1', []);
@@ -24383,7 +24412,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         <div style="font-size:12.5px; color:var(--ink-secondary);">沒有找到會讓數字算錯的問題。</div>
         <div style="font-size:11.5px; color:var(--ink-tertiary); margin-top:8px;">
           檢查了：沒填現價的持股、重複記錄的代號、找不到成本的賣出、缺日期的交易、<br>
-          填反的下單價位、現價新舊、定期定額設定、備份狀態、儲存空間。
+          填反的下單價位、現價新舊、<strong>匯率新舊</strong>、定期定額設定、備份狀態、儲存空間。
         </div>
       </div>`;
       return;
