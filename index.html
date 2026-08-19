@@ -7078,6 +7078,7 @@
         </select>
         <button class="btn btn-primary" id="usScanRunBtn" type="button" onclick="runUsScan()" style="margin-left:auto;">▶ 開始掃描</button>
       </div>
+      <div id="usScanScopeHint" style="font-size:11px; color:var(--ink-tertiary); line-height:1.7; margin:-6px 0 12px;"></div>
 
       <div id="usScanProgress" style="display:none; margin-bottom:12px;">
         <div style="height:6px; background:var(--bg-card); border:1px solid var(--line); border-radius:3px; overflow:hidden;">
@@ -8421,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.3 · λ</div>
+    <div>v 11.4 · λ</div>
   </footer>
 </div>
 
@@ -12526,10 +12527,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
       const start = todayISO(Date.now() - 400 * 864e5);
       const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-      const resp = await fetch(url, { cache: 'no-store' });
-      const j = await resp.json().catch(() => null);
-      const rows = (j && j.data) || [];
-      if (j && j.status && j.status !== 200 && !rows.length) throw new Error(j.msg || ('FinMind ' + j.status));
+      const rows = await finmindFetch(url);   // v11.4：拉不到資料時講真正的原因，不要丟「Failed to fetch」給使用者看
       if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查無此代號的台股日線（' + escape(code) + '）</div>'; const sp = document.getElementById('tvSignalsPanel'); if (sp) sp.innerHTML = ''; return; }
       const candles = rows.map(r => ({ time: r.date, open: +r.open, high: +r.max, low: +r.min, close: +r.close })).filter(c => c.close > 0);
       const vols = rows.map(r => ({ time: r.date, value: +r.Trading_Volume || 0, color: (+r.close >= +r.open) ? 'rgba(212,165,116,0.4)' : 'rgba(201,123,106,0.4)' }));
@@ -12594,10 +12592,8 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
       const start = todayISO(Date.now() - 400 * 864e5);
       const url = `https://api.finmindtrade.com/api/v4/data?dataset=USStockPrice&data_id=${encodeURIComponent(symbol)}&start_date=${start}`;
-      const resp = await fetch(url, { cache: 'no-store' });
-      const j = await resp.json().catch(() => null);
+      const rows = await finmindFetch(url);   // v11.4：同上
       if (stale()) return; // 已切標的或切回即時圖 → 別覆蓋現在的容器
-      const rows = (j && j.data) || [];
       if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">FinMind 查無 ' + escape(symbol) + ' 日線，請切回「即時圖」。</div>'; return; }
       const candles = rows.map(r => ({ time: r.date, open: +r.Open, high: +r.High, low: +r.Low, close: +r.Close })).filter(c => c.close > 0);
       const vols = rows.map(r => ({ time: r.date, value: +r.Volume || 0, color: (+r.Close >= +r.Open) ? 'rgba(212,165,116,0.4)' : 'rgba(201,123,106,0.4)' }));
@@ -12712,13 +12708,59 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     showToast('分析策略：' + (s ? s.name : '綜合'));
   }
 
+  // FinMind 免費層有**每小時請求上限**（實測掃到 300 檔左右就會回 HTTP 402
+  // 「Requests reach the upper limit」）。原本的寫法是 `(j && j.data) || []`，
+  // 額度用完時會安靜地回傳空陣列 → 畫面顯示「查無此代號歷史資料」，
+  // 使用者以為是這檔股票沒資料，其實是額度用完了。**錯的訊息比沒有訊息更糟**，
+  // 所以這裡把 API 的錯誤變成看得懂的例外往上丟。
+  function finmindRows(j, res) {
+    if (j && j.status === 200) return j.data || [];
+    const msg = String((j && j.msg) || '');
+    // 兩種都是「打太多次」：先回 402（額度用完），再打下去會變成 403 直接**停權這個 IP**。
+    // ⚠ 403 那個回應裡有 `retry_after`（秒），一定要用——能直接告訴使用者「還要等幾分鐘」，
+    //   比含糊的「等一下再試」有用太多。
+    const banned = (res && res.status === 403) || /ip banned/i.test(msg);
+    if ((res && res.status === 402) || banned || /upper limit|reach the upper/i.test(msg)) {
+      const wait = Number(j && j.retry_after) || 0;
+      const mins = wait > 0 ? Math.ceil(wait / 60) : 0;
+      const e = new Error(banned
+        ? `資料來源暫時擋住了（免費額度用太快）${mins ? `，還要等大約 ${mins} 分鐘` : ''}。`
+        : 'FinMind 免費額度用完了（每小時上限），等一下再試。');
+      e.finmindQuota = true;
+      e.retryMins = mins;
+      throw e;
+    }
+    if (/level is free|update your user level/i.test(msg)) {
+      const e = new Error('這個查法要 FinMind 付費方案才行。');
+      e.finmindPaid = true;
+      throw e;
+    }
+    if (j && j.status && j.status !== 200) throw new Error('FinMind：' + (msg || ('狀態 ' + j.status)).slice(0, 60));
+    return (j && j.data) || [];
+  }
+
+  // ⚠ 實測（真的被擋時量到的）：FinMind 擋掉 IP 時回 **403 但沒有 CORS 標頭**，
+  //    瀏覽器根本讀不到內容，只會丟 TypeError「Failed to fetch」。
+  //    也就是說在網頁裡**看不到 402/403 也看不到 retry_after**——只看得到「連不上」。
+  //    所以「連不上 FinMind」最可能的原因不是網路壞掉，而是短時間查太多次被暫時擋住。
+  //    訊息一定要把這件事講出來，不然使用者只會看到「查無資料」而以為是股票沒資料。
+  async function finmindFetch(url) {
+    let r;
+    try { r = await fetch(url, { cache: 'no-store' }); }
+    catch (e) {
+      const err = new Error('連不到資料來源。最可能是短時間查太多次被暫時擋住（免費額度用完），也可能是網路斷線。等 10–20 分鐘再試。');
+      err.finmindBlocked = true;
+      throw err;
+    }
+    const j = await r.json().catch(() => null);
+    return finmindRows(j, r);
+  }
+
   // ===== Phase 2：技術指標訊號（FinMind 美股日線 → RSI/MACD/均線）=====
   async function fetchUsOhlc(symbol) {
     const start = todayISO(Date.now() - 260 * 864e5);
     const url = `https://api.finmindtrade.com/api/v4/data?dataset=USStockPrice&data_id=${encodeURIComponent(symbol)}&start_date=${start}`;
-    const r = await fetch(url, { cache: 'no-store' });
-    const j = await r.json().catch(() => null);
-    const rows = (j && j.data) || [];
+    const rows = await finmindFetch(url);
     return rows.map(x => ({ time: x.date, open: +x.Open, high: +x.High, low: +x.Low, close: +x.Close, volume: +x.Volume || 0 })).filter(b => b.close > 0);
   }
   // KD 隨機指標（台股慣例 9,3,3）
@@ -13415,12 +13457,16 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
         lastAnalysisSnapshot.levels = L ? usLevelsSummary(L) : '';
         lastAnalysisSnapshot.check = usCheckItems(px, metric, sig).map(i => `${i.label}：${i.valText}（${i.verdict === 'green' ? '好' : i.verdict === 'amber' ? '普通' : i.verdict === 'red' ? '要注意' : '無資料'}）`).join('\n');
       }
-    }).catch(() => {
+    }).catch((err) => {
       if (seq !== usAnalysisSeq) return;
+      // ⚠ 這裡原本一律寫「查無此代號歷史資料」，但真正的原因也可能是 FinMind 額度用完，
+      //    講錯原因會害使用者以為這檔股票沒資料而放棄。改成把真正的原因講出來。
+      // 拿掉結尾的句號，不然包進括號後會變成「…再試。）。」兩個句號
+      const why = escape(String((err && err.message) || '查無此代號歷史資料').replace(/。+$/, ''));
       const panel = document.getElementById('usSignalsPanel');
-      if (panel) panel.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">技術訊號暫時無法計算（查無此代號歷史資料）。</div>';
+      if (panel) panel.innerHTML = `<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">技術訊號暫時無法計算（${why}）。</div>`;
       const lvlEl = document.getElementById('usLevelsPanel');
-      if (lvlEl) lvlEl.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">參考價位帶暫時無法計算（查無此代號歷史資料）。</div>';
+      if (lvlEl) lvlEl.innerHTML = `<div style="color:var(--ink-tertiary); font-size:11px; padding:10px;">參考價位帶暫時無法計算（${why}）。</div>`;
     });
   }
   function renderUsAnalysisData(h, quote, profile, metric, news) {
@@ -23450,10 +23496,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function quoteTwClose(code) {
     const start = todayISO(Date.now() - 12 * 864e5);
     const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    const rows = (j && j.data) || [];
+    const rows = await finmindFetch(url);   // v11.4：額度用完時會丟看得懂的例外，而不是默默回空
     for (let i = rows.length - 1; i >= 0; i--) {
       const c = Number(rows[i].close);
       if (c > 0) return { price: c, date: rows[i].date };
@@ -25428,9 +25471,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function fetchTwOhlc(code) {
     const start = todayISO(Date.now() - 400 * 864e5);
     const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-    const r = await fetch(url, { cache: 'no-store' });
-    const j = await r.json().catch(() => null);
-    const rows = (j && j.data) || [];
+    const rows = await finmindFetch(url);
     return rows.map(x => ({ time: x.date, open: +x.open, high: +x.max, low: +x.min, close: +x.close, volume: +x.Trading_Volume || 0 }))
                .filter(b => b.close > 0);
   }
@@ -25450,6 +25491,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     us: [
       { v: 'builtin', t: '內建熱門（42 檔）' },
       { v: 'wide', t: '內建 + 擴充（70 檔）' },
+      { v: 'cap100', t: '美股市值前 100 大' },
+      { v: 'cap250', t: '美股市值前 250 大（額度上限附近）' },
       { v: 'mine', t: '只掃我的持股' },
       { v: 'custom', t: '自訂代號' }
     ],
@@ -25479,6 +25522,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (sel) {
       sel.innerHTML = US_SCAN_SCOPES[m].map(o => `<option value="${escape(o.v)}">${escape(o.t)}</option>`).join('');
       sel.value = US_SCAN_SCOPES[m][0].v;
+      try { renderUsScanScopeHint(sel.value); } catch (e) {}
     }
     const btn = document.getElementById('usScanRunBtn');
     if (btn) btn.textContent = '▶ 開始掃描';
@@ -25595,13 +25639,90 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function onUsScanScopeChange() {
     const v = document.getElementById('usScanScope').value;
     document.getElementById('usScanCustom').style.display = v === 'custom' ? '' : 'none';
+    renderUsScanScopeHint(v);
+  }
+  // 範圍越大越花「免費資料額度」，所以在按下去之前就先把代價講清楚，
+  // 不要等掃到一半才說。額度是**每小時的總請求數**，不是速度限制。
+  function renderUsScanScopeHint(v) {
+    const el = document.getElementById('usScanScopeHint');
+    if (!el) return;
+    const tip = {
+      cap100: '依市值排序的前 100 大美股，大約 10 秒。名單每天更新一次。',
+      cap250: '依市值排序的前 250 大美股，大約 20 秒。<strong style="color:var(--accent-warm);">這會用掉接近一小時份的免費資料額度</strong>，掃完再掃別的可能會被擋，等一小時就好。',
+      builtin: '內建的 42 檔熱門股，最省額度。',
+      wide: '內建 42 檔 ＋ 擴充 28 檔波段常見標的。',
+      mine: '只掃你自己持有的，最快也最省。',
+      custom: '自己打代號，逗號分隔。'
+    }[v] || '';
+    const why = (v === 'cap100' || v === 'cap250')
+      ? '<br><span style="color:var(--ink-muted);">※ 沒有「掃全部美股」這個選項：免費資料來源不給整批下載，一檔一檔抓要 33 小時，做不到。市值前 250 大已經涵蓋絕大多數會交易的標的。</span>'
+      : '';
+    el.innerHTML = tip ? tip + why : '';
   }
   function clearUsScanCache() {
     usScanCache = {}; usScanRows = [];
     renderUsScanResults();
     showToast('快取已清除，下次掃描會重新抓資料');
   }
-  function usScanUniverse() {
+  // ===== 美股「市值前 N 大」掃描範圍（v11.4）=====
+  // 使用者問「無法做整個美股掃描嗎」。查證後的實話：**做不到全部 9,848 檔**。
+  //   · FinMind 免費層**不給「一次抓全部」**（不帶 data_id 直接回 400「Your level is free」），只能一檔一檔抓。
+  //   · 免費層有**每小時請求上限**，實測連續打到 300 檔左右就回 HTTP 402「Requests reach the upper limit」。
+  //   · 掃 9,848 檔＝9,848 次請求 ≈ 33 小時，而且 4 小時的快取早就過期了，永遠掃不完。
+  //   · 替代來源都不通：Stooq 有機器人驗證牆且沒有 CORS 標頭、Yahoo 直接 429。
+  // 做得到的是：**用市值排序，掃前 N 大**。名單本身只要 **1 次請求**（USStockInfo 一次給
+  // 18,383 檔的代號＋市值＋產業），所以真正花額度的只有價格。
+  const US_UNIVERSE_KEY = 'us_universe_v1';
+  const US_UNIVERSE_TTL = 24 * 3600 * 1000;   // 市值一天變不了多少，存一天
+  const US_UNIVERSE_KEEP = 400;               // ⚠ 只留前 400：原始 JSON 有 3.5MB，整包塞進 localStorage 會爆掉
+  let usUniverseMem = null;
+  async function usLoadUniverse() {
+    if (usUniverseMem && Date.now() - usUniverseMem.ts < US_UNIVERSE_TTL) return usUniverseMem.list;
+    const cached = await readJson(US_UNIVERSE_KEY, null);
+    if (cached && Array.isArray(cached.list) && cached.list.length && Date.now() - cached.ts < US_UNIVERSE_TTL) {
+      usUniverseMem = cached; return cached.list;
+    }
+    const rows = await finmindFetch('https://api.finmindtrade.com/api/v4/data?dataset=USStockInfo');
+    // ⚠ 同一個代號會有好幾列（不同 date），**一定要取日期最新那一列，不能取市值最大那一列**。
+    //   舊列的市值有些是**當地幣別**：實測 LTM（智利 LATAM 航空）2024-07-26 那列寫 14,929,600,000,000，
+    //   那是智利披索；2026-08-19 那列才是正確的 145 億美元。取最大值的話，
+    //   **LATAM 航空會變成「美股市值第一名」排在 NVDA 前面**。
+    let newest = '';
+    const best = new Map();
+    rows.forEach(x => {
+      const s = String(x.stock_id || '').trim().toUpperCase();
+      // ⚠ 代號含斜線的（BRK/A、BRK/B）FinMind 的價格 API 會回 400，先濾掉不要白白花掉額度
+      if (!/^[A-Z][A-Z.\-]{0,5}$/.test(s)) return;
+      const date = String(x.date || '');
+      if (date > newest) newest = date;
+      const prev = best.get(s);
+      if (!prev || date > prev.date) best.set(s, {
+        symbol: s, name: String(x.stock_name || s).slice(0, 42), date,
+        cap: Number(x.MarketCap) || 0, sector: String(x.Subsector || '').slice(0, 40)
+      });
+    });
+    // 日期太舊的丟掉：那些是**已經下市或被併購的舊代號**，它們的市值停在很多年前、
+    // 卻高到足以排進前 250（實測 CHL 中國移動、ATVI 動視暴雪、VMW、UTX 雷神…共 21 檔）。
+    // 掃它們只會白白花掉免費額度，而且列在「市值前 100 大」裡本身就是錯的資訊。
+    // 400 天是實測試出來的：殺掉全部僵屍代號，又保住 MMC / BK / HONAV 這種真的還在交易、
+    // 只是 FinMind 沒勤更新的。
+    const cutoff = todayISO(new Date(newest + 'T00:00:00Z').getTime() - 400 * 864e5);
+    const list = [...best.values()]
+      .filter(x => x.cap > 0 && (!newest || x.date >= cutoff))
+      .sort((a, b) => b.cap - a.cap)
+      .slice(0, US_UNIVERSE_KEEP);
+    if (!list.length) throw new Error('抓不到美股清單');
+    usUniverseMem = { ts: Date.now(), list };
+    await writeKey(US_UNIVERSE_KEY, JSON.stringify(usUniverseMem));
+    return list;
+  }
+  async function usCapUniverse(topN) {
+    const list = await usLoadUniverse();
+    const zh = s => ((typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === s) || {}).zh || '';
+    return list.slice(0, topN).map(x => ({ symbol: x.symbol, name: x.name, zh: zh(x.symbol), cap: x.cap, sector: x.sector }));
+  }
+
+  async function usScanUniverse() {
     const scope = document.getElementById('usScanScope').value;
     const tw = usScanMarket === 'tw';
     // 自訂／持股也去內建清單查一下名字，卡片才不會顯示成「AAPL AAPL」
@@ -25626,6 +25747,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       const stocks = all.filter(s => !twIsEtf(s));
       return scope === 'tw_major' ? stocks.slice(0, 40) : stocks;
     }
+    if (scope === 'cap100' || scope === 'cap250') return usCapUniverse(scope === 'cap100' ? 100 : 250);
     const base = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).slice();
     if (scope === 'wide') {
       const seen = new Set(base.map(x => x.symbol));
@@ -25658,8 +25780,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   async function runUsScan() {
     if (usScanRunning) return;
-    const universe = usScanUniverse();
-    if (!universe.length) { showToast('掃描範圍是空的'); return; }
+    let universe;
+    try { universe = await usScanUniverse(); }
+    catch (e) { showToast('抓不到掃描名單：' + (e && e.message || e)); return; }
+    if (!universe || !universe.length) { showToast('掃描範圍是空的'); return; }
     usScanRunning = true;
     // 條件模式看開關；策略模式只要選到含基本面的策略就要抓
     const needFund = usScanMode === 'strategy' ? usScanStrategyNeedsFund() : usScanUseFund;
@@ -25677,10 +25801,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       if (bar) bar.style.width = (done / universe.length * 100).toFixed(1) + '%';
       if (txt) txt.textContent = `${done} / ${universe.length}　剛完成 ${sym}${cached ? `　（${cached} 檔用快取）` : ''}${failed ? `　${failed} 檔查無資料` : ''}`;
     };
-    // 併發 5：FinMind 免費層打太快會被擋
+    // 併發 8（實測 FinMind 免費層的限制是「每小時的總請求數」，不是「打多快」——
+    // 12 併發連打 200 檔都沒事，卡住的是累計次數）。
+    // ⚠ 額度用完時要「整個停下來並講清楚」，不能讓剩下幾百檔一路失敗、
+    //   最後只顯示「N 檔查無資料」——那會讓人以為是那些股票沒資料。
     const queue = universe.slice();
+    let quotaStop = false, netFail = 0;
     const worker = async () => {
-      while (queue.length) {
+      while (queue.length && !quotaStop) {
         const item = queue.shift();
         try {
           const ck = usScanMarket + ':' + item.symbol;
@@ -25688,23 +25816,77 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           let bars;
           if (c && (now - c.ts) < US_SCAN_CACHE_TTL) { bars = c.bars; cached++; }
           else { bars = await scanFetch(usScanMarket, item.symbol); usScanCache[ck] = { bars, ts: Date.now() }; }
+          netFail = 0;
           const ctx = usScanCtx(item, bars);
           if (ctx) {
             // 策略模式時，只要有選到含基本面的策略就一定要抓
             if (needFund) { try { ctx.fund = await scanFetchFund(usScanMarket, item.symbol); } catch (e) { ctx.fund = null; } }
             rows.push(ctx);
           } else failed++;
-        } catch (e) { failed++; }
+        } catch (e) {
+          // 402（額度用完）一次就確定；「連不上」則要連續 3 次才算——單一次可能只是網路抖一下，
+          // 但真的被擋住時每一檔都會失敗，所以 3 次立刻就會到。
+          if (e && e.finmindQuota) { quotaStop = e; queue.length = 0; }
+          else if (e && e.finmindBlocked) {
+            netFail++;
+            if (netFail >= 3) { quotaStop = e; queue.length = 0; } else failed++;
+          } else { netFail = 0; failed++; }
+        }
         step(item.symbol);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(5, universe.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(8, universe.length) }, worker));
     usScanRows = rows;
     usScanRunning = false;
     if (btn) { btn.disabled = false; btn.textContent = '▶ 重新掃描'; }
     if (prog) prog.style.display = 'none';
     renderUsScanResults();
-    showToast(`🎯 掃描完成 · ${rows.length} 檔有資料${failed ? ` / ${failed} 檔查無` : ''}`);
+    if (quotaStop) {
+      // ⚠ 「還沒掃到的」= 總數 − **真的拿到資料的**，不能再扣掉 failed——
+      //   被擋的那幾檔也算失敗，扣掉的話會少報（實測 0/100 時會說「還有 98 檔」）。
+      const left = Math.max(0, universe.length - rows.length);
+      showQuotaNotice(rows.length, left, quotaStop.retryMins || 0, !!quotaStop.finmindQuota, document.getElementById('usScanScope').value);
+      showToast(`⚠ 拉不到資料了，掃到 ${rows.length} 檔就停了`);
+    } else {
+      showToast(`🎯 掃描完成 · ${rows.length} 檔有資料${failed ? ` / ${failed} 檔查無` : ''}`);
+    }
+  }
+
+  // 拉不到資料而提前停下時，把「發生什麼事、已經拿到什麼、什麼時候可以再試」一次講完。
+  // 不要只丟一句「失敗」——使用者會以為是程式壞了或那些股票沒資料。
+  //
+  // ⚠ `sure` 分兩種情況，**話不能一樣**：
+  //   · sure=true：真的讀到 402/403 回應，確定是額度。
+  //   · sure=false：只知道 fetch 一直失敗。**實測 FinMind 的 402/403 沒有 CORS 標頭，**
+  //     **所以在瀏覽器裡幾乎都是走這條**（Node 看得到 402，瀏覽器只看得到「Failed to fetch」）。
+  //     這時候斷定「額度用完了」是在猜——也可能是真的斷線。猜錯了反而害使用者白等一小時，
+  //     所以這裡講「最可能是…也可能是…」，跟 finmindFetch 那邊的語氣一致。
+  function showQuotaNotice(got, left, retryMins, sure, scope) {
+    const box = document.getElementById('usScanResults');
+    if (!box) return;
+    // 別叫人家「改用小一點的範圍」却把他剛剛跑的那個也列進去。
+    const smaller = [
+      { v: 'cap250', t: '市值前 250 大' }, { v: 'cap100', t: '市值前 100 大' },
+      { v: 'wide', t: '內建 + 擴充 70 檔' }, { v: 'builtin', t: '內建熱門 42 檔' }
+    ];
+    const idx = smaller.findIndex(o => o.v === scope);
+    const alt = (idx < 0 ? smaller.slice(2) : smaller.slice(idx + 1)).map(o => o.t).join(' / ');
+    const wait = retryMins > 0 ? `等大約 ${retryMins} 分鐘`
+      : (sure ? '等大約一小時' : '等個 10–20 分鐘');
+    const head = sure
+      ? `<strong style="color:var(--ink-primary);">免費資料額度用完了，掃描提前停在 ${got} 檔。</strong><br>
+         這不是程式壞掉，也不是那些股票沒資料——<strong>FinMind 免費版每小時能查的次數有上限</strong>，這次掃描把它用完了。`
+      : `<strong style="color:var(--ink-primary);">拉不到資料，掃描提前停在 ${got} 檔。</strong><br>
+         這不是程式壞掉，也不是那些股票沒資料。<strong>最可能是短時間查太多次、免費額度被擋住了</strong>（FinMind 免費版每小時有上限），也可能是網路斷線。`;
+    const html = `<div style="margin-bottom:14px; padding:14px 16px; border:1px solid var(--danger); border-radius:4px; background:rgba(201,123,106,0.08); font-size:12.5px; line-height:1.85; color:var(--ink-secondary);">
+      <div style="font-family:var(--mono); font-size:10.5px; letter-spacing:0.12em; color:var(--danger); margin-bottom:6px;">DATA · ${sure ? 'QUOTA · REACHED' : 'FETCH · BLOCKED'}</div>
+      ${head}${left > 0 ? `還有大約 <strong>${left}</strong> 檔沒掃到。` : ''}<br>
+      ${got > 0 ? `<span style="color:var(--ink-tertiary);">已經拿到的 ${got} 檔資料是完整的，下面的排名照樣可以看。</span><br>` : ''}
+      · <strong>${wait}</strong>再按「▶ 重新掃描」${got > 0 ? '（已經拿到的不會重抓）' : ''}<br>
+      ${alt ? `· 或改用比較小的範圍：${alt}<br>` : ''}
+      · <strong>已經抓過的 4 小時內不會再花額度</strong>，所以改條件重新排名永遠是免費的
+    </div>`;
+    box.insertAdjacentHTML('afterbegin', html);
   }
 
   function usScanEvaluate(ctx) {
