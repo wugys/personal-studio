@@ -8422,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.6 · λ</div>
+    <div>v 11.7 · λ</div>
   </footer>
 </div>
 
@@ -10968,7 +10968,10 @@ ${userQuery}`;
     catch (e) { twHoldings = []; }
     try { const t = await readKey(TW_STORAGE.txns); twTxns = t ? JSON.parse(t) : []; }
     catch (e) { twTxns = []; }
-    try { const r = await readKey(TW_STORAGE.realized); twRealizedPnL = r ? Number(r) : 0; }
+    // ⚠ 用 `Number(r) || 0` 而不是 `r ? Number(r) : 0`：存進去的若不是數字字串
+    //   （備份還原、雲端同步弄壞），Number() 會給 NaN，畫面就直接在金額欄位寫「非數值」，
+    //   而且下一次存檔會把 "NaN" 寫回 storage 變成永久的。九個模組都是同一套鑑像程式碼。
+    try { const r = await readKey(TW_STORAGE.realized); twRealizedPnL = Number(r) || 0; }
     catch (e) { twRealizedPnL = 0; }
     await loadTwSyncConfig();
     await loadTwNewsAnalysis();
@@ -12036,7 +12039,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     catch (e) { usHoldings = []; }
     try { const t = await readKey(US_STORAGE.txns); usTxns = t ? JSON.parse(t) : []; }
     catch (e) { usTxns = []; }
-    try { const r = await readKey(US_STORAGE.realized); usRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(US_STORAGE.realized); usRealizedPnL = Number(r) || 0; }
     catch (e) { usRealizedPnL = 0; }
     await loadUsSyncConfig();
     renderUsStockStats();
@@ -14389,7 +14392,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     catch (e) { cryptoHoldings = []; }
     try { const t = await readKey(CRYPTO_STORAGE.txns); cryptoTxns = t ? JSON.parse(t) : []; }
     catch (e) { cryptoTxns = []; }
-    try { const r = await readKey(CRYPTO_STORAGE.realized); cryptoRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(CRYPTO_STORAGE.realized); cryptoRealizedPnL = Number(r) || 0; }
     catch (e) { cryptoRealizedPnL = 0; }
     await loadCryptoSyncConfig();
     renderCryptoStats();
@@ -15142,7 +15145,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     catch (e) { hdEtfHoldings = []; }
     try { const t = await readKey(HD_ETF_STORAGE.txns); hdEtfTxns = t ? JSON.parse(t) : []; }
     catch (e) { hdEtfTxns = []; }
-    try { const r = await readKey(HD_ETF_STORAGE.realized); hdEtfRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(HD_ETF_STORAGE.realized); hdEtfRealizedPnL = Number(r) || 0; }
     catch (e) { hdEtfRealizedPnL = 0; }
     await loadHdEtfSyncConfig();
     renderHdEtfStats();
@@ -15971,7 +15974,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     catch (e) { mkEtfHoldings = []; }
     try { const t = await readKey(MK_ETF_STORAGE.txns); mkEtfTxns = t ? JSON.parse(t) : []; }
     catch (e) { mkEtfTxns = []; }
-    try { const r = await readKey(MK_ETF_STORAGE.realized); mkEtfRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(MK_ETF_STORAGE.realized); mkEtfRealizedPnL = Number(r) || 0; }
     catch (e) { mkEtfRealizedPnL = 0; }
     // 混合幣別要換算，先把匯率備妥（與現金流儀表板共用同一份）
     try {
@@ -18433,7 +18436,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     catch (e) { bondHoldings = []; }
     try { const t = await readKey(BOND_STORAGE.txns); bondTxns = t ? JSON.parse(t) : []; }
     catch (e) { bondTxns = []; }
-    try { const r = await readKey(BOND_STORAGE.realized); bondRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(BOND_STORAGE.realized); bondRealizedPnL = Number(r) || 0; }
     catch (e) { bondRealizedPnL = 0; }
     // 混合幣別要換算，先把匯率備妥（與現金流儀表板共用同一份）
     try {
@@ -19342,7 +19345,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     catch (e) { fxDepHoldings = []; }
     try { const t = await readKey(FX_DEP_STORAGE.txns); fxDepTxns = t ? JSON.parse(t) : []; }
     catch (e) { fxDepTxns = []; }
-    try { const r = await readKey(FX_DEP_STORAGE.realized); fxDepRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(FX_DEP_STORAGE.realized); fxDepRealizedPnL = Number(r) || 0; }
     catch (e) { fxDepRealizedPnL = 0; }
     // 混合幣別要換算，先把匯率備妥（與現金流儀表板共用同一份）
     try {
@@ -20214,7 +20217,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     catch (e) { fundHoldings = []; }
     try { const t = await readKey(FUND_STORAGE.txns); fundTxns = t ? JSON.parse(t) : []; }
     catch (e) { fundTxns = []; }
-    try { const r = await readKey(FUND_STORAGE.realized); fundRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(FUND_STORAGE.realized); fundRealizedPnL = Number(r) || 0; }
     catch (e) { fundRealizedPnL = 0; }
     try {
       await loadCashflowFx();
@@ -21103,7 +21106,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     catch (e) { metalHoldings = []; }
     try { const t = await readKey(METAL_STORAGE.txns); metalTxns = t ? JSON.parse(t) : []; }
     catch (e) { metalTxns = []; }
-    try { const r = await readKey(METAL_STORAGE.realized); metalRealizedPnL = r ? Number(r) : 0; }
+    try { const r = await readKey(METAL_STORAGE.realized); metalRealizedPnL = Number(r) || 0; }
     catch (e) { metalRealizedPnL = 0; }
     try {
       await loadCashflowFx();
