@@ -8422,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.7 · λ</div>
+    <div>v 11.8 · λ</div>
   </footer>
 </div>
 
@@ -22463,6 +22463,25 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       <div style="font-size:12px;">${verdict}</div>
     `;
   }
+  // 讓「即時試算」真的是即時的。
+  //
+  // ⚠ 原本 reUpdatePreview() 只有兩個呼叫點：開視窗時（那時表單還是空的）跟一顆「↻ 試算」按鈕，
+  //   所以那個框永遠停在「填了成交總價之後，這裡會即時算出…」——它答應的事情不會發生。
+  //   更糟的是「編輯既有物件」：開窗時算過一次，之後你把月租從 32000 改成 25000，
+  //   框裡還是舊的現金流，而畫面上完全看不出來它已經過期了（跟總資產算錯是同一種毛病：
+  //   它不是沒東西，是顯示一個不對的數字）。
+  //
+  // 刻意在 form 上掛一個委派監聽，不去 24 個欄位各寫一次 oninput——
+  // 手寫的當下會漏，以後新增欄位也不會有人記得補（v11.1 的教訓）。
+  function wireRePreviewLive() {
+    const form = document.querySelector('#rePropModal form');
+    if (!form || form.dataset.livePreview) return false;
+    form.dataset.livePreview = '1';
+    form.addEventListener('input', reUpdatePreview);    // 打字、貼上
+    form.addEventListener('change', reUpdatePreview);   // 下拉選單、日期挑選器
+    return true;
+  }
+
   async function saveReProp(e) {
     e.preventDefault();
     const kind = document.getElementById('rePropKind').value;
@@ -31829,6 +31848,7 @@ ${daysBrief}
     return { done, fallback };
   }
   upgradeModalHeads();
+  wireRePreviewLive();
 
   initPWA();
   loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam())
