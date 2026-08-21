@@ -8422,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.9 · λ</div>
+    <div>v 12.0 · μ</div>
   </footer>
 </div>
 
@@ -9193,16 +9193,51 @@ alter publication supabase_realtime add table party_locations;</pre>
   // ⚠ 九個模組的 recompute 是同一套鏡像程式碼，所以九個都要接，只接台股等於沒修。
   // ⚠ 兩條路徑都要接：使用者手動存交易（save*Txn）＋ 定期定額自動寫入（dcaWriteBuyToModule）。
   const OPENING_TXN_MODULES = {
-    tw:     { name: '台股個股',   idp: 't_',   unit: '股',   holdings: () => twHoldings,     txns: () => twTxns,     push: t => pushTransactionToSupabase(t) },
-    us:     { name: '美股個股',   idp: 'ut_',  unit: '股',   holdings: () => usHoldings,     txns: () => usTxns,     push: t => pushUsTransactionToSupabase(t) },
-    crypto: { name: '加密貨幣',   idp: 'ct_',  unit: '單位', holdings: () => cryptoHoldings, txns: () => cryptoTxns, push: t => pushCryptoTransactionToSupabase(t) },
-    hdetf:  { name: '高股息 ETF', idp: 'ht_',  unit: '股',   holdings: () => hdEtfHoldings,  txns: () => hdEtfTxns,  push: t => pushHdEtfTransactionToSupabase(t) },
-    mketf:  { name: '市值型 ETF', idp: 'mt_',  unit: '股',   holdings: () => mkEtfHoldings,  txns: () => mkEtfTxns,  push: t => pushMkEtfTransactionToSupabase(t) },
-    bond:   { name: '債券',       idp: 'bt_',  unit: '股',   holdings: () => bondHoldings,   txns: () => bondTxns,   push: t => pushBondTransactionToSupabase(t) },
-    fxdep:  { name: '外幣存款',   idp: 'ft_',  unit: '元',   holdings: () => fxDepHoldings,  txns: () => fxDepTxns,  push: t => pushFxDepTransactionToSupabase(t) },
-    fund:   { name: '主動式基金', idp: 'ft2_', unit: '單位', holdings: () => fundHoldings,   txns: () => fundTxns,   push: t => pushFundTransactionToSupabase(t) },
-    metal:  { name: '貴金屬',     idp: 'mtx_', unit: '單位', holdings: () => metalHoldings,  txns: () => metalTxns,  push: t => pushMetalTransactionToSupabase(t) }
+    tw:     { name: '台股個股',   idp: 't_',   unit: '股',   holdings: () => twHoldings,     txns: () => twTxns,     push: t => pushTransactionToSupabase(t), pushHolding: (h, del) => pushHoldingToSupabase(h, del) },
+    us:     { name: '美股個股',   idp: 'ut_',  unit: '股',   holdings: () => usHoldings,     txns: () => usTxns,     push: t => pushUsTransactionToSupabase(t), pushHolding: (h, del) => pushUsHoldingToSupabase(h, del) },
+    crypto: { name: '加密貨幣',   idp: 'ct_',  unit: '單位', holdings: () => cryptoHoldings, txns: () => cryptoTxns, push: t => pushCryptoTransactionToSupabase(t), pushHolding: (h, del) => pushCryptoHoldingToSupabase(h, del) },
+    hdetf:  { name: '高股息 ETF', idp: 'ht_',  unit: '股',   holdings: () => hdEtfHoldings,  txns: () => hdEtfTxns,  push: t => pushHdEtfTransactionToSupabase(t), pushHolding: (h, del) => pushHdEtfHoldingToSupabase(h, del) },
+    mketf:  { name: '市值型 ETF', idp: 'mt_',  unit: '股',   holdings: () => mkEtfHoldings,  txns: () => mkEtfTxns,  push: t => pushMkEtfTransactionToSupabase(t), pushHolding: (h, del) => pushMkEtfHoldingToSupabase(h, del) },
+    bond:   { name: '債券',       idp: 'bt_',  unit: '股',   holdings: () => bondHoldings,   txns: () => bondTxns,   push: t => pushBondTransactionToSupabase(t), pushHolding: (h, del) => pushBondHoldingToSupabase(h, del) },
+    fxdep:  { name: '外幣存款',   idp: 'ft_',  unit: '元',   holdings: () => fxDepHoldings,  txns: () => fxDepTxns,  push: t => pushFxDepTransactionToSupabase(t), pushHolding: (h, del) => pushFxDepHoldingToSupabase(h, del) },
+    fund:   { name: '主動式基金', idp: 'ft2_', unit: '單位', holdings: () => fundHoldings,   txns: () => fundTxns,   push: t => pushFundTransactionToSupabase(t), pushHolding: (h, del) => pushFundHoldingToSupabase(h, del) },
+    metal:  { name: '貴金屬',     idp: 'mtx_', unit: '單位', holdings: () => metalHoldings,  txns: () => metalTxns,  push: t => pushMetalTransactionToSupabase(t), pushHolding: (h, del) => pushMetalHoldingToSupabase(h, del) }
   };
+  // ===== 刪掉某一檔的最後一筆交易：那檔持股就沒有交易可以對了 =====
+  // recompute*Holding() 碰到「這個代號已經沒有任何交易」會直接 return——那是 v11.2 刻意留的保護
+  //（手動輸入的持股不該被一份空的交易記錄清成 0）。但副作用是：交易自動建立出來的持股，
+  // 在唯一那筆買進被刪掉之後仍然留著原本的股數，而且畫面上完全看不出來——它照樣被算進總資產，
+  // 年度總結與已實現損益卻對不到它。實測九個模組都一樣（刪掉唯一的買進，持股仍是 100 股）。
+  // 程式分不出這檔持股當初是「手動建的」還是「交易建的」，所以不自動刪，
+  // 在使用者唯一看得到的時機問一句——跟 v11.9 的賣超過持有量同一個做法。
+  function confirmOrphanHolding(kind, symbol) {
+    const cfg = OPENING_TXN_MODULES[kind];
+    if (!cfg || !symbol) return false;
+    let holdings, txns;
+    try { holdings = cfg.holdings(); txns = cfg.txns(); } catch (e) { return false; }
+    if (!Array.isArray(holdings) || !Array.isArray(txns)) return false;
+    if (txns.some(t => t && t.symbol === symbol)) return false;   // 還有別的交易，就不是最後一筆
+    const i = holdings.findIndex(x => x && x.symbol === symbol);
+    if (i < 0) return false;
+    const h = holdings[i];
+    const have = Number(h.shares) || 0;
+    if (!(have > 0)) return false;                    // 已經是 0 了，留著不影響任何數字
+    const u = cfg.unit || '股';
+    const fmt = v => Number(Number(v).toFixed(8)).toLocaleString('en-US', { maximumFractionDigits: 8 });
+    const ok = confirm(
+      '「' + (h.name || symbol) + '（' + symbol + '）」的交易記錄已經全部刪光了，\n' +
+      '但持股那邊還記著 ' + fmt(have) + ' ' + u + '。\n\n' +
+      '這 ' + fmt(have) + ' ' + u + ' 還是會被算進總資產，可是「📅 年度交易總結」與已實現損益都對不到它。\n\n' +
+      '【確定】持股也一起刪掉\n' +
+      '【取消】持股留著（之後可以自己補一筆當初的買進交易）'
+    );
+    if (!ok) return false;
+    holdings.splice(i, 1);
+    try { if (cfg.pushHolding) cfg.pushHolding(h, true); } catch (e) { console.warn('push holding delete fail', e); }
+    try { showToast('已一併刪掉「' + (h.name || symbol) + '」的持股'); } catch (e) {}
+    return true;
+  }
+
   function ensureOpeningTxn(kind, symbol, opts = {}) {
     if (opts.isEdit) return null;                      // 改舊的那一筆不算「第一次」
     const cfg = OPENING_TXN_MODULES[kind];
@@ -11867,6 +11902,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     if (!t || !confirm('刪除這筆交易？對應持股的成本/股數會重新計算。')) return;
     twTxns = twTxns.filter(x => x.id !== id);
     recomputeHolding(t.symbol);
+    confirmOrphanHolding('tw', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveTwTxns();
     await saveTwHoldings();
     await saveTwRealized();
@@ -11882,6 +11918,8 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
   // 從所有 txns 重新計算單一持股的 shares + avgCost；同時累積 realized PnL
   function recomputeHolding(symbol) {
     const txns = twTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    // 已實現損益一律整個重算：連「這個代號已經沒有交易了」也要算到，否則刪掉最後一筆交易時，那筆的金額會永遠留在已實現損益裡
+    twRealizedPnL = recomputeAllRealized();
     if (txns.length === 0) {
       return;
     }
@@ -11912,8 +11950,6 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       }
     });
 
-    // 套用回 twRealizedPnL（重新加總所有 symbols 較簡單）
-    twRealizedPnL = recomputeAllRealized();
 
     // 找出對應 holding
     let h = twHoldings.find(x => x.symbol === symbol);
@@ -14275,6 +14311,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     if (!t || !confirm('刪除這筆交易？對應持股的成本/股數會重新計算。')) return;
     usTxns = usTxns.filter(x => x.id !== id);
     recomputeUsHolding(t.symbol);
+    confirmOrphanHolding('us', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveUsTxns();
     await saveUsHoldings();
     await saveUsRealized();
@@ -14289,6 +14326,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
   // 從所有 txns 重算單一持股 shares + avgCost；同時累積 realized（美股無證交稅）
   function recomputeUsHolding(symbol) {
     const txns = usTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    // 已實現損益一律整個重算：連「這個代號已經沒有交易了」也要算到，否則刪掉最後一筆交易時，那筆的金額會永遠留在已實現損益裡
+    usRealizedPnL = recomputeAllUsRealized();
     if (txns.length === 0) return;
     let shares = 0, totalCost = 0, avgCost = 0;
     txns.forEach(t => {
@@ -14308,7 +14347,6 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
         avgCost = shares > 0 ? totalCost / shares : 0;
       }
     });
-    usRealizedPnL = recomputeAllUsRealized();
     let h = usHoldings.find(x => x.symbol === symbol);
     if (h) {
       h.shares = Number(shares.toFixed(6));
@@ -15016,6 +15054,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     if (!t || !confirm('刪除這筆交易？對應持倉的成本/數量會重新計算。')) return;
     cryptoTxns = cryptoTxns.filter(x => x.id !== id);
     recomputeCryptoHolding(t.symbol);
+    confirmOrphanHolding('crypto', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveCryptoTxns();
     await saveCryptoHoldings();
     await saveCryptoRealized();
@@ -15029,6 +15068,8 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
 
   function recomputeCryptoHolding(symbol) {
     const txns = cryptoTxns.filter(t => t.symbol === symbol).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    // 已實現損益一律整個重算：連「這個代號已經沒有交易了」也要算到，否則刪掉最後一筆交易時，那筆的金額會永遠留在已實現損益裡
+    cryptoRealizedPnL = recomputeAllCryptoRealized();
     if (txns.length === 0) return;
     let shares = 0, totalCost = 0, avgCost = 0;
     txns.forEach(t => {
@@ -15048,7 +15089,6 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
         avgCost = shares > 0 ? totalCost / shares : 0;
       }
     });
-    cryptoRealizedPnL = recomputeAllCryptoRealized();
     let h = cryptoHoldings.find(x => x.symbol === symbol);
     if (h) {
       h.shares = Number(shares.toFixed(8));
@@ -15820,6 +15860,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     if (!t || !confirm('刪除這筆交易？對應持股的成本/數量與配息統計會重新計算。')) return;
     hdEtfTxns = hdEtfTxns.filter(x => x.id !== id);
     recomputeHdEtfHolding(t.symbol);
+    confirmOrphanHolding('hdetf', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveHdEtfTxns();
     await saveHdEtfHoldings();
     await saveHdEtfRealized();
@@ -16704,6 +16745,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     if (!t || !confirm('刪除這筆交易？對應持股的成本/數量與配息統計會重新計算。')) return;
     mkEtfTxns = mkEtfTxns.filter(x => x.id !== id);
     recomputeMkEtfHolding(t.symbol);
+    confirmOrphanHolding('mketf', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveMkEtfTxns();
     await saveMkEtfHoldings();
     await saveMkEtfRealized();
@@ -19192,6 +19234,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     if (!t || !confirm('刪除這筆交易？對應持股的成本/數量與配息統計會重新計算。')) return;
     bondTxns = bondTxns.filter(x => x.id !== id);
     recomputeBondHolding(t.symbol);
+    confirmOrphanHolding('bond', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveBondTxns();
     await saveBondHoldings();
     await saveBondRealized();
@@ -20074,6 +20117,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     if (!t || !confirm('刪除這筆異動？對應存款的金額與利息統計會重新計算。')) return;
     fxDepTxns = fxDepTxns.filter(x => x.id !== id);
     recomputeFxDepHolding(t.symbol);
+    confirmOrphanHolding('fxdep', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveFxDepTxns();
     await saveFxDepHoldings();
     await saveFxDepRealized();
@@ -20984,6 +21028,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     if (!t || !confirm('刪除這筆交易？對應持有的成本/單位數與配息統計會重新計算。')) return;
     fundTxns = fundTxns.filter(x => x.id !== id);
     recomputeFundHolding(t.symbol);
+    confirmOrphanHolding('fund', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveFundTxns();
     await saveFundHoldings();
     await saveFundRealized();
@@ -21887,6 +21932,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
     if (!t || !confirm('刪除這筆交易？對應持有的成本/數量會重新計算。')) return;
     metalTxns = metalTxns.filter(x => x.id !== id);
     recomputeMetalHolding(t.symbol);
+    confirmOrphanHolding('metal', t.symbol);   // 這是這檔最後一筆交易的話，問要不要把沒有交易撐著的持股也刪掉
     await saveMetalTxns();
     await saveMetalHoldings();
     await saveMetalRealized();
@@ -23585,6 +23631,18 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   const cfMoneySign = n => (n >= 0 ? '+' : '-') + 'NT$' + Math.round(Math.abs(Number(n) || 0)).toLocaleString('en-US');
 
   async function loadCashflowFx() { try { const v = await readKey(CF_STORAGE.fx); if (v) cashflowFx = { ...cashflowFx, ...JSON.parse(v) }; } catch (e) {} }
+  // ⚠ loadAll() 只讀 groups / modules / apis / viewMode，**不會讀匯率**；
+  //   只有現金流儀表板、資產配置、挑戰目標、健檢、年度總結這幾頁會自己 loadCashflowFx()。
+  //   但「首頁今日提醒」與「美股新手體檢」是直接呼叫 cfCompute() 的——那時全域還停在預設的 32，
+  //   使用者設定過的匯率明明就存在 storage 裡卻沒被用到，美元部位於是默默換成另一個數字
+  //   （實測 storage 是 31.5，等 8 秒後全域仍是 32，總資產差 12,500）。
+  //   把「確保已載入」放進 cfCompute() 裡，所有呼叫點一次涵蓋，不必記得在每個地方各加一行。
+  let cfFxLoaded = false;
+  async function ensureCashflowFx() {
+    if (cfFxLoaded) return;
+    cfFxLoaded = true;
+    await loadCashflowFx();
+  }
   async function refreshCashflowFx() {
     try {
       const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
@@ -23956,6 +24014,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   async function cfCompute() {
+    await ensureCashflowFx();   // 匯率沒讀進來的話，美元部位會用預設的 32 算（見 ensureCashflowFx）
     const fx = cashflowFx.usdTwd || 32;
     const rows = [];
     for (const s of CF_SOURCES) {
