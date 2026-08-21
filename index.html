@@ -8422,7 +8422,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 11.8 · λ</div>
+    <div>v 11.9 · λ</div>
   </footer>
 </div>
 
@@ -9239,6 +9239,95 @@ alter publication supabase_realtime add table party_locations;</pre>
     try { if (cfg.push) cfg.push(txn); } catch (e) { console.warn('push opening txn fail', e); }
     try { showToast(`已補一筆「期初持股」${have} ${u}`); } catch (e) {}
     return txn;
+  }
+
+  // ===== 賣出超過手上有的數量 =====
+  // 打錯一個 0（賣 5,000 打成 50,000）原本不會有任何人擋。而且兩個畫面會給出不同答案：
+  // 模組端 recompute 用 Math.min 把賣量壓到手上有的數量，年度總結那邊卻照填的數量整筆算收入
+  //（成本只有一部分 → 已實現損益被高估），而 orphanSells 只抓「完全沒有成本」的情況、抓不到這種。
+  // 實測 1,500 股卻記賣 5,000 股：模組說賺 5,900、年度總結說賺 145,900，兩邊都不會說有問題。
+  // 所以在記下去的當下就問——那是使用者唯一可能發現自己打錯的時機。
+  function sharesOnHandBefore(txns, symbol, atDate, excludeId) {
+    let sh = 0;
+    txns.filter(t => t && t.symbol === symbol && t.id !== excludeId)
+      // 同一天的買進要算得到（先買後賣很常見），否則會誤報
+      .filter(t => !atDate || String(t.date || '') <= String(atDate))
+      .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+      .forEach(t => {
+        const n = Number(t.shares) || 0;
+        if (t.type === 'buy' || t.type === 'stock_div') sh += n;
+        else if (t.type === 'sell') sh -= Math.min(n, sh);
+      });
+    return sh;
+  }
+  function confirmOversell(kind, symbol, date, sellShares, excludeId) {
+    const cfg = OPENING_TXN_MODULES[kind];
+    if (!cfg || !symbol) return true;
+    let txns;
+    try { txns = cfg.txns(); } catch (e) { return true; }
+    if (!Array.isArray(txns)) return true;
+    const n = Number(sellShares) || 0;
+    if (!(n > 0)) return true;
+    const have = sharesOnHandBefore(txns, symbol, date, excludeId);
+    if (n <= have + 1e-8) return true;
+    const u = cfg.unit || '股';
+    const fmt = v => Number(Number(v).toFixed(8)).toLocaleString('en-US', { maximumFractionDigits: 8 });
+    const head = have > 0
+      ? `照現在的交易記錄，${date || '這一天'} 你手上只有 ${fmt(have)} ${u}，這筆卻要賣 ${fmt(n)} ${u}。`
+      : `「${symbol}」還沒有任何買進記錄，這筆卻是賣出 ${fmt(n)} ${u}。`;
+    return confirm(
+      head + '\n\n' +
+      `多出來的 ${fmt(n - have)} ${u} 沒有成本可以對。「📅 年度交易總結」會把這部分` +
+      `整筆當成賺的，已實現損益會被高估。\n\n` +
+      `【確定】還是記下去（記得之後補上當初的買進交易）\n` +
+      `【取消】回去改數量`
+    );
+  }
+
+  // ===== 改代號：交易記錄要跟著走 =====
+  // 「編輯持股」視窗的代號欄位是可以改的（打錯想修正很常見），但交易記錄是靠 symbol 對應的。
+  // 改了代號卻不動交易，那些交易就沒有主人了：這一檔的交易列表變空、配息與殖利率算不出來，
+  // 而下次記交易時 recompute 只看得到新代號底下（空的）交易 → 數量會被重算成不對的值。
+  // 畫面上完全看不出來——它只是顯示一個比較小的數字。
+  function applySymbolRename(kind, holdingId, newSymbol, newName) {
+    const cfg = OPENING_TXN_MODULES[kind];
+    if (!cfg || !holdingId || !newSymbol) return true;
+    let holdings, txns;
+    try { holdings = cfg.holdings(); txns = cfg.txns(); } catch (e) { return true; }
+    if (!Array.isArray(holdings) || !Array.isArray(txns)) return true;
+    const h = holdings.find(x => x && x.id === holdingId);
+    if (!h) return true;
+    const oldSymbol = String(h.symbol || '');
+    if (!oldSymbol || oldSymbol === newSymbol) return true;
+    // 同模組已經有另一檔用這個代號 → 兩檔同代號會讓總資產重複計算、交易也會對錯人，硬擋
+    const clash = holdings.find(x => x && x.id !== holdingId && x.symbol === newSymbol);
+    if (clash) {
+      alert(`這個模組裡已經有一檔「${clash.name || newSymbol}（${newSymbol}）」了。\n\n` +
+        `兩檔用同一個代號會讓總資產重複計算、交易記錄也會對錯人，所以不能這樣改。\n\n` +
+        `如果是想把兩檔合併，請先把其中一檔刪掉。`);
+      return false;
+    }
+    const rel = txns.filter(t => t && t.symbol === oldSymbol);
+    if (!rel.length) return true;
+    const u = cfg.unit || '股';
+    const ok = confirm(
+      `代號要從「${oldSymbol}」改成「${newSymbol}」。\n\n` +
+      `這一檔底下有 ${rel.length} 筆交易記錄還掛在舊代號 ${oldSymbol}。\n\n` +
+      `【確定】那 ${rel.length} 筆交易也一起改成 ${newSymbol}\n` +
+      `　　　　—— ${u}數、成本、已實現損益都接得上\n\n` +
+      `【取消】只改持股的代號\n` +
+      `　　　　—— 那 ${rel.length} 筆會變成沒有主人的記錄：交易列表會變空、\n` +
+      `　　　　　 配息與殖利率算不出來，下次記交易時${u}數還可能被重算錯`
+    );
+    if (!ok) return true;                       // 使用者已經知道後果了，尊重他的選擇
+    rel.forEach(t => {
+      t.symbol = newSymbol;
+      if (newName) t.symbolName = newName;
+      t.updatedAt = Date.now();
+      try { if (cfg.push) cfg.push(t); } catch (e) { console.warn('push renamed txn fail', e); }
+    });
+    try { showToast(`已把 ${rel.length} 筆交易的代號一起改成 ${newSymbol}`); } catch (e) {}
+    return true;
   }
 
   // ===== 下單計畫看守 =====
@@ -11620,6 +11709,8 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       industry: document.getElementById('holdingIndustry').value.trim(),
       notes: document.getElementById('holdingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('tw', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = twHoldings.findIndex(h => h.id === id);
@@ -11744,6 +11835,8 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('tw', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('tw', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = twTxns.findIndex(t => t.id === id);
@@ -14048,6 +14141,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       industry: document.getElementById('usHoldingIndustry').value.trim(),
       notes: document.getElementById('usHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('us', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = usHoldings.findIndex(h => h.id === id);
@@ -14151,6 +14246,8 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('us', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('us', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = usTxns.findIndex(t => t.id === id);
@@ -14785,6 +14882,8 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
       industry: document.getElementById('cryptoHoldingIndustry').value.trim(),
       notes: document.getElementById('cryptoHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('crypto', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = cryptoHoldings.findIndex(h => h.id === id);
@@ -14888,6 +14987,8 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('crypto', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('crypto', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = cryptoTxns.findIndex(t => t.id === id);
@@ -15576,6 +15677,8 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
       nextExDate: document.getElementById('hdEtfHoldingNextExDate').value,
       notes: document.getElementById('hdEtfHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('hdetf', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = hdEtfHoldings.findIndex(h => h.id === id);
@@ -15688,6 +15791,8 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('hdetf', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('hdetf', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = hdEtfTxns.findIndex(t => t.id === id);
@@ -16447,6 +16552,8 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       freq: document.getElementById('mkEtfHoldingFreq').value,
       notes: document.getElementById('mkEtfHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('mketf', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = mkEtfHoldings.findIndex(h => h.id === id);
@@ -16568,6 +16675,8 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('mketf', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('mketf', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = mkEtfTxns.findIndex(t => t.id === id);
@@ -18931,6 +19040,8 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
       freq: document.getElementById('bondHoldingFreq').value,
       notes: document.getElementById('bondHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('bond', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = bondHoldings.findIndex(h => h.id === id);
@@ -19052,6 +19163,8 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('bond', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('bond', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = bondTxns.findIndex(t => t.id === id);
@@ -19810,6 +19923,8 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
       freq: document.getElementById('fxDepHoldingFreq').value,
       notes: document.getElementById('fxDepHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('fxdep', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = fxDepHoldings.findIndex(h => h.id === id);
@@ -19930,6 +20045,8 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('fxdep', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('fxdep', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = fxDepTxns.findIndex(t => t.id === id);
@@ -20710,6 +20827,8 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
       divType: document.getElementById('fundHoldingDivType').value,
       notes: document.getElementById('fundHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('fund', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = fundHoldings.findIndex(h => h.id === id);
@@ -20836,6 +20955,8 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('fund', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('fund', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = fundTxns.findIndex(t => t.id === id);
@@ -21612,6 +21733,8 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
       purity: document.getElementById('metalHoldingPurity').value.trim(),
       notes: document.getElementById('metalHoldingNotes').value.trim()
     };
+    // 代號被改掉的話，交易記錄要跟著走，否則它們會變成沒有主人的記錄（見 applySymbolRename）
+    if (id && !applySymbolRename('metal', id, data.symbol, data.name)) return;
     let saved;
     if (id) {
       const i = metalHoldings.findIndex(h => h.id === id);
@@ -21735,6 +21858,8 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
     // 這個代號還沒有任何交易、但已經有手動填的持股 → 先把它轉成一筆「期初持股」，
     // 否則下面的 recompute 會把手填的股數整個蓋掉（見 ensureOpeningTxn 的說明）。
     ensureOpeningTxn('metal', symbol, { isEdit });
+    // 賣的比手上有的多 → 已實現損益會被高估，記下去之前先問清楚（見 confirmOversell）
+    if (type === 'sell' && !confirmOversell('metal', symbol, data.date, shares, id)) return;
     let savedTxn;
     if (isEdit) {
       const i = metalTxns.findIndex(t => t.id === id);
@@ -24298,14 +24423,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         st[sym] = st[sym] || 0;
         if (t.type === 'buy' || t.type === 'stock_div') st[sym] += Number(t.shares) || 0;
         else if (t.type === 'sell') {
-          if (!(st[sym] > 0)) { orphan++; orphanSyms.add(sym); }
+          // 與年度總結同一套判斷：賣得比手上有的多，多出來那部分就沒有成本可以扣
+          if ((Number(t.shares) || 0) > st[sym] + 1e-8) { orphan++; orphanSyms.add(sym); }
           st[sym] = Math.max(0, st[sym] - (Number(t.shares) || 0));
         }
       });
     });
     if (orphan) {
-      add('warn', `${orphan} 筆賣出找不到買進成本`,
-        `涉及 ${escape([...orphanSyms].slice(0, 10).join('、'))}。這幾筆的<strong>已實現損益會被高估</strong>（整筆賣出金額都被當成賺的）。<br>通常是用「新增持股」直接填股數、沒補上當初的買進交易。把買進補記一筆就準了。`,
+      add('warn', `${orphan} 筆賣出的數量超過當時手上有的`,
+        `涉及 ${escape([...orphanSyms].slice(0, 10).join('、'))}。多出來那部分沒有成本可以扣，<strong>已實現損益會被高估</strong>。<br>通常是用「新增持股」直接填股數、沒補上當初的買進交易，或是賣出數量打錯（多打一個 0）。補上買進、或把數量改對就準了。`,
         'cashflowView', orphan);
     }
 
@@ -24586,7 +24712,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       const Y = YR[y];
       if (t.type === 'sell') {
         const avg = st.shares > 0 ? st.cost / st.shares : 0;
-        if (!(st.shares > 0)) { Y.orphanSells++; Y.orphanSyms.add(sym); }
+        // 不是只有「完全沒有成本」才算問題——賣得比手上有的多，多出來那部分一樣沒有成本可以扣，
+        // 而下面的 proceeds 是照填的數量整筆算的 → 已實現損益會被高估。兩種都要標出來。
+        if (n > st.shares + 1e-8) { Y.orphanSells++; Y.orphanSyms.add(sym); }
         const used = Math.min(n, st.shares);
         const proceeds = n * px;
         const pnl = proceeds - used * avg - fee - tax;
@@ -24691,9 +24819,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         </table>
       </div>
       ${orphan.length ? `<div style="margin-top:10px; padding:10px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); font-size:11.5px; color:var(--ink-secondary); line-height:1.8;">
-        <strong>⚠ 有 ${orphan.reduce((a, y) => a + y.orphanSells, 0)} 筆賣出找不到對應的買進成本</strong>，那幾筆的「已實現損益」會被高估（整筆賣出金額都被當成賺的）。<br>
+        <strong>⚠ 有 ${orphan.reduce((a, y) => a + y.orphanSells, 0)} 筆賣出的數量超過當時手上有的</strong>，多出來那部分沒有成本可以扣，「已實現損益」會被高估。<br>
         涉及：${escape([...new Set(orphan.flatMap(y => y.orphanSyms))].join('、'))}<br>
-        通常是因為<strong>用「新增持股」直接填股數、沒有補上買進交易</strong>。想讓這裡準確，就把當初的買進也記一筆。
+        通常是<strong>用「新增持股」直接填股數、沒補上當初的買進交易</strong>，或是<strong>賣出的數量打錯了</strong>（例如多打一個 0）。<br>
+        補上買進交易、或把賣出數量改對，這裡就準了。
       </div>` : ''}
       <div style="margin-top:10px; font-size:11px; color:var(--ink-tertiary); line-height:1.8;">
         <strong>已實現損益</strong>＝賣出當下真正落袋的賺賠（用移動平均成本法，已扣掉手續費與證交稅），依<strong>賣出日</strong>歸年度。
