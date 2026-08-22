@@ -9057,7 +9057,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 12.7 · μ</div>
+    <div>v 14.1 · ξ</div>
   </footer>
 </div>
 
@@ -9820,6 +9820,94 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
   async function readJson(key, fallback) {
     try { const v = await readKey(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 各模組「↓ 匯出 / ↑ 匯入」的共用守門（v14.1）
+  // ⚠ 九個資產模組匯出的檔案結構一模一樣（holdings / transactions / realized），
+  //   而且 v14.1 以前完全沒有標記是「哪一個模組」匯出的。於是把美股的備份餵進
+  //   台股的「↑ 匯入」不會被擋，確認框還照樣寫「持股 1 筆 + 交易 1 筆」看起來很正常
+  //   ——匯進去之後 NVDA $310 被當成 NT$310 在算，總資產差 30 倍以上，
+  //   而且畫面上完全看不出來（實測重現過）。
+  //   不動產更明顯：exportReData 明明有寫 kind，importReData 卻從來沒有看它。
+  // ═══════════════════════════════════════════════════════════
+  const IMPORT_KINDS = {
+    tw:         { name: '台股個股',        cur: '台幣',       fields: ['holdings', 'transactions'] },
+    us:         { name: '美股個股',        cur: '美元',       fields: ['holdings', 'transactions'] },
+    crypto:     { name: '加密貨幣',        cur: '美元',       fields: ['holdings', 'transactions'] },
+    hdetf:      { name: '高股息 ETF',      cur: '台幣',       fields: ['holdings', 'transactions'] },
+    mketf:      { name: '市值型 ETF',      cur: '台幣／美元', fields: ['holdings', 'transactions'] },
+    bond:       { name: '債券 · 債券 ETF', cur: '台幣／美元', fields: ['holdings', 'transactions'] },
+    fxdep:      { name: '外幣存款',        cur: '外幣＋匯率', fields: ['holdings', 'transactions'] },
+    fund:       { name: '主動式基金',      cur: '台幣／美元', fields: ['holdings', 'transactions'] },
+    metal:      { name: '貴金屬',          cur: '台幣／美元', fields: ['holdings', 'transactions'] },
+    rental:     { name: '出租不動產',      cur: '台幣',       fields: ['properties', 'transactions'] },
+    commercial: { name: '商業不動產',      cur: '台幣',       fields: ['properties', 'transactions'] },
+    dca:        { name: '定期定額計畫',    cur: '',           fields: ['plans', 'executions'] },
+    goals:      { name: '挑戰目標',        cur: '',           fields: ['goals'] },
+    assoc:      { name: '協會 · 組織',     cur: '',           fields: ['members', 'events', 'dues'] },
+    apis:       { name: 'AI API 收藏館',   cur: '',           fields: ['apis'] },
+    travel:     { name: '旅遊規劃',        cur: '',           fields: ['checklist', 'expenses', 'shopping'] }
+  };
+  function importKindName(k) { return (IMPORT_KINDS[k] || {}).name || k; }
+
+  // 匯出時一律附上身分標記。舊檔沒有這些欄位，匯入時會走「老實提醒」那一條路。
+  function exportPayload(kind, extra) {
+    return Object.assign({
+      app: 'personal-studio', module: kind, moduleName: importKindName(kind),
+      formatVersion: 1, exportedAt: new Date().toISOString()
+    }, extra || {});
+  }
+
+  // 回傳 true 才可以往下匯入。
+  // ⚠ 擋下來的時候一定要講「為什麼」跟「該去哪裡做」，不要只寫「格式錯誤」——
+  //   那樣使用者會以為是備份檔壞掉而把它刪了。
+  function importAsk(kind, d, summary, current, syncOn) {
+    const me = IMPORT_KINDS[kind] || { name: kind, fields: [] };
+    if (!d || typeof d !== 'object' || Array.isArray(d)) {
+      alert('這個檔案看起來不是備份檔。\n\n請選你在【' + me.name + '】按「↓ 匯出」存下來的那個 .json 檔。');
+      return false;
+    }
+    if (d.module && d.module !== kind) {
+      const from = IMPORT_KINDS[d.module] || { name: d.moduleName || d.module, cur: '' };
+      let why = '兩個模組存的欄位不一樣，匯進來之後數字會算錯，而且畫面上完全看不出來。';
+      if (from.cur && me.cur && from.cur !== me.cur) {
+        why = '【' + from.name + '】用「' + from.cur + '」計價，【' + me.name + '】用「' + me.cur + '」。\n'
+            + '硬匯進來的話金額會被當成另一種幣別在算，總資產會整個錯掉，而且畫面上完全看不出來。';
+      }
+      alert('擋下來了：這是【' + from.name + '】的備份檔，\n可是你現在按的是【' + me.name + '】的「↑ 匯入」。\n\n'
+          + why + '\n\n要還原【' + from.name + '】的話，請到那個模組按「↑ 匯入」。');
+      return false;
+    }
+    const hasAny = (me.fields || []).some(f => Array.isArray(d[f]) && d[f].length > 0);
+    if (!hasAny && !(kind === 'assoc' && d.org) && !(kind === 'travel' && d.settings)) {
+      alert('這個檔案裡找不到【' + me.name + '】的資料。\n\n'
+          + '它應該要有「' + (me.fields || []).join('／') + '」這幾項，可是一項都沒有。\n'
+          + '是不是選到別的模組的備份檔了？');
+      return false;
+    }
+    let msg = '要把備份匯進【' + me.name + '】嗎？\n\n備份檔裡有：' + summary + '\n';
+    if (current) msg += '你現在有：' + current + '（會被全部換掉，換掉就回不去了）\n';
+    if (d.exportedAt) msg += '備份時間：' + String(d.exportedAt).slice(0, 10) + '\n';
+    if (!d.module) {
+      msg += '\n⚠ 這個備份檔沒有標記是哪個模組匯出的（v14.1 以前存的檔）。\n'
+           + '請自己確認它真的是【' + me.name + '】的備份——匯錯模組的話金額會算錯。\n';
+    }
+    if (syncOn) {
+      msg += '\n這個模組有開雲端同步，匯入後會直接推上雲端。\n'
+           + '（備份檔裡沒有、雲端還留著的舊資料，下次同步可能會回來；看到不該有的刪掉就好）\n';
+    }
+    return confirm(msg);
+  }
+
+  // 匯入完成後推上雲端。不推的話，下次同步會拿雲端的舊資料把剛匯入的蓋掉，等於白匯。
+  async function importPush(enabled, pushFn) {
+    if (!enabled || typeof pushFn !== 'function') return;
+    try { await pushFn(); showToast('已推上雲端'); }
+    catch (e) {
+      alert('資料已經存在這台裝置了，但推上雲端失敗：\n'
+          + ((e && e.message) ? e.message : '連不上') + '\n\n等一下再按一次「☁ 同步」即可。');
+    }
   }
 
   // ===== 期初持股：手動填的股數不能被交易記錄默默蓋掉（v11.2）=====
@@ -11168,7 +11256,7 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   function exportApiData() {
-    const blob = new Blob([JSON.stringify(apis, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(exportPayload('apis', { apis }), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -11183,9 +11271,14 @@ alter publication supabase_realtime add table party_locations;</pre>
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
-        const data = JSON.parse(ev.target.result);
-        if (!Array.isArray(data)) throw new Error();
-        if (!confirm(`匯入 ${data.length} 筆？會合併到現有收藏。`)) return;
+        const raw = JSON.parse(ev.target.result);
+        // 舊版匯出的是純陣列，新版是帶身分標記的物件——兩種都要吃得下
+        if (!Array.isArray(raw) && raw && typeof raw === 'object' && !Array.isArray(raw.apis)) {
+          if (!importAsk('apis', raw, '', '', false)) return;
+        }
+        const data = Array.isArray(raw) ? raw : (Array.isArray(raw && raw.apis) ? raw.apis : null);
+        if (!data) throw new Error();
+        if (!confirm(`匯入 ${data.length} 筆？會合併到現有收藏（不會蓋掉現有的 ${apis.length} 筆）。`)) return;
         const ids = new Set(apis.map(a => a.id));
         const fresh = data.filter(a => a.id && !ids.has(a.id));
         apis = [...fresh, ...apis];
@@ -12815,12 +12908,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
 
   // === 匯出 / 匯入 台股資料 ===
   function exportTwStockData() {
-    const data = {
-      holdings: twHoldings,
-      transactions: twTxns,
-      realized: twRealizedPnL,
-      exportedAt: new Date().toISOString()
-    };
+    const data = exportPayload('tw', { holdings: twHoldings, transactions: twTxns, realized: twRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -12836,13 +12924,17 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有台股資料。`)) return;
+        const curNow = `持股 ${twHoldings.length} 檔 · 交易 ${twTxns.length} 筆`;
+        if (!importAsk('tw', d,
+              `持股 ${d.holdings?.length || 0} 檔 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, twSyncConfig.enabled)) return;
         if (d.holdings) twHoldings = d.holdings;
         if (d.transactions) twTxns = d.transactions;
-        if (typeof d.realized === 'number') twRealizedPnL = d.realized;
+        twRealizedPnL = recomputeAllRealized();  // ⚠ 一律重算，不照抄備份檔裡的舊值
         await saveTwHoldings();
         await saveTwTxns();
         await saveTwRealized();
+        await importPush(twSyncConfig.enabled, pushAllToSupabase);
         renderHoldings();
         renderTwStockStats();
         showToast(`已匯入 ${twHoldings.length} 檔持股`);
@@ -15212,7 +15304,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
 
   // === 匯出 / 匯入 美股資料 ===
   function exportUsStockData() {
-    const data = { holdings: usHoldings, transactions: usTxns, realized: usRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('us', { holdings: usHoldings, transactions: usTxns, realized: usRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -15226,13 +15318,17 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有美股資料。`)) return;
+        const curNow = `持股 ${usHoldings.length} 檔 · 交易 ${usTxns.length} 筆`;
+        if (!importAsk('us', d,
+              `持股 ${d.holdings?.length || 0} 檔 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, usSyncConfig.enabled)) return;
         if (d.holdings) usHoldings = d.holdings;
         if (d.transactions) usTxns = d.transactions;
-        if (typeof d.realized === 'number') usRealizedPnL = d.realized;
+        usRealizedPnL = recomputeAllUsRealized();  // ⚠ 一律重算，不照抄備份檔裡的舊值
         await saveUsHoldings();
         await saveUsTxns();
         await saveUsRealized();
+        await importPush(usSyncConfig.enabled, pushAllUsToSupabase);
         renderUsHoldings();
         renderUsStockStats();
         showToast(`已匯入 ${usHoldings.length} 檔持股`);
@@ -15963,7 +16059,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
 
   // === 匯出 / 匯入 ===
   function exportCryptoData() {
-    const data = { holdings: cryptoHoldings, transactions: cryptoTxns, realized: cryptoRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('crypto', { holdings: cryptoHoldings, transactions: cryptoTxns, realized: cryptoRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -15977,13 +16073,17 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持倉 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有加密貨幣資料。`)) return;
+        const curNow = `持倉 ${cryptoHoldings.length} 種 · 交易 ${cryptoTxns.length} 筆`;
+        if (!importAsk('crypto', d,
+              `持倉 ${d.holdings?.length || 0} 種 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, cryptoSyncConfig.enabled)) return;
         if (d.holdings) cryptoHoldings = d.holdings;
         if (d.transactions) cryptoTxns = d.transactions;
-        if (typeof d.realized === 'number') cryptoRealizedPnL = d.realized;
+        cryptoRealizedPnL = recomputeAllCryptoRealized();  // ⚠ 一律重算，不照抄備份檔裡的舊值
         await saveCryptoHoldings();
         await saveCryptoTxns();
         await saveCryptoRealized();
+        await importPush(cryptoSyncConfig.enabled, pushAllCryptoToSupabase);
         renderCryptoHoldings();
         renderCryptoStats();
         showToast(`已匯入 ${cryptoHoldings.length} 種幣`);
@@ -16776,7 +16876,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
 
   // === 匯出 / 匯入 ===
   function exportHdEtfData() {
-    const data = { holdings: hdEtfHoldings, transactions: hdEtfTxns, realized: hdEtfRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('hdetf', { holdings: hdEtfHoldings, transactions: hdEtfTxns, realized: hdEtfRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -16790,13 +16890,17 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有高股息 ETF 資料。`)) return;
+        const curNow = `持股 ${hdEtfHoldings.length} 檔 · 交易 ${hdEtfTxns.length} 筆`;
+        if (!importAsk('hdetf', d,
+              `持股 ${d.holdings?.length || 0} 檔 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, hdEtfSyncConfig.enabled)) return;
         if (d.holdings) hdEtfHoldings = d.holdings;
         if (d.transactions) hdEtfTxns = d.transactions;
         hdEtfRealizedPnL = recomputeAllHdEtfRealized();
         await saveHdEtfHoldings();
         await saveHdEtfTxns();
         await saveHdEtfRealized();
+        await importPush(hdEtfSyncConfig.enabled, pushAllHdEtfToSupabase);
         renderHdEtfHoldings();
         renderHdEtfStats();
         showToast(`已匯入 ${hdEtfHoldings.length} 檔 ETF`);
@@ -17677,7 +17781,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
 
   // === 匯出 / 匯入 ===
   function exportMkEtfData() {
-    const data = { holdings: mkEtfHoldings, transactions: mkEtfTxns, realized: mkEtfRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('mketf', { holdings: mkEtfHoldings, transactions: mkEtfTxns, realized: mkEtfRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -17691,13 +17795,17 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有市值型 ETF 資料。`)) return;
+        const curNow = `持股 ${mkEtfHoldings.length} 檔 · 交易 ${mkEtfTxns.length} 筆`;
+        if (!importAsk('mketf', d,
+              `持股 ${d.holdings?.length || 0} 檔 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, mkEtfSyncConfig.enabled)) return;
         if (d.holdings) mkEtfHoldings = d.holdings;
         if (d.transactions) mkEtfTxns = d.transactions;
         mkEtfRealizedPnL = recomputeAllMkEtfRealized();
         await saveMkEtfHoldings();
         await saveMkEtfTxns();
         await saveMkEtfRealized();
+        await importPush(mkEtfSyncConfig.enabled, pushAllMkEtfToSupabase);
         renderMkEtfHoldings();
         renderMkEtfStats();
         showToast(`已匯入 ${mkEtfHoldings.length} 檔 ETF`);
@@ -18721,7 +18829,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
 
   // ===== 匯出 / 匯入 =====
   function exportDcaData() {
-    const data = { plans: dcaPlans, executions: dcaExecs, exportedAt: new Date().toISOString() };
+    const data = exportPayload('dca', { plans: dcaPlans, executions: dcaExecs });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -18735,11 +18843,15 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n計畫 ${d.plans?.length || 0} 筆 + 扣款 ${d.executions?.length || 0} 筆\n會覆蓋目前所有定期定額資料。\n（不會重寫資產模組的交易）`)) return;
+        const curNow = `計畫 ${dcaPlans.length} 筆 · 扣款 ${dcaExecs.length} 筆`;
+        if (!importAsk('dca', d,
+              `計畫 ${d.plans?.length || 0} 筆 · 扣款 ${d.executions?.length || 0} 筆（不會重寫資產模組的交易）`,
+              curNow, dcaSyncConfig.enabled)) return;
         if (d.plans) dcaPlans = d.plans;
         if (d.executions) dcaExecs = d.executions;
         await saveDcaPlans();
         await saveDcaExecs();
+        await importPush(dcaSyncConfig.enabled, pushAllDcaToSupabase);
         await loadDcaPriceMap();
         renderDca();
         showToast(`已匯入 ${dcaPlans.length} 個計畫`);
@@ -19303,7 +19415,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
 
   // ===== 匯出 / 匯入 =====
   function exportGoalData() {
-    const data = { goals: goalList, exportedAt: new Date().toISOString() };
+    const data = exportPayload('goals', { goals: goalList });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -19317,9 +19429,11 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n目標 ${d.goals?.length || 0} 筆\n會覆蓋目前所有挑戰目標。`)) return;
+        const curNow = `目標 ${goalList.length} 筆`;
+        if (!importAsk('goals', d, `目標 ${d.goals?.length || 0} 筆`, curNow, goalSyncConfig.enabled)) return;
         if (d.goals) goalList = d.goals;
         await saveGoalList();
+        await importPush(goalSyncConfig.enabled, pushAllGoalsToSupabase);
         renderGoals();
         showToast(`已匯入 ${goalList.length} 個目標`);
       } catch (err) {
@@ -20198,7 +20312,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
 
   // === 匯出 / 匯入 ===
   function exportBondData() {
-    const data = { holdings: bondHoldings, transactions: bondTxns, realized: bondRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('bond', { holdings: bondHoldings, transactions: bondTxns, realized: bondRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -20212,13 +20326,17 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持股 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有債券資料。`)) return;
+        const curNow = `持股 ${bondHoldings.length} 檔 · 交易 ${bondTxns.length} 筆`;
+        if (!importAsk('bond', d,
+              `持股 ${d.holdings?.length || 0} 檔 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, bondSyncConfig.enabled)) return;
         if (d.holdings) bondHoldings = d.holdings;
         if (d.transactions) bondTxns = d.transactions;
         bondRealizedPnL = recomputeAllBondRealized();
         await saveBondHoldings();
         await saveBondTxns();
         await saveBondRealized();
+        await importPush(bondSyncConfig.enabled, pushAllBondToSupabase);
         renderBondHoldings();
         renderBondStats();
         showToast(`已匯入 ${bondHoldings.length} 檔債券`);
@@ -21088,7 +21206,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
 
   // === 匯出 / 匯入 ===
   function exportFxDepData() {
-    const data = { holdings: fxDepHoldings, transactions: fxDepTxns, realized: fxDepRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('fxdep', { holdings: fxDepHoldings, transactions: fxDepTxns, realized: fxDepRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -21102,13 +21220,17 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n存款 ${d.holdings?.length || 0} 筆 + 異動 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有外幣存款資料。`)) return;
+        const curNow = `存款 ${fxDepHoldings.length} 筆 · 交易 ${fxDepTxns.length} 筆`;
+        if (!importAsk('fxdep', d,
+              `存款 ${d.holdings?.length || 0} 筆 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, fxDepSyncConfig.enabled)) return;
         if (d.holdings) fxDepHoldings = d.holdings;
         if (d.transactions) fxDepTxns = d.transactions;
         fxDepRealizedPnL = recomputeAllFxDepRealized();
         await saveFxDepHoldings();
         await saveFxDepTxns();
         await saveFxDepRealized();
+        await importPush(fxDepSyncConfig.enabled, pushAllFxDepToSupabase);
         renderFxDepHoldings();
         renderFxDepStats();
         showToast(`已匯入 ${fxDepHoldings.length} 筆外幣存款`);
@@ -22009,7 +22131,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
 
   // === 匯出 / 匯入 ===
   function exportFundData() {
-    const data = { holdings: fundHoldings, transactions: fundTxns, realized: fundRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('fund', { holdings: fundHoldings, transactions: fundTxns, realized: fundRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -22023,13 +22145,17 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持有 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有基金資料。`)) return;
+        const curNow = `持有 ${fundHoldings.length} 檔 · 交易 ${fundTxns.length} 筆`;
+        if (!importAsk('fund', d,
+              `持有 ${d.holdings?.length || 0} 檔 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, fundSyncConfig.enabled)) return;
         if (d.holdings) fundHoldings = d.holdings;
         if (d.transactions) fundTxns = d.transactions;
         fundRealizedPnL = recomputeAllFundRealized();
         await saveFundHoldings();
         await saveFundTxns();
         await saveFundRealized();
+        await importPush(fundSyncConfig.enabled, pushAllFundToSupabase);
         renderFundHoldings();
         renderFundStats();
         showToast(`已匯入 ${fundHoldings.length} 檔基金`);
@@ -22919,7 +23045,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
 
   // === 匯出 / 匯入 ===
   function exportMetalData() {
-    const data = { holdings: metalHoldings, transactions: metalTxns, realized: metalRealizedPnL, exportedAt: new Date().toISOString() };
+    const data = exportPayload('metal', { holdings: metalHoldings, transactions: metalTxns, realized: metalRealizedPnL });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -22933,13 +23059,17 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n持有 ${d.holdings?.length || 0} 筆 + 交易 ${d.transactions?.length || 0} 筆\n會覆蓋目前所有貴金屬資料。`)) return;
+        const curNow = `持有 ${metalHoldings.length} 項 · 交易 ${metalTxns.length} 筆`;
+        if (!importAsk('metal', d,
+              `持有 ${d.holdings?.length || 0} 項 · 交易 ${d.transactions?.length || 0} 筆`,
+              curNow, metalSyncConfig.enabled)) return;
         if (d.holdings) metalHoldings = d.holdings;
         if (d.transactions) metalTxns = d.transactions;
         metalRealizedPnL = recomputeAllMetalRealized();
         await saveMetalHoldings();
         await saveMetalTxns();
         await saveMetalRealized();
+        await importPush(metalSyncConfig.enabled, pushAllMetalToSupabase);
         renderMetalHoldings();
         renderMetalStats();
         showToast(`已匯入 ${metalHoldings.length} 項貴金屬`);
@@ -23718,7 +23848,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   // ===== 匯出 / 匯入 =====
   function exportReData(kind) {
-    const data = { kind, properties: reData[kind].props, transactions: reData[kind].txns, exportedAt: new Date().toISOString() };
+    const data = exportPayload(kind, { kind, properties: reData[kind].props, transactions: reData[kind].txns });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -23732,11 +23862,18 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n物件 ${d.properties?.length || 0} 筆 + 收支 ${d.transactions?.length || 0} 筆\n會覆蓋目前「${RE_MODULES[kind].name}」的所有資料。`)) return;
+        // ⚠ 舊檔的 kind 欄位（v14.1 以前就有寫）以前完全沒有人看：
+        //   把商業不動產的備份匯進出租不動產不會被擋。這裡補上。
+        if (!d.module && d.kind && d.kind !== kind) d.module = d.kind;
+        const curNow = `物件 ${reData[kind].props.length} 筆 · 收支 ${reData[kind].txns.length} 筆`;
+        if (!importAsk(kind, d,
+              `物件 ${d.properties?.length || 0} 筆 · 收支 ${d.transactions?.length || 0} 筆`,
+              curNow, reSyncConfig.enabled)) return;
         if (d.properties) reData[kind].props = d.properties.map(reSyncDerived);
         if (d.transactions) reData[kind].txns = d.transactions;
         await saveReProps(kind);
         await saveReTxns(kind);
+        await importPush(reSyncConfig.enabled, () => pushAllReToSupabase(kind));
         renderReProps(kind);
         renderReStats(kind);
         showToast(`已匯入 ${reData[kind].props.length} 個物件`);
@@ -24506,7 +24643,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   // ===== 匯出 / 匯入 =====
   function exportAssocData() {
-    const data = { org: assocOrg, members: assocMembers, events: assocEvents, dues: assocDues, exportedAt: new Date().toISOString() };
+    const data = exportPayload('assoc', { org: assocOrg, members: assocMembers, events: assocEvents, dues: assocDues });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -24520,12 +24657,16 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm(`匯入備份？\n會員 ${d.members?.length || 0} 位 · 活動 ${d.events?.length || 0} 場 · 會費 ${d.dues?.length || 0} 筆\n會覆蓋目前所有協會資料。`)) return;
+        const curNow = `會員 ${assocMembers.length} 位 · 活動 ${assocEvents.length} 場 · 會費 ${assocDues.length} 筆`;
+        if (!importAsk('assoc', d,
+              `會員 ${d.members?.length || 0} 位 · 活動 ${d.events?.length || 0} 場 · 會費 ${d.dues?.length || 0} 筆`,
+              curNow, assocSyncConfig.enabled)) return;
         if (d.org) assocOrg = { ...assocOrg, ...d.org };
         if (d.members) assocMembers = d.members;
         if (d.events) assocEvents = d.events;
         if (d.dues) assocDues = d.dues;
         await saveAssocOrgData(); await saveAssocMembers(); await saveAssocEvents(); await saveAssocDues();
+        await importPush(assocSyncConfig.enabled, pushAllAssocToSupabase);
         renderAssocAll();
         showToast(`已匯入 ${assocMembers.length} 位會員`);
       } catch (err) { alert('匯入失敗：' + err.message); }
@@ -33785,7 +33926,9 @@ ${daysBrief}${butlerPartyBlock()}
 
   // ===== 資料匯出/匯入 =====
   async function exportTravelData() {
-    const data = {
+    const data = exportPayload('travel', {
+      tripId: activeTripId || 'default',
+      tripTitle: (typeof ITINERARY !== 'undefined' && ITINERARY) ? ITINERARY.title : '',
       checklist: trvChecklist,
       expenses: trvExpenses,
       shopping: trvShopping,
@@ -33793,9 +33936,8 @@ ${daysBrief}${butlerPartyBlock()}
       gather: trvGather,
       settings: trvSettings,
       budgetTotal: trvBudgetTotal,
-      lineGroup: trvLineGroup,
-      exportedAt: new Date().toISOString()
-    };
+      lineGroup: trvLineGroup
+    });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -33810,7 +33952,15 @@ ${daysBrief}${butlerPartyBlock()}
     reader.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!confirm('將覆蓋目前所有旅遊資料，確定匯入？')) return;
+        const here = (typeof ITINERARY !== 'undefined' && ITINERARY) ? ITINERARY.title : '這一趟';
+        let summary = `清單 ${(d.checklist || []).length} 項 · 花費 ${(d.expenses || []).length} 筆 · 購物 ${(d.shopping || []).length} 件`;
+        // ⚠ 不同趟旅遊的資料是分開存的（tripKey），匯錯趟會把這一趟的花費整批換掉
+        if (d.tripId && d.tripId !== (activeTripId || 'default')) {
+          summary += `\n\n⚠ 這份備份是【${d.tripTitle || d.tripId}】的，你現在打開的是【${here}】。\n`
+                   + '每一趟的清單、花費、購物是分開存的——匯進來會把【' + here + '】的整批換掉。';
+        }
+        const curNow = `清單 ${trvChecklist.length} 項 · 花費 ${trvExpenses.length} 筆 · 購物 ${trvShopping.length} 件`;
+        if (!importAsk('travel', d, summary, curNow, false)) return;
         if (d.checklist) trvChecklist = d.checklist;
         if (d.expenses) trvExpenses = d.expenses;
         if (d.shopping) trvShopping = d.shopping;
@@ -33834,6 +33984,7 @@ ${daysBrief}${butlerPartyBlock()}
       }
     };
     reader.readAsText(file);
+    e.target.value = '';  // 不重置的話，同一個檔案選第二次不會觸發 change
   }
   async function deleteCurrentTrip() {
     if (!ITINERARY._userCreated) { showToast('內建旅遊無法刪除'); return; }
