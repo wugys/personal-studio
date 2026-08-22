@@ -2687,18 +2687,37 @@
     margin-bottom: 14px;
     background: var(--bg-base);
   }
-  /* Guest 模式底部加上小提示 */
-  body.guest-mode .view.active::after {
-    content: '✦ 共同行程檢視 · 由團主分享 ✦';
-    display: block;
+  /* Guest 模式底部的提示 ＋ 離開的出口。
+     ⚠ 原本是純 CSS 的 ::after 浮水印，只有一行字、沒有任何出口——
+       自己不小心點到傳給團友的連結，整個 App 就變成只剩那一趟旅遊，
+       投資模組全部消失，而畫面上沒有一個地方告訴你怎麼還原（實測找不到）。
+       唯一的解法是自己會打 ?admin=1，但沒有人會知道。 */
+  #guestExit {
     text-align: center;
-    padding: 24px 16px 32px;
+    padding: 26px 16px 34px;
+  }
+  #guestExit .guest-note {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
     color: rgba(244, 234, 213, 0.35);
     letter-spacing: 0.25em;
     text-transform: uppercase;
+    margin-bottom: 12px;
   }
+  #guestExit button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--ink-tertiary);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 9px 16px;
+    min-height: 40px;
+    cursor: pointer;
+    transition: color 0.25s, border-color 0.25s;
+  }
+  #guestExit button:hover { color: var(--accent); border-color: var(--line-strong); }
 
   @media (max-width: 768px) {
     /* 防止手機底部 bar 也露出設定 */
@@ -8450,6 +8469,8 @@ alter publication supabase_realtime add table party_locations;</pre>
       <textarea id="shareLinkText" readonly style="width:100%; min-height:50px; font-family:var(--mono); font-size:11px; background:var(--bg-card); border:1px solid var(--line); color:var(--ink-secondary); padding:8px 10px; border-radius:4px; word-break:break-all; resize:none;"></textarea>
       <button class="btn btn-sm" onclick="copyShareLinkText()" style="margin-top:6px;">📋 複製連結</button>
 
+      <div id="shareKeyWarn" style="margin-top:12px; padding:9px 12px; border-radius:3px; font-size:11.5px; line-height:1.6; color:var(--ink-secondary);"></div>
+
       <!-- 方法 3: 手動填 -->
       <details style="margin-top:18px;">
         <summary style="font-family:var(--serif); font-size:16px; cursor:pointer; padding:6px 0;">方法 3 · 手動填（如以上都失敗）</summary>
@@ -9062,7 +9083,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.3 · ξ</div>
+    <div>v 14.4 · ξ</div>
   </footer>
 </div>
 
@@ -34927,6 +34948,8 @@ ${daysBrief}${butlerPartyBlock()}
       `).join('');
     }
 
+    renderShareKeyWarn(cfg.supabaseUrl);
+
     // admin 版：同樣的 join payload 但加 &admin=1 → 解鎖 Guest Mode（給自己另一台裝置用）
     const longLinkAdmin = `${longLink}&admin=1`;
 
@@ -34953,6 +34976,44 @@ ${daysBrief}${butlerPartyBlock()}
     document.getElementById('shareQrCodeAdmin').src = qrAdminUrl;
     document.getElementById('shareLinkTextAdmin').value = linkAdmin;
   }
+  // 分享連結裡一定含 Supabase anon key（團友要靠它連上同團功能）。
+  // ⚠ 如果旅遊多人跟投資模組用的是「同一個 Supabase 專案」，那把 key 也開得了
+  //   tw_holdings / assoc_members 這些表（RLS 是 Allow-All，見建表 SQL 的註解）——
+  //   等於把持股與協會名冊一起發出去了。這裡實際比對，中了就指名是哪幾個模組。
+  function shareKeyOverlap(url) {
+    const norm = (u) => String(u || '').trim().replace(/\/+$/, '');
+    const target = norm(url);
+    if (!target) return [];
+    const hit = [];
+    try {
+      for (const m of SYNC_MODULES) {
+        let cfg = null;
+        try { cfg = m.get(); } catch (e) {}
+        if (cfg && cfg.enabled && norm(cfg.supabaseUrl) === target) hit.push(m.name);
+      }
+    } catch (e) {}
+    return hit;
+  }
+  function renderShareKeyWarn(url) {
+    const box = document.getElementById('shareKeyWarn');
+    if (!box) return;
+    const hit = shareKeyOverlap(url);
+    if (!hit.length) {
+      box.style.background = 'rgba(244,234,213,0.04)';
+      box.style.borderLeft = '2px solid var(--line-strong)';
+      box.innerHTML = '這個連結裡含有旅遊用的 Supabase 金鑰，<strong>只傳給同團的人</strong>。';
+      return;
+    }
+    box.style.background = 'rgba(201,123,106,0.10)';
+    box.style.borderLeft = '2px solid var(--danger)';
+    box.innerHTML = '<strong style="color:var(--danger);">⚠ 這個連結會連你的投資資料一起發出去</strong><br>'
+      + '你的<strong>' + escape(hit.slice(0, 4).join('、')) + (hit.length > 4 ? ' 等 ' + hit.length + ' 個模組' : '')
+      + '</strong>用的是同一個 Supabase 專案。連結裡的金鑰開得了那個專案的<strong>全部資料表</strong>'
+      + '（權限是 Allow-All），拿到連結的人只要懂一點技術，就讀得到你的持股、不動產與協會會員名冊。'
+      + '<div style="margin-top:6px;">要避免的話：<strong>旅遊的「同團多人」另外開一個 Supabase 專案</strong>，'
+      + '不要跟投資模組共用。</div>';
+  }
+
   let _lastShareLinkAdmin = '';
   async function copyShareLinkTextAdmin() {
     const link = _lastShareLinkAdmin || document.getElementById('shareLinkTextAdmin').value;
@@ -35430,6 +35491,37 @@ ${daysBrief}${butlerPartyBlock()}
   // URL 含 ?trip= 時自動啟用，refresh 後仍維持（存於 storage）
   // 用 ?admin=1 可隨時解鎖（給團主自己測試用）
   const GUEST_MODE_KEY = 'studio_guest_mode_v1';
+
+  // 團友模式底部那一行提示 ＋ 一顆真的按得下去的「離開」。
+  // ⚠ 團友按了也沒關係：guest-mode 不是安全機制，只是把畫面簡化成「只有這一趟」。
+  //   他的裝置上本來就沒有你的投資資料（那些都在你自己的裝置與你的 Supabase 裡）。
+  //   所以確認訊息要老實講「離開之後那些模組是空的」，讓團友自己決定要不要留下。
+  function ensureGuestExit() {
+    if (document.getElementById('guestExit')) return;
+    const host = document.querySelector('.page') || document.body;
+    const el = document.createElement('div');
+    el.id = 'guestExit';
+    el.innerHTML = '<div class="guest-note">✦ 共同行程檢視 · 由團主分享 ✦</div>'
+      + '<button type="button" onclick="exitGuestMode()">這是我自己的手機 · 離開共同檢視</button>';
+    host.appendChild(el);
+  }
+  function removeGuestExit() {
+    const el = document.getElementById('guestExit');
+    if (el) el.remove();
+  }
+  async function exitGuestMode() {
+    const ok = confirm('離開共同行程檢視？\n\n'
+      + '離開之後會看到完整的「個人工作室」（投資、旅遊、協會等模組）。\n\n'
+      + '⚠ 如果你是團友：那些模組裡面是空的。你現在看到的行程是團主分享的，'
+      + '不會留在你的模組裡——要回到行程，重新點團主給你的那個連結就好。');
+    if (!ok) return;
+    try { await writeKey(GUEST_MODE_KEY, ''); } catch (e) {}
+    document.body.classList.remove('guest-mode');
+    removeGuestExit();
+    try { showView('dashboardView'); } catch (e) {}
+    showToast('已離開共同檢視');
+  }
+
   async function applyGuestMode() {
     const queryParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.slice(1));
@@ -35440,6 +35532,7 @@ ${daysBrief}${butlerPartyBlock()}
     if (isAdmin && !tripFromUrl) {
       try { await writeKey(GUEST_MODE_KEY, ''); } catch (e) {}
       document.body.classList.remove('guest-mode', 'trip-window');
+      removeGuestExit();
       return;
     }
 
@@ -35454,6 +35547,7 @@ ${daysBrief}${butlerPartyBlock()}
     if (tripFromUrl) {
       try { await writeKey(GUEST_MODE_KEY, '1'); } catch (e) {}
       document.body.classList.add('guest-mode');
+      ensureGuestExit();
       try { showView('travelView'); } catch (e) {}
       return;
     }
@@ -35463,6 +35557,7 @@ ${daysBrief}${butlerPartyBlock()}
     try { stored = (await readKey(GUEST_MODE_KEY)) || ''; } catch (e) {}
     if (stored === '1') {
       document.body.classList.add('guest-mode');
+      ensureGuestExit();
     }
   }
 
