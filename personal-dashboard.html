@@ -29355,6 +29355,11 @@ ${baseSchema}
     renderSos();
     renderTrvNowNext();
     renderTrvBrief();
+    // 🔴 首頁那六張小卡原本不在這裡畫：renderHomeStats() 只有切到「首頁」分頁時才跑，
+    //    而那一次發生在資料載入之前 → 一進旅遊模組看到的是「集合 尚未設定 · 預算 未設預算 ·
+    //    購物 0 件 · 清單 0 / 0」，全部是假的，要點別的分頁再點回來才會對。
+    //    首頁就是打開旅遊模組的第一個畫面，導遊在集合點看到「尚未設定」是會出事的。
+    renderHomeStats();
     document.getElementById('lineGroupUrl').value = trvLineGroup;
     if (trvGatherTimerId) clearInterval(trvGatherTimerId);
     trvGatherTimerId = setInterval(tickGather, 1000);
@@ -29862,7 +29867,20 @@ ${baseSchema}
       }
       if (toStart <= 1) add('⏰', toStart === 0 ? '<strong>今天就出發</strong>，證件、充電線、藥品最後再確認一次。' : '<strong>明天就出發</strong>，今晚把證件、充電線、藥品再確認一次，早點睡。', 'warn');
       else add('📅', `還有 <strong>${toStart} 天</strong>出發。`);
-      if (undone > 0) add('☑', `行前清單還有 <strong>${undone} 項</strong>沒打勾。`, toStart <= 3 ? 'warn' : '');
+      if (undone > 0) {
+        // 「還有 3 項」在 32 項的清單裡等於沒講——最後一週要指名是哪幾項。
+        // 證件排最前面（忘了直接上不了飛機），再來是藥品（高原上買不到）。
+        const left = (Array.isArray(trvChecklist) ? trvChecklist : []).filter(c => c && !c.done);
+        const pri = { '證件': 0, '藥品': 1 };
+        const named = left.slice()
+          .sort((a, b) => ((pri[a.section] != null ? pri[a.section] : 9) - (pri[b.section] != null ? pri[b.section] : 9)))
+          .slice(0, 3)
+          .map(c => escape(String(c.text || '').split('（')[0].trim()))
+          .filter(Boolean);
+        add('☑', `行前清單還有 <strong>${undone} 項</strong>沒打勾` +
+          (toStart <= 7 && named.length ? `：${named.join('、')}${undone > named.length ? ' 等' : ''}` : '') + '。',
+          toStart <= 3 ? 'warn' : '');
+      }
       else if (Array.isArray(trvChecklist) && trvChecklist.length) add('☑', '行前清單<strong>全部打勾了</strong>。', 'good');
       const f = flightOf(first);
       if (f) add('✈', `第一天 ${escape(f.time)} 的班機（${escape(f.name)}）。護照與電子機票<strong>先截圖存離線</strong>，機場沒網路也看得到。`);
@@ -33000,6 +33018,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   // ===== 行前清單 =====
   function renderChecklist() {
     try { renderTrvBrief(); } catch (e) {}   // 打勾一改，「還有 N 項沒打勾」也要跟著變
+    try { renderHomeStats(); } catch (e) {}  // 首頁那張「行前清單 N / M」也一樣
     const sections = ['證件', '衣物', '3C 電器', '盥洗', '藥品', '其他'];
     const html = sections.map((sec, secIdx) => {
       const items = trvChecklist.filter(i => i.section === sec);
