@@ -7454,6 +7454,9 @@
       </div>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
         以前每個模組都要各自填一次 Supabase，換手機要填十幾次。<strong>現在在這裡填一次，按「套用到全部模組」就好。</strong>
+        <div style="margin-top:6px; color:var(--ink-tertiary); font-size:11.5px;">
+          ⚠ 這裡管的是<strong>投資與生活這 13 個模組</strong>。旅遊的「同團多人」是另一套資料表，要在旅遊模組裡另外設定。
+        </div>
       </div>
 
       <div class="form-row">
@@ -7486,6 +7489,8 @@
         <button class="btn btn-primary" type="button" onclick="applySyncMasterToAll()">✔ 套用到全部模組</button>
         <button class="btn" type="button" id="syncAllBtn" onclick="syncAllModulesNow()">☁ 立即同步全部</button>
       </div>
+
+      <div id="syncMasterFail" style="display:none; background:rgba(201,123,106,0.10); border-left:2px solid var(--danger); border-radius:3px; padding:10px 13px; margin-bottom:14px; font-size:12px; color:var(--ink-secondary); line-height:1.6;"></div>
 
       <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:12px;">
         <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 第一次使用 · 一次建好全部資料表</summary>
@@ -9057,7 +9062,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.2 · ξ</div>
+    <div>v 14.3 · ξ</div>
   </footer>
 </div>
 
@@ -12237,7 +12242,7 @@ ${userQuery}`;
       renderTwSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -13286,7 +13291,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       renderUsSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -15658,7 +15663,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       renderCryptoSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持倉 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -16432,7 +16437,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
       renderHdEtfSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -17284,7 +17289,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
       renderMkEtfSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -18249,7 +18254,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       renderDcaSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.pCount} 計畫 / ${r.eCount} 扣款`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -19165,7 +19170,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
       renderGoalSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.count} 個目標`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -19791,7 +19796,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
       renderBondSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持股 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -20718,7 +20723,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
       renderFxDepSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 筆存款 / ${r.tCount} 筆異動`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -21607,7 +21612,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
       renderFundSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持有 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -22514,7 +22519,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
       renderMetalSyncBadge();
       showToast(`☁ 同步完成 · 雲端 ${r.hCount} 持有 / ${r.tCount} 交易`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -23459,7 +23464,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
       renderReSyncBadge(kind);
       showToast(`☁ 同步完成 · 雲端 ${r.pCount} 物件 / ${r.tCount} 筆收支`);
     } catch (e) {
-      showToast('☁ 同步失敗：' + e.message);
+      syncNoteError(e); showToast('☁ 同步失敗：' + e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '☁ 雲端同步'; }
     }
@@ -24689,7 +24694,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       await pushAllAssocToSupabase();
       renderAssocAll();
       showToast(`☁ 同步完成 · 雲端 ${r.mCount} 會員 / ${r.eCount} 活動 / ${r.dCount} 筆會費`);
-    } catch (e) { showToast('☁ 同步失敗：' + e.message); }
+    } catch (e) { syncNoteError(e); showToast('☁ 同步失敗：' + e.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = '☁'; } }
   }
   function renderAssocSyncBadge() {
@@ -27656,6 +27661,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   //   後者要動 13 個模組的 load/save/init，風險高；扇出則是零侵入，
   //   模組原本的程式碼一行都不用改，舊使用者的既有設定也不會壞。
   // ============================================================
+  // 「立即同步全部」要知道每一個模組到底成功了沒。
+  // ⚠ 13 個 sync*Now 自己把例外吞掉（catch → showToast），從來不往外丟，
+  //   所以總管的 try/catch 永遠進不了 catch——13 個全部失敗時，畫面照樣是
+  //   綠色的「✔ 同步完成 · 13 個成功」，而中間那些失敗 toast 會被下一個模組的
+  //   toast 蓋掉，使用者一個都看不到（實測）。換手機的人會以為資料都上去了，
+  //   其實一筆都沒有。所以每個 catch 都順手把錯誤記到這裡。
+  let syncLastError = null;
+  function syncNoteError(e) { syncLastError = e; }
+
   const SYNC_MASTER_STORAGE = 'studio_sync_master_v1';
   const SYNC_CODE_PREFIX = 'PERSONAL-STUDIO-SYNC-V1:';
   let syncMaster = { supabaseUrl: '', supabaseKey: '', userId: '', modules: null, updatedAt: 0 };
@@ -27700,6 +27714,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     document.getElementById('syncMasterUserId').value = syncMaster.userId || '';
     document.getElementById('syncMasterCodeInput').value = '';
     document.getElementById('syncMasterStatus').textContent = '';
+    renderSyncFailBox([]);
     renderSyncMasterList();
     document.getElementById('syncMasterModal').classList.add('active');
   }
@@ -27745,7 +27760,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   function readSyncMasterForm() {
     return {
-      supabaseUrl: document.getElementById('syncMasterUrl').value.trim(),
+      // ⚠ 從 Supabase Dashboard 複製網址常常會多一個結尾斜線，
+      //   原本會被擋下來說「格式錯」，使用者只會覺得自己貼錯了
+      supabaseUrl: document.getElementById('syncMasterUrl').value.trim().replace(/\/+$/, ''),
       supabaseKey: document.getElementById('syncMasterKey').value.trim(),
       userId: document.getElementById('syncMasterUserId').value.trim(),
       modules: [...document.querySelectorAll('[data-sync-mod]:checked')].map(cb => cb.getAttribute('data-sync-mod'))
@@ -27799,18 +27816,63 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const picked = SYNC_MODULES.filter(m => syncMasterPicked().includes(m.key));
     const btn = document.getElementById('syncAllBtn');
     const st = document.getElementById('syncMasterStatus');
+    if (!picked.length) {
+      renderSyncFailBox([], '你一個模組都沒有勾，所以沒有東西可以同步。'
+        + '請在上面的清單勾要同步的模組（或按「全選」），再按一次。');
+      if (st) st.textContent = '⚠ 一個模組都沒勾';
+      return;
+    }
     if (btn) { btn.disabled = true; }
-    let done = 0, fail = 0;
+    let done = 0;
+    const fails = [];
     for (const m of picked) {
-      if (btn) btn.textContent = `☁ 同步中 ${done + fail + 1}/${picked.length}…`;
+      if (btn) btn.textContent = `☁ 同步中 ${done + fails.length + 1}/${picked.length}…`;
       if (st) st.textContent = `正在同步「${m.name}」…`;
-      try { await m.run(); done++; } catch (e) { fail++; console.warn('sync fail ' + m.key, e); }
+      syncLastError = null;
+      try { await m.run(); } catch (e) { syncLastError = e; }
+      if (syncLastError) {
+        fails.push({ name: m.name, msg: (syncLastError && syncLastError.message) || String(syncLastError) });
+        console.warn('sync fail ' + m.key, syncLastError);
+      } else done++;
     }
     if (btn) { btn.disabled = false; btn.textContent = '☁ 立即同步全部'; }
     renderSyncMasterList();
-    const msg = `同步完成 · ${done} 個成功${fail ? ` / ${fail} 個失敗` : ''}`;
-    if (st) st.textContent = (fail ? '⚠ ' : '✔ ') + msg;
+    renderSyncFailBox(fails);
+    const msg = `同步完成 · ${done} 個成功${fails.length ? ` / ${fails.length} 個沒成功` : ''}`;
+    if (st) st.textContent = (fails.length ? '⚠ ' : '✔ ') + msg;
     showToast('☁ ' + msg);
+  }
+
+  // 失敗要留在畫面上講清楚是哪幾個、為什麼。
+  // ⚠ 不能只靠 toast：13 個模組連續跑，每個的 toast 會被下一個蓋掉，
+  //   使用者一個都來不及看（v11.4 的教訓：一閃就沒的訊息等於沒講）。
+  function renderSyncFailBox(fails, note) {
+    const box = document.getElementById('syncMasterFail');
+    if (!box) return;
+    if (note) {
+      box.style.display = '';
+      box.innerHTML = escape(note);
+      return;
+    }
+    if (!fails || !fails.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const first = fails[0].msg || '';
+    // 最常見的兩個原因，直接講該怎麼修，不要只丟一段英文錯誤訊息
+    let hint = '';
+    if (/does not exist|relation|schema cache|404/i.test(first)) {
+      hint = '看起來是<strong>資料表還沒建</strong>。請展開上面的「📖 第一次使用 · 一次建好全部資料表」，'
+           + '把 SQL 複製到 Supabase 的 SQL Editor 跑一次，再按一次「立即同步全部」。';
+    } else if (/JWT|apikey|Invalid|401|403/i.test(first)) {
+      hint = '看起來是 <strong>Anon Key 或網址不對</strong>。到 Supabase → Settings → API 重新複製一次，'
+           + '注意要用 <strong>anon (public)</strong> 那一把，不是 service_role。';
+    } else if (/Failed to fetch|NetworkError|Load failed/i.test(first)) {
+      hint = '看起來是<strong>連不上網</strong>（或網址打錯）。確認有網路之後再按一次。';
+    }
+    box.style.display = '';
+    box.innerHTML = `<strong style="color:var(--danger);">有 ${fails.length} 個模組沒有同步成功</strong><br>`
+      + fails.map(f => `· ${escape(f.name)}<span style="color:var(--ink-tertiary);"> — ${escape(f.msg)}</span>`).join('<br>')
+      + (hint ? `<div style="margin-top:8px;">${hint}</div>` : '')
+      + `<div style="margin-top:8px; color:var(--ink-tertiary);">⚠ 這幾個模組的資料<strong>還沒有上到雲端</strong>，`
+      + `別把舊手機的資料刪掉。</div>`;
   }
 
   // 一次產出全部資料表的建表 SQL
