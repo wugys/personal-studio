@@ -9083,7 +9083,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.8 · ξ</div>
+    <div>v 14.9 · ξ</div>
   </footer>
 </div>
 
@@ -29297,13 +29297,26 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     `;
   }
 
+  // 行前清單的分組。畫面與列印共用這一份，不要各寫一份。
+  //
+  // ⚠ 分組不在這六個裡面的項目（匯入的備份、別台裝置同步過來的、
+  //   或欄位根本是空的）以前會被**直接濾掉**——而標題的「N / M 已完成」是拿全部去算的。
+  //   實測 5 項裡有 3 項的分組不認得 → 標題寫「1/5 已完成」，下面只印得出 2 項，
+  //   數字跟清單自己打架；更糟的是**畫面上也看不到，那三項永遠打不了勾**。
+  //   一律歸到「其他」，寧可分組不精準，也不要讓東西整個消失。
+  const CHECK_SECTIONS = ['證件', '衣物', '3C 電器', '盥洗', '藥品', '其他'];
+  function checkSectionOf(i) {
+    const s = (i && i.section) ? String(i.section) : '';
+    return CHECK_SECTIONS.includes(s) ? s : '其他';
+  }
+
   function buildPrintChecklist() {
     if (!trvChecklist || trvChecklist.length === 0) return '';
-    const sections = ['證件', '衣物', '3C 電器', '盥洗', '藥品', '其他'];
+    const sections = CHECK_SECTIONS;
     const total = trvChecklist.length;
     const done = trvChecklist.filter(i => i.done).length;
     const html = sections.map(sec => {
-      const items = trvChecklist.filter(i => i.section === sec);
+      const items = trvChecklist.filter(i => checkSectionOf(i) === sec);
       if (!items.length) return '';
       return `
         <div style="margin-bottom: 4mm;">
@@ -29329,30 +29342,56 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const used = trvOutOfPocket();
     const remaining = trvBudgetTotal - used;
     const pct = trvBudgetTotal > 0 ? ((used / trvBudgetTotal) * 100).toFixed(1) : 0;
+    const nt = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString();
+    // ⚠ 「已花」用的是 trvOutOfPocket()（＝你口袋實際少掉的錢，別人先付的不算），
+    //   但底下的類別小計與逐筆明細以前是拿 e.amount 全部加下去——
+    //   於是同一張紙上「已花 NT$3,499」而類別小計加起來是 NT$4,699，**差的 1,200 沒有任何說明**，
+    //   而那筆包車其實是王大明付的，紙上看起來卻像是你付的。
+    //   小計改成只算自己付的，別人先付的另外列一區並寫出是誰付的——一塊錢都不會消失。
+    const paidByOthers = trvExpenses.filter(e => expPayer(e) !== 'me');
+    const othersSum = paidByOthers.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const cats = ['餐飲', '購物', '門票', '交通', '小費', '其他'];
     const catRows = cats.map(c => {
-      const sum = trvExpenses.filter(e => e.category === c).reduce((s, e) => s + Number(e.amount || 0), 0);
-      const cnt = trvExpenses.filter(e => e.category === c).length;
-      if (cnt === 0) return '';
-      return `<tr><td style="padding:1.5mm 3mm;">${escape(c)}</td><td style="padding:1.5mm 3mm; text-align:right;">NT$${sum.toLocaleString()}</td><td style="padding:1.5mm 3mm; text-align:right; color:#888 !important;">${cnt} 筆</td></tr>`;
+      const mine = trvExpenses.filter(e => e.category === c && expPayer(e) === 'me');
+      if (mine.length === 0) return '';
+      const sum = mine.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      return `<tr><td style="padding:1.5mm 3mm;">${escape(c)}</td><td style="padding:1.5mm 3mm; text-align:right;">${nt(sum)}</td><td style="padding:1.5mm 3mm; text-align:right; color:#888 !important;">${mine.length} 筆</td></tr>`;
     }).filter(x => x).join('');
+    // 原幣金額也印出來（記帳當下填的是 268 人民幣，只印換算後的台幣會對不上收據）
+    const oc = e => (e.oc && e.oa) ? ` <span style="color:#888 !important; font-size:8.5pt;">(${escape(e.oc)} ${Number(e.oa).toLocaleString()})</span>` : '';
     const sorted = trvExpenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    const rows = sorted.map(e => `
-      <tr>
+    const rows = sorted.map(e => {
+      const byOther = expPayer(e) !== 'me';
+      return `
+      <tr${byOther ? ' style="color:#999 !important;"' : ''}>
         <td style="padding:1.2mm 3mm; font-family:monospace; font-size:9pt; color:#888 !important;">${escape(e.date || '')}</td>
-        <td style="padding:1.2mm 3mm; font-size:9pt; color:#d4a574 !important;">[${escape(e.category)}]</td>
-        <td style="padding:1.2mm 3mm; font-size:10pt;">${escape(e.note || '—')}</td>
-        <td style="padding:1.2mm 3mm; text-align:right; font-size:10pt;">NT$${Number(e.amount).toLocaleString()}</td>
-      </tr>
-    `).join('');
+        <td style="padding:1.2mm 3mm; font-size:9pt; color:${byOther ? '#aaa' : '#d4a574'} !important;">[${escape(e.category)}]</td>
+        <td style="padding:1.2mm 3mm; font-size:10pt;">${escape(e.note || '—')}${byOther ? ` <span style="font-size:8.5pt; color:#888 !important;">（${escape(splitNameOf(expPayer(e)))}付的，不算你的）</span>` : ''}</td>
+        <td style="padding:1.2mm 3mm; text-align:right; font-size:10pt;">${nt(e.amount)}${oc(e)}</td>
+      </tr>`;
+    }).join('');
+    // 有分帳的話，「還完錢之後這趟真正是我的」跟「已花」是兩個不同的數字（v13.0）
+    let stl = null;
+    try { stl = settleCompute(); } catch (err) { stl = null; }
     return `
       <div class="print-section" style="page-break-before:always;">
         <h2>預算 <em>明細</em></h2>
-        <div style="display:flex; gap:8mm; margin-bottom:4mm; font-size:11pt;">
-          ${trvBudgetTotal > 0 ? `<div><span style="color:#888 !important;">零用金</span> <strong>NT$${trvBudgetTotal.toLocaleString()}</strong></div>` : ''}
-          <div><span style="color:#888 !important;">已花</span> <strong style="color:#d4a574 !important;">NT$${used.toLocaleString()}</strong>${trvBudgetTotal > 0 ? ` (${pct}%)` : ''}</div>
-          ${trvBudgetTotal > 0 ? `<div><span style="color:#888 !important;">剩餘</span> <strong>NT$${remaining.toLocaleString()}</strong></div>` : ''}
+        <div style="display:flex; gap:8mm; margin-bottom:2mm; font-size:11pt; flex-wrap:wrap;">
+          ${trvBudgetTotal > 0 ? `<div><span style="color:#888 !important;">零用金</span> <strong>${nt(trvBudgetTotal)}</strong></div>` : ''}
+          <div><span style="color:#888 !important;">已花</span> <strong style="color:#d4a574 !important;">${nt(used)}</strong>${trvBudgetTotal > 0 ? ` (${pct}%)` : ''}</div>
+          ${trvBudgetTotal > 0 ? `<div><span style="color:#888 !important;">剩餘</span> <strong>${nt(remaining)}</strong></div>` : ''}
+          ${(stl && stl.anySplit) ? `<div><span style="color:#888 !important;">這趟真正是我的</span> <strong>${nt(stl.meTotal)}</strong></div>` : ''}
         </div>
+        <div style="font-size:9pt; color:#888 !important; line-height:1.6; margin-bottom:4mm;">
+          「已花」＝ 你口袋實際少掉的錢（含你幫別人代墊的）；下面的類別小計與逐筆金額也只算你付的。
+          ${(stl && stl.anySplit) ? '「這趟真正是我的」＝ 還完錢之後你這趟真正的花費。' : ''}
+        </div>
+        ${paidByOthers.length ? `
+        <div style="border:1px solid #ddd; padding:2.5mm 3mm; margin-bottom:4mm; font-size:9.5pt; line-height:1.7;">
+          <strong>別人先付的 ${paidByOthers.length} 筆 · ${nt(othersSum)}</strong>
+          <span style="color:#888 !important;">（不算在上面的「已花」裡，因為錢不是從你口袋出去的）</span><br>
+          ${paidByOthers.map(e => `<span style="color:#666 !important;">${escape(e.date || '')}　${escape(e.note || e.category || '—')}　${nt(e.amount)}　${escape(splitNameOf(expPayer(e)))}付</span>`).join('<br>')}
+        </div>` : ''}
         ${catRows ? `
           <table style="width:100%; border-collapse:collapse; margin-bottom:5mm; border:1px solid #ddd;">
             <thead>
@@ -33605,9 +33644,9 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function renderChecklist() {
     try { renderTrvBrief(); } catch (e) {}   // 打勾一改，「還有 N 項沒打勾」也要跟著變
     try { renderHomeStats(); } catch (e) {}  // 首頁那張「行前清單 N / M」也一樣
-    const sections = ['證件', '衣物', '3C 電器', '盥洗', '藥品', '其他'];
+    const sections = CHECK_SECTIONS;
     const html = sections.map((sec, secIdx) => {
-      const items = trvChecklist.filter(i => i.section === sec);
+      const items = trvChecklist.filter(i => checkSectionOf(i) === sec);
       if (items.length === 0) return '';
       const done = items.filter(i => i.done).length;
       return `
