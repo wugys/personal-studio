@@ -9083,7 +9083,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.6 · ξ</div>
+    <div>v 14.7 · ξ</div>
   </footer>
 </div>
 
@@ -20941,7 +20941,12 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     const totalDiv = fxDepSymbolDividends(h.symbol);
     const apr = Number(h.apr) || 0;
     // 到期倒數（定存用）
-    const dLeft = h.maturity ? Math.round((new Date(h.maturity + 'T00:00:00') - new Date()) / 86400000) : null;
+    // ⚠ 要跟「今天的午夜」比，不是跟「現在幾點」比。
+    //   `到期日午夜 − 現在` 再四捨五入的話，過了中午就會少算一天：
+    //   明天到期寫「0 天後」、今天到期寫「已到期」。
+    //   而首頁的定存到期提醒用的是 alertDaysTo()（＝ daysBetweenToday），算法是對的
+    //   → 兩個畫面會講不同的天數。統一改用同一個函式。
+    const dLeft = h.maturity ? daysBetweenToday(h.maturity) : null;
     const txnsForHolding = fxDepTxns.filter(t => t.symbol === h.symbol).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const txnHtml = txnsForHolding.length === 0
       ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
@@ -28034,6 +28039,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   let assetHistory = [];
   let histRangeDays = 90;
   let histMode = 'total';   // 'total' | 'modules'
+  let histZeroSkipped = false;   // 今天讀到 0、所以沒有自動記快照（見 recordAssetSnapshot）
 
   async function loadAssetHistory() {
     try { const v = await readKey(HIST_STORAGE); assetHistory = v ? JSON.parse(v) : []; }
@@ -28071,6 +28077,17 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const div = rows.reduce((a, r) => a + (Number(r.div) || 0), 0);
     // 還沒有任何資料時不要留下一堆 0，會讓走勢圖從 0 起跳很難看
     if (!(total > 0) && assetHistory.length === 0 && !manual) return null;
+    // ⚠ 已經有紀錄、今天卻讀到 0 → **不要自動記下去**。
+    //   最常見的情況是換手機：備份還原把歷史快照帶回來了，但各模組的雲端同步還沒拉完，
+    //   這時打開現金流儀表板，cfCompute() 讀到的是空的 → 記下一筆 0 →
+    //   走勢圖直接從 500 萬掉到 0、上面寫「這段期間變化 −NT$5,000,000（−100.00%）」。
+    //   資料其實好好的，是快照記錯了，而畫面上完全看不出來。
+    //   真的全部出清的人還是有路可以走：按「📸 記錄今天」（manual）就會照記。
+    histZeroSkipped = false;
+    if (!(total > 0) && !manual && assetHistory.some(s => Number(s.total) > 0)) {
+      histZeroSkipped = true;
+      return null;
+    }
     const byKey = {};
     rows.forEach(r => { if (Number(r.value)) byKey[r.key] = Math.round(Number(r.value)); });
     const date = todayISO();
@@ -28213,7 +28230,11 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     // 期間過濾
     const cutoff = histRangeDays > 0 ? Date.now() - histRangeDays * 864e5 : 0;
     let list = assetHistory.filter(s => !cutoff || new Date(s.date + 'T23:59:59').getTime() >= cutoff);
-    if (list.length < 2) list = assetHistory.slice(-2);   // 期間太短就至少畫兩點，不要變空白
+    // ⚠ 期間內不足兩筆時會退回「最近兩筆」，但那可能橫跨好幾個月——
+    //   按鈕還亮在「1 個月」，圖表卻是 300 天的資料。要講出來，不然使用者會以為
+    //   自己這一個月真的漲了 200%。
+    let histFellBack = false;
+    if (list.length < 2) { list = assetHistory.slice(-2); histFellBack = true; }
     const dates = list.map(s => s.date);
 
     let series;
@@ -28234,7 +28255,10 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const chgCls = chg > 0 ? 'profit' : chg < 0 ? 'loss' : 'flat';
     // 歷史最高（看全部，不只這個期間）
     const peak = assetHistory.reduce((b, s) => (!b || s.total > b.total) ? s : b, null);
-    const peakDays = peak ? Math.round((Date.now() - new Date(peak.date + 'T00:00:00').getTime()) / 864e5) : null;
+    // ⚠ 不能用 `Date.now() − 那天的午夜` 再四捨五入：中午過後，今天會被算成「1 天前」、
+    //   20 天前會變成「21 天前」，而「就是今天」那條分支整個變成死碼（只有上午跑得到）。
+    //   跟 v9.0 修掉的協會倒數是同一個坑——用共用的 daysBetweenToday()，兩邊都歸零到午夜再相減。
+    const peakDays = peak ? -daysBetweenToday(peak.date) : null;
     const fromPeak = peak && peak.total > 0 ? (last.total - peak.total) / peak.total * 100 : 0;
     const spanDays = Math.max(1, Math.round((new Date(last.date) - new Date(first.date)) / 864e5));
 
@@ -28246,6 +28270,17 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     el.innerHTML = `
       <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:20px 22px; margin-bottom:24px;">
         ${toolbar}
+        ${histZeroSkipped ? `
+        <div style="background:rgba(201,123,106,0.10); border:1px solid var(--danger); border-radius:4px; padding:12px 14px; margin-bottom:12px; font-size:12px; line-height:1.7;">
+          <strong style="color:var(--danger);">今天沒有記錄快照</strong>——現在讀到的總資產是 <strong>NT$0</strong>，可是你之前有資料。<br>
+          多半是<strong>雲端同步還沒拉完</strong>（換手機、剛還原備份時很常見）。記下去的話走勢圖會直接掉到 0。<br>
+          <span style="color:var(--ink-tertiary);">等各模組的資料回來，再打開這一頁就會自動記。真的全部出清了的話，按上面的「📸 記錄今天」。</span>
+        </div>` : ''}
+        ${histFellBack ? `
+        <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 13px; margin-bottom:12px; font-size:11.5px; color:var(--ink-secondary); line-height:1.6;">
+          這個期間內的快照不到 2 筆，畫不出線 → <strong>改成顯示最近的兩筆</strong>（${escape(list[0].date)} 與 ${escape(list[list.length - 1].date)}）。<br>
+          <span style="color:var(--ink-tertiary);">所以下面那個百分比是這 ${Math.max(1, Math.round((new Date(list[list.length - 1].date) - new Date(list[0].date)) / 864e5))} 天的，不是你按的那個期間。</span>
+        </div>` : ''}
         <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px;">
           <div>
             <div style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.12em; color:var(--ink-tertiary); margin-bottom:2px;">這段期間變化（${spanDays} 天）</div>
