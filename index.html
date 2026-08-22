@@ -1776,6 +1776,13 @@
   .rs-seat .sn { font-family: var(--mono); font-size: 9px; color: var(--ink-muted); }
   .rs-seat .nm { font-size: 11.5px; color: var(--ink-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rs-seat.dup .nm { color: var(--danger); }
+  .alt-badge, .alt-chip {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; white-space: nowrap;
+    padding: 3px 7px; border-radius: 2px; border: 1px solid var(--line-strong); color: var(--ink-tertiary);
+  }
+  .alt-chip { font-size: 9px; padding: 2px 5px; vertical-align: middle; }
+  .alt-badge.lv1, .alt-chip.lv1 { color: var(--accent); border-color: rgba(212, 165, 116, 0.5); }
+  .alt-badge.lv2, .alt-chip.lv2 { color: var(--danger); border-color: rgba(201, 123, 106, 0.6); }
   .rs-front { font-family: var(--mono); font-size: 9.5px; color: var(--ink-tertiary); letter-spacing: 0.2em; text-align: center; padding-bottom: 9px; border-bottom: 1px dashed var(--line); margin-bottom: 11px; }
   /* ===== 現場模式 =====
      在馬路上、太陽底下、一隻手拿著手機的時候用的。所以：字大、按鈕大、東西少。
@@ -8602,10 +8609,10 @@ alter publication supabase_realtime add table party_locations;</pre>
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">護照效期到</label>
+          <label class="form-label" id="rosterPassportLabel">護照效期到</label>
           <input type="date" class="form-input" id="rosterPassport">
           <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">
-            填了會幫你檢查<strong>回國那天護照還剩多久</strong>。多數國家要求回國時仍有 6 個月以上，不足會被拒絕登機。
+            <span id="rosterPassportHint">填了會幫你檢查<strong>回國那天護照還剩多久</strong>。多數國家要求回國時仍有 6 個月以上，不足會被拒絕登機。</span>
           </div>
         </div>
         <div class="form-group">
@@ -28185,10 +28192,10 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         spots: [
           { time: '09:00', type: '航班', name: 'NX657 高雄 → 澳門', desc: '搭乘豪華客機飛往澳門中轉。' },
           { time: '12:20', type: '航班', name: 'NX198 澳門 → 成都', desc: '中轉澳門前往成都。' },
-          { time: '15:00', type: '景點', name: '抵達成都', desc: '成都為四川省會，人文與自然並重，1000 多年前唐代詩人即以「窗含西嶺千秋雪，門泊東吳萬里船」聞名於世。', gps: [30.5728, 104.0668], wikiTitle: '成都市' },
-          { time: '17:00', type: '景點', name: '黃龍溪古鎮', desc: '位於成都市雙流縣西南部，距市區約 40 公里，1700 多年歷史。鎮上有明清時代青石板古街 6 條，與古牌坊、古寺廟、古建築民居、古榕樹、古崖墓渾然一體，並稱「十古」。', gps: [30.3294, 103.9764], wikiTitle: '黃龍溪鎮' },
+          { time: '15:00', type: '景點', name: '抵達成都', alt: 500, desc: '成都為四川省會，人文與自然並重，1000 多年前唐代詩人即以「窗含西嶺千秋雪，門泊東吳萬里船」聞名於世。', gps: [30.5728, 104.0668], wikiTitle: '成都市' },
+          { time: '17:00', type: '景點', name: '黃龍溪古鎮', alt: 450, desc: '位於成都市雙流縣西南部，距市區約 40 公里，1700 多年歷史。鎮上有明清時代青石板古街 6 條，與古牌坊、古寺廟、古建築民居、古榕樹、古崖墓渾然一體，並稱「十古」。', gps: [30.3294, 103.9764], wikiTitle: '黃龍溪鎮' },
           { time: '19:00', type: '餐', name: '晚餐 · 中式合菜 RMB80', desc: '當地特色家常菜。' },
-          { time: '21:00', type: '住宿', name: '溫江皇冠酒店 / 保利皇冠酒店', desc: '或同級飯店。' }
+          { time: '21:00', type: '住宿', name: '溫江皇冠酒店 / 保利皇冠酒店', alt: 500, desc: '或同級飯店。' }
         ]
       },
       {
@@ -28197,14 +28204,14 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         subtitle: '樂山大佛（含遊船）· 蘇稽古鎮 · 峨眉山',
         spots: [
           { time: '08:00', type: '餐', name: '早餐 · 酒店內用', desc: '' },
-          { time: '10:30', type: '景點', name: '樂山大佛（含遊船）', desc: '全名嘉州凌雲寺大彌勒石像，位於岷江、青衣江、大渡河三江交匯處。世界上高度最高的石佛像，唐朝建造，先後歷經 3 位負責人，耗時約 90 年完成。', gps: [29.5450, 103.7720], wikiTitle: '樂山大佛' },
+          { time: '10:30', type: '景點', name: '樂山大佛（含遊船）', alt: 360, desc: '全名嘉州凌雲寺大彌勒石像，位於岷江、青衣江、大渡河三江交匯處。世界上高度最高的石佛像，唐朝建造，先後歷經 3 位負責人，耗時約 90 年完成。', gps: [29.5450, 103.7720], wikiTitle: '樂山大佛' },
           { time: '12:30', type: '餐', name: '午餐 · 翹腳牛肉 RMB80', desc: '樂山名菜，牛肉與牛雜燉煮，湯頭濃郁。' },
-          { time: '14:00', type: '景點', name: '蘇稽古鎮', desc: '位於樂山與峨眉間，有峨眉河流經。隋朝時即有「桂花場」之稱，素有「龍燈之鄉」、「書畫之鄉」美稱。', gps: [29.5536, 103.5742] },
-          { time: '15:30', type: '景點', name: '峨眉山 · 報國寺', desc: '峨嵋山第一座佛寺、門戶。明萬曆年間紫銅華嚴塔，四千七百座小佛像，塔周刻有《華嚴經》。山門懸有康熙四十二年御題「報國寺」匾額。', gps: [29.5912, 103.4842] },
-          { time: '16:30', type: '景點', name: '伏虎寺', desc: '位於峨眉山山麓，與報國寺相鄰。清朝順治八年重建更名「虎溪精舍」，後因附近虎患更名「伏虎寺」。康熙皇帝題寫「離垢園」。', gps: [29.5887, 103.4789] },
-          { time: '17:30', type: '景點', name: '峨眉大佛禪院 · 峨嵋聖像一條街', desc: '朝拜峨眉山的第一門戶，原名大佛寺，氣勢恢弘。仿古與古典園林相結合的建築風格，非遺民俗文化、四川名小吃。', gps: [29.6018, 103.4623] },
+          { time: '14:00', type: '景點', name: '蘇稽古鎮', alt: 400, desc: '位於樂山與峨眉間，有峨眉河流經。隋朝時即有「桂花場」之稱，素有「龍燈之鄉」、「書畫之鄉」美稱。', gps: [29.5536, 103.5742] },
+          { time: '15:30', type: '景點', name: '峨眉山 · 報國寺', alt: 550, desc: '峨嵋山第一座佛寺、門戶。明萬曆年間紫銅華嚴塔，四千七百座小佛像，塔周刻有《華嚴經》。山門懸有康熙四十二年御題「報國寺」匾額。', gps: [29.5912, 103.4842] },
+          { time: '16:30', type: '景點', name: '伏虎寺', alt: 630, desc: '位於峨眉山山麓，與報國寺相鄰。清朝順治八年重建更名「虎溪精舍」，後因附近虎患更名「伏虎寺」。康熙皇帝題寫「離垢園」。', gps: [29.5887, 103.4789] },
+          { time: '17:30', type: '景點', name: '峨眉大佛禪院 · 峨嵋聖像一條街', alt: 480, desc: '朝拜峨眉山的第一門戶，原名大佛寺，氣勢恢弘。仿古與古典園林相結合的建築風格，非遺民俗文化、四川名小吃。', gps: [29.6018, 103.4623] },
           { time: '19:00', type: '餐', name: '晚餐 · 柴火雞風味 RMB80', desc: '土雞與山菜慢燉的山區風味。' },
-          { time: '21:00', type: '住宿', name: '峨嵋山智選假日酒店 / 希爾頓歡朋酒店', desc: '' }
+          { time: '21:00', type: '住宿', name: '峨嵋山智選假日酒店 / 希爾頓歡朋酒店', alt: 450, desc: '' }
         ]
       },
       {
@@ -28213,14 +28220,14 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         subtitle: '洛帶古鎮 · 錦里古街 · 大慈寺 · 太古里 · IFS · 春熙路夜遊',
         spots: [
           { time: '08:00', type: '餐', name: '早餐 · 酒店內用', desc: '' },
-          { time: '10:30', type: '景點', name: '洛帶古鎮', desc: '成都東山客家人主要聚居地，被譽為「西部客家第一鎮」。2006 年評為國家 4A 級旅遊景區。包括廣東會館、江西會館等。特色美食：客家傷心涼粉、油燙鴨。', gps: [30.6840, 104.3070] },
+          { time: '10:30', type: '景點', name: '洛帶古鎮', alt: 500, desc: '成都東山客家人主要聚居地，被譽為「西部客家第一鎮」。2006 年評為國家 4A 級旅遊景區。包括廣東會館、江西會館等。特色美食：客家傷心涼粉、油燙鴨。', gps: [30.6840, 104.3070] },
           { time: '13:00', type: '餐', name: '午餐 · 東坡肘子風味 RMB80', desc: '經典川菜，蘇東坡傳世名菜。' },
-          { time: '14:30', type: '景點', name: '錦里古街', desc: '成都知名步行商業街，由清末仿古建築組成。武侯祠在其中。張飛牛肉、豆花、牛肉焦餅、缽缽雞各具風味。夜幕下紅燈籠喧囂熱鬧。', gps: [30.6427, 104.0490] },
-          { time: '16:00', type: '景點', name: '大慈寺', desc: '西元 3 ~ 4 世紀印度僧人寶掌「魏、晉間東遊」所建，距今已有 1600 多年。', gps: [30.6610, 104.0810] },
-          { time: '17:00', type: '景點', name: '太古里 · IFS · 網紅熊貓', desc: '位於成都市錦江區中紗帽街 8 號，臨近大慈寺。「以現代詮釋傳統」的設計理念。IFS 商場外牆網紅熊貓打卡點。', gps: [30.6536, 104.0830] },
+          { time: '14:30', type: '景點', name: '錦里古街', alt: 500, desc: '成都知名步行商業街，由清末仿古建築組成。武侯祠在其中。張飛牛肉、豆花、牛肉焦餅、缽缽雞各具風味。夜幕下紅燈籠喧囂熱鬧。', gps: [30.6427, 104.0490] },
+          { time: '16:00', type: '景點', name: '大慈寺', alt: 500, desc: '西元 3 ~ 4 世紀印度僧人寶掌「魏、晉間東遊」所建，距今已有 1600 多年。', gps: [30.6610, 104.0810] },
+          { time: '17:00', type: '景點', name: '太古里 · IFS · 網紅熊貓', alt: 500, desc: '位於成都市錦江區中紗帽街 8 號，臨近大慈寺。「以現代詮釋傳統」的設計理念。IFS 商場外牆網紅熊貓打卡點。', gps: [30.6536, 104.0830] },
           { time: '19:00', type: '餐', name: '晚餐 · 鴛鴦火鍋 + 變臉秀 RMB80', desc: '川菜經典與川劇變臉同享。' },
-          { time: '20:30', type: '景點', name: '春熙路夜遊', desc: '「西南第一街」，霓虹閃爍，眾多成都小吃與繁華商場，成都最時尚現代的商圈。', gps: [30.6534, 104.0810] },
-          { time: '22:00', type: '住宿', name: '溫江皇冠酒店 / 保利皇冠酒店', desc: '' }
+          { time: '20:30', type: '景點', name: '春熙路夜遊', alt: 500, desc: '「西南第一街」，霓虹閃爍，眾多成都小吃與繁華商場，成都最時尚現代的商圈。', gps: [30.6534, 104.0810] },
+          { time: '22:00', type: '住宿', name: '溫江皇冠酒店 / 保利皇冠酒店', alt: 500, desc: '' }
         ]
       },
       {
@@ -28229,13 +28236,13 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         subtitle: '丹景台成都之眼 · 鐘書閣（哈利波特書屋）· 仰天窩熊貓',
         spots: [
           { time: '08:00', type: '餐', name: '早餐 · 酒店內用', desc: '' },
-          { time: '10:00', type: '景點', name: '丹景台 · 成都之眼', desc: '觀景平台位於成都東部新區龍泉山脈丹景山山脊最高處。其螺旋向上的棧道和圓形曲線，從空中俯瞰形似太陽神鳥。', gps: [30.6203, 104.4087] },
+          { time: '10:00', type: '景點', name: '丹景台 · 成都之眼', alt: 1050, desc: '觀景平台位於成都東部新區龍泉山脈丹景山山脊最高處。其螺旋向上的棧道和圓形曲線，從空中俯瞰形似太陽神鳥。', gps: [30.6203, 104.4087] },
           { time: '12:30', type: '餐', name: '午餐 · 酸菜魚風味 RMB80', desc: '川菜經典酸辣口感。' },
-          { time: '14:00', type: '景點', name: '哈利波特書屋 · 鐘書閣', desc: '位於銀泰中心商場內，佔地約 1000 平方公尺，以竹林、熊貓、梯田等四川元素設計。鍾書閣取名自作家錢鍾書。', gps: [30.9909, 103.6168] },
-          { time: '15:30', type: '景點', name: '仰天窩熊貓', desc: '荷蘭設計師費洛倫泰因·霍夫曼設計的大熊貓自拍藝術品雕塑。位於都江堰仰天窩廣場中央，集文創、休閒、美食、網紅打卡於一體。', gps: [30.9883, 103.6234] },
-          { time: '18:00', type: '景點', name: '抵達茂縣', desc: '位於四川阿壩藏族羌族自治州境內。全國羌族最大聚居區，羌文化底蘊最厚重的地區。', gps: [31.6824, 103.8508] },
+          { time: '14:00', type: '景點', name: '哈利波特書屋 · 鐘書閣', alt: 700, desc: '位於銀泰中心商場內，佔地約 1000 平方公尺，以竹林、熊貓、梯田等四川元素設計。鍾書閣取名自作家錢鍾書。', gps: [30.9909, 103.6168] },
+          { time: '15:30', type: '景點', name: '仰天窩熊貓', alt: 700, desc: '荷蘭設計師費洛倫泰因·霍夫曼設計的大熊貓自拍藝術品雕塑。位於都江堰仰天窩廣場中央，集文創、休閒、美食、網紅打卡於一體。', gps: [30.9883, 103.6234] },
+          { time: '18:00', type: '景點', name: '抵達茂縣', alt: 1590, desc: '位於四川阿壩藏族羌族自治州境內。全國羌族最大聚居區，羌文化底蘊最厚重的地區。', gps: [31.6824, 103.8508] },
           { time: '19:00', type: '餐', name: '晚餐 · 羌寨風味 RMB80', desc: '當地少數民族家常菜。' },
-          { time: '21:00', type: '住宿', name: '茂縣國際酒店 / 茂縣西羌家園酒店', desc: '' }
+          { time: '21:00', type: '住宿', name: '茂縣國際酒店 / 茂縣西羌家園酒店', alt: 1590, desc: '' }
         ]
       },
       {
@@ -28244,12 +28251,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         subtitle: '疊溪海子（途經）· 黃龍風景區 · 五彩池',
         spots: [
           { time: '07:30', type: '餐', name: '早餐 · 酒店內用', desc: '' },
-          { time: '09:30', type: '景點', name: '疊溪海子（途經）', desc: '湖面海拔 2258 米，原為疊溪城，為古代邊防重鎮。地震形成的堰塞湖，湖寬約 1 公里，長 10 公里，由上下兩處接連而成。', gps: [32.1133, 103.6739] },
-          { time: '11:30', type: '景點', name: '黃龍風景區', desc: '位於四川省阿壩州松潘縣，以奇幻美麗的鈣化池聞名於世。鈣化池池水清澈見底，五光十色被稱為「人間瑤池」。包括洗身洞、金沙鋪地、盆景池、黃龍洞、黃龍寺、五彩池。海拔約 3500 米。', gps: [32.7551, 103.8268] },
+          { time: '09:30', type: '景點', name: '疊溪海子（途經）', alt: 2258, desc: '湖面海拔 2258 米，原為疊溪城，為古代邊防重鎮。地震形成的堰塞湖，湖寬約 1 公里，長 10 公里，由上下兩處接連而成。', gps: [32.1133, 103.6739] },
+          { time: '11:30', type: '景點', name: '黃龍風景區', alt: 3550, desc: '位於四川省阿壩州松潘縣，以奇幻美麗的鈣化池聞名於世。鈣化池池水清澈見底，五光十色被稱為「人間瑤池」。包括洗身洞、金沙鋪地、盆景池、黃龍洞、黃龍寺、五彩池。海拔約 3500 米。', gps: [32.7551, 103.8268] },
           { time: '13:00', type: '餐', name: '午餐 · 牦牛風味 RMB80', desc: '高原地區特色，牦牛肉燉湯。' },
-          { time: '18:00', type: '景點', name: '抵達九寨溝', desc: '中國大陸水景之王，海拔約 3000 米，1992 年列入「世界自然遺產名錄」。', gps: [33.2616, 103.9165] },
+          { time: '18:00', type: '景點', name: '抵達九寨溝', alt: 2000, desc: '中國大陸水景之王，海拔約 3000 米，1992 年列入「世界自然遺產名錄」。', gps: [33.2616, 103.9165] },
           { time: '19:30', type: '餐', name: '晚餐 · 藏式小火鍋 RMB80', desc: '藏族風味火鍋。' },
-          { time: '21:00', type: '住宿', name: '九寨魯能希爾頓花園酒店 / 天源豪生酒店', desc: '' }
+          { time: '21:00', type: '住宿', name: '九寨魯能希爾頓花園酒店 / 天源豪生酒店', alt: 2000, desc: '' }
         ]
       },
       {
@@ -28258,13 +28265,13 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         subtitle: '樹正溝 · 則查窪溝 · 日則溝（Y 字三溝）',
         spots: [
           { time: '07:00', type: '餐', name: '早餐 · 酒店內用', desc: '高原日要充分補充能量。' },
-          { time: '08:30', type: '景點', name: '九寨溝自然保護區（含景區公共巴士）', desc: '景區實行分區域開放，旅客聽從隨車講解員安排。三溝呈 Y 字形，總長 50 多公里，114 個海子、17 個瀑布群、5 處流灘、47 眼泉水、11 段汭流。', gps: [33.2616, 103.9165] },
-          { time: '09:30', type: '景點', name: '樹正溝', desc: '九寨溝的縮影。有盆景灘、蘆葦海、臥龍海、樹正瀑布、老虎海、犀牛海等景點。', gps: [33.2058, 103.8985] },
+          { time: '08:30', type: '景點', name: '九寨溝自然保護區（含景區公共巴士）', alt: 2000, desc: '景區實行分區域開放，旅客聽從隨車講解員安排。三溝呈 Y 字形，總長 50 多公里，114 個海子、17 個瀑布群、5 處流灘、47 眼泉水、11 段汭流。', gps: [33.2616, 103.9165] },
+          { time: '09:30', type: '景點', name: '樹正溝', alt: 2200, desc: '九寨溝的縮影。有盆景灘、蘆葦海、臥龍海、樹正瀑布、老虎海、犀牛海等景點。', gps: [33.2058, 103.8985] },
           { time: '12:00', type: '餐', name: '午餐 · 中式合菜 RMB80', desc: '景區內用餐條件有限，建議自備零食。' },
-          { time: '13:30', type: '景點', name: '則查窪溝', desc: 'Y 字構造的左支旅遊路線。從諾日朗瀑布到長海約 18 公里，是九寨溝四季旅遊路線距離最長、海拔最高的一條。主要景點為季節海、五彩池和長海。', gps: [33.0892, 103.9087] },
-          { time: '15:30', type: '景點', name: '日則溝', desc: '全長 18 公里，九寨溝風景線中的精華部分。景點密集：鏡海、珍珠灘瀑布、珍珠灘、五花海、天鵝海、草海、孔雀河道、諾日朗瀑布、諾日朗群海。', gps: [33.1556, 103.8543] },
+          { time: '13:30', type: '景點', name: '則查窪溝', alt: 3060, desc: 'Y 字構造的左支旅遊路線。從諾日朗瀑布到長海約 18 公里，是九寨溝四季旅遊路線距離最長、海拔最高的一條。主要景點為季節海、五彩池和長海。', gps: [33.0892, 103.9087] },
+          { time: '15:30', type: '景點', name: '日則溝', alt: 2500, desc: '全長 18 公里，九寨溝風景線中的精華部分。景點密集：鏡海、珍珠灘瀑布、珍珠灘、五花海、天鵝海、草海、孔雀河道、諾日朗瀑布、諾日朗群海。', gps: [33.1556, 103.8543] },
           { time: '19:00', type: '餐', name: '晚餐 · 中式合菜 RMB80', desc: '' },
-          { time: '21:00', type: '住宿', name: '九寨魯能希爾頓花園酒店 / 天源豪生酒店', desc: '' }
+          { time: '21:00', type: '住宿', name: '九寨魯能希爾頓花園酒店 / 天源豪生酒店', alt: 2000, desc: '' }
         ]
       },
       {
@@ -28274,12 +28281,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         spots: [
           { time: '07:30', type: '餐', name: '早餐 · 酒店內用', desc: '' },
           { time: '08:30', type: '景點', name: '綿九高速', desc: '2025 年 10 月 1 日全線通車，成都至九寨溝車程由原本約 8 小時縮短至約 4 小時。' },
-          { time: '11:00', type: '景點', name: '白馬藏寨（遠眺）', desc: '途中遠眺，了解白馬藏族民俗風情。' },
+          { time: '11:00', type: '景點', name: '白馬藏寨（遠眺）', alt: 1600, desc: '途中遠眺，了解白馬藏族民俗風情。' },
           { time: '13:00', type: '餐', name: '午餐 · 江油肥腸 RMB80', desc: '江油市特色名菜。' },
-          { time: '15:00', type: '景點', name: '成都大熊貓繁殖基地', desc: '位於成都市成華區外北熊貓大道 1375 號。世界著名的大熊貓遷地保護、科研繁育、公眾教育和教育旅遊基地。佔地 1500 畝。', gps: [30.7335, 104.1452] },
-          { time: '17:30', type: '景點', name: '寬窄巷子', desc: '由寬巷子、窄巷子和井巷子三條東西方向老街組成。各條巷子的小攤小店出售四川特色小吃、工藝品、書籍。2008 年「中國創意產業項目建設成就獎」、2009 年「中國特色商業步行街」。', gps: [30.6730, 104.0584] },
+          { time: '15:00', type: '景點', name: '成都大熊貓繁殖基地', alt: 500, desc: '位於成都市成華區外北熊貓大道 1375 號。世界著名的大熊貓遷地保護、科研繁育、公眾教育和教育旅遊基地。佔地 1500 畝。', gps: [30.7335, 104.1452] },
+          { time: '17:30', type: '景點', name: '寬窄巷子', alt: 500, desc: '由寬巷子、窄巷子和井巷子三條東西方向老街組成。各條巷子的小攤小店出售四川特色小吃、工藝品、書籍。2008 年「中國創意產業項目建設成就獎」、2009 年「中國特色商業步行街」。', gps: [30.6730, 104.0584] },
           { time: '19:30', type: '餐', name: '晚餐 · 中式合菜 RMB80', desc: '' },
-          { time: '21:30', type: '住宿', name: '溫江皇冠酒店 / 保利皇冠酒店', desc: '' }
+          { time: '21:30', type: '住宿', name: '溫江皇冠酒店 / 保利皇冠酒店', alt: 500, desc: '' }
         ]
       },
       {
@@ -29545,6 +29552,54 @@ ${baseSchema}
   // ============================================================
 
   // ---- 時間工具 ----
+  // ===== 海拔 · 高原反應 =====
+  // 九寨溝這團晚上都睡在 2,000m 左右，白天卻會上到 3,550m（黃龍）與 3,060m（長海）。
+  // 所以風險集中在「白天那幾個小時」，不是睡眠高度——提醒的寫法要照這個事實走。
+  // CAUTION 全部是約略值，用來判斷風險量級，不是測量數字。畫面上一律寫「約」。
+  const ALT_WATCH = 2500;    // 一般人開始可能有感覺
+  const ALT_HIGH  = 3000;    // 明顯高原，要放慢、要留意症狀
+  function spotAlt(s) { const v = Number(s && s.alt); return Number.isFinite(v) && v > 0 ? v : null; }
+  function altLevel(m) { return !(m > 0) ? 0 : m >= ALT_HIGH ? 2 : m >= ALT_WATCH ? 1 : 0; }
+  function altText(m) { return '約 ' + Math.round(m).toLocaleString('en-US') + ' m'; }
+  // 一天的最高點與當晚睡在哪個高度
+  function dayAlt(d) {
+    if (!d || !Array.isArray(d.spots)) return { max: null, maxName: '', sleep: null };
+    let max = null, maxName = '', sleep = null;
+    for (const s of d.spots) {
+      const a = spotAlt(s);
+      if (a == null) continue;
+      if (max == null || a > max) { max = a; maxName = s.name || ''; }
+      if (s.type === '住宿') sleep = a;
+    }
+    return { max, maxName, sleep };
+  }
+  // 「白天上到多高、晚上睡在多高」——這兩件事的風險完全不同，要分開講。
+  // 九寨溝這團晚上都在 2,000m 左右，所以危險集中在白天那幾個小時，晚上下來多半會緩解。
+  function altSleepMax() {
+    if (!ITINERARY || !Array.isArray(ITINERARY.days)) return null;
+    return ITINERARY.days.reduce((m, d) => { const a = dayAlt(d).sleep; return a != null && (m == null || a > m) ? a : m; }, null);
+  }
+  function altTripLine() {
+    const hi = tripMaxAlt(), sleep = altSleepMax();
+    if (!(hi > 0)) return '';
+    let day = null;
+    (ITINERARY.days || []).forEach(d => { const a = dayAlt(d); if (a.max === hi && !day) day = { d, name: a.maxName }; });
+    let s = `這一團白天最高會上到 <strong>${altText(hi)}</strong>`;
+    if (day) s += `（第 ${day.d.day} 天 · ${escape(day.name)}）`;
+    if (sleep != null) {
+      s += `，但<strong>晚上都睡在 ${altText(sleep)} 左右</strong>——` +
+        (sleep < ALT_WATCH
+          ? '風險集中在白天那幾個小時，晚上下來多半會緩解。'
+          : '睡覺的高度也不低，症狀可能整晚持續。');
+    }
+    return s;
+  }
+
+  function tripMaxAlt() {
+    if (!ITINERARY || !Array.isArray(ITINERARY.days)) return null;
+    return ITINERARY.days.reduce((m, d) => { const a = dayAlt(d).max; return a != null && (m == null || a > m) ? a : m; }, null);
+  }
+
   function trvTimeToMin(t) {
     const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/);
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -29760,16 +29815,27 @@ ${baseSchema}
       if (pp.length && toStart != null && toStart >= 0 && toStart <= 90) {
         const expired = pp.filter(x => x.s.level === 'bad');
         if (pp.length === 1) {
+          const dk = tripDocKind();
           add('🛂', `<strong>${escape(pp[0].p.name)}</strong> 的${escape(pp[0].s.text)}。` +
-            (expired.length ? '這樣<strong>上不了飛機</strong>，要先去換發護照。' : '很多國家會要求回國時還有 6 個月，先去確認。'), 'warn');
+            (expired.length ? `這樣<strong>上不了飛機</strong>，要先去換發${escape(dk.name)}。` : '很多國家會要求回國時還有 6 個月，先去確認。'), 'warn');
         } else {
-          add('🛂', `有 <strong>${pp.length} 位</strong>團員的護照效期不夠` +
+          add('🛂', `有 <strong>${pp.length} 位</strong>團員的${escape(tripDocKind().name)}效期不夠` +
             (expired.length ? `（其中 <strong>${expired.length} 位已經過期</strong>）` : '') +
             '。到「集合」分頁的團員檔案看是誰。', 'warn');
         }
       }
       if (toStart == null || toStart > 30) return out;   // 還很久，講了只是雜訊
       const undone = (Array.isArray(trvChecklist) ? trvChecklist : []).filter(c => c && !c.done).length;
+      // ⚠ 高原用藥要看醫生開處方，比別的事更早講——出發前一週才想到就掛不到號了。
+      //   所以跟護照一樣，它有自己的門檻（14 天），而且只在真的會上高處時出現。
+      const hiAlt = tripMaxAlt();
+      if (hiAlt != null && hiAlt >= ALT_WATCH && toStart >= 3 && toStart <= 30) {
+        add('⛰', `這趟會上到 <strong>${altText(hiAlt)}</strong>。` +
+          (toStart >= 10
+            ? '要吃預防高原反應的藥（丹木斯）的話，<strong>台灣是處方藥，現在就要去看醫生</strong>，到當地買不到。'
+            : '把止痛藥、腸胃藥帶齊，<strong>上山前一晚一定要睡飽</strong>。'),
+          toStart <= 7 ? 'warn' : '');
+      }
       if (toStart <= 1) add('⏰', toStart === 0 ? '<strong>今天就出發</strong>，證件、充電線、藥品最後再確認一次。' : '<strong>明天就出發</strong>，今晚把證件、充電線、藥品再確認一次，早點睡。', 'warn');
       else add('📅', `還有 <strong>${toStart} 天</strong>出發。`);
       if (undone > 0) add('☑', `行前清單還有 <strong>${undone} 項</strong>沒打勾。`, toStart <= 3 ? 'warn' : '');
@@ -29799,6 +29865,14 @@ ${baseSchema}
       if (lastMin != null) add('📅', `今天共 <strong>${dToday.spots.length} 站</strong>，最後一項 ${escape(trvMinToTime(lastMin))}。`);
       const f = flightOf(dToday);
       if (f) add('✈', `<strong>今天有班機</strong> ${escape(f.name)} ${escape(trvSpotTimeText(dToday.date, f.time))}。護照放手邊，提早到機場。`, 'warn');
+      const todayAlt = dayAlt(dToday);
+      if (todayAlt.max != null && altLevel(todayAlt.max) > 0) {
+        add('⛰', `今天最高會到 <strong>${altText(todayAlt.max)}</strong>（${escape(todayAlt.maxName)}）。` +
+          (altLevel(todayAlt.max) === 2
+            ? '<strong>走路放慢一半、不要跑、不要提重物</strong>，小口喝水。頭痛想吐就停下來說出來，不要忍。'
+            : '走慢一點、多喝水，不舒服就講。'),
+          altLevel(todayAlt.max) === 2 ? 'warn' : '');
+      }
       const sp = spotsOf(dToday);
       if (sp.length >= 4) add('👟', `今天要走 <strong>${sp.length} 個景點</strong>，穿好走的鞋，水跟行動電源帶著。`);
       if (trvGather && trvGather.date === today) {
@@ -29826,6 +29900,16 @@ ${baseSchema}
     if (tFirst != null) {
       const early = tFirst <= 7 * 60;
       add(early ? '⏰' : '📅', `明天 <strong>${escape(trvMinToTime(tFirst))}</strong> 開始：${escape((dTmr.spots[0] && dTmr.spots[0].name) || dTmr.title || '')}。${early ? '<strong>很早</strong>，今晚早點睡、行李先收好。' : ''}`, early ? 'warn' : '');
+    }
+    // 前一晚講最有用：今晚不要喝酒、早點睡，隔天才不會在 3,500m 上面發作
+    const tmrAlt = dayAlt(dTmr);
+    const todayAltMax = dayAlt(dToday).max;
+    if (tmrAlt.max != null && altLevel(tmrAlt.max) > 0) {
+      const jump = todayAltMax != null ? tmrAlt.max - todayAltMax : null;
+      add('⛰', `明天最高會上到 <strong>${altText(tmrAlt.max)}</strong>（${escape(tmrAlt.maxName)}）` +
+        (jump != null && jump >= 800 ? `，比今天高了 <strong>${Math.round(jump).toLocaleString('en-US')} m</strong>` : '') +
+        `。<strong>今晚不要喝酒、早點睡</strong>，明天走路放慢一半。`,
+        altLevel(tmrAlt.max) === 2 ? 'warn' : '');
     }
     const tf = flightOf(dTmr);
     if (tf) add('✈', `明天有班機 ${escape(tf.name)} ${escape(trvSpotTimeText(dTmr.date, tf.time))}，護照與登機證先準備好。`, 'warn');
@@ -29943,6 +30027,13 @@ ${baseSchema}
     document.getElementById('rosterEcName').value = p ? (p.ecName || '') : '';
     document.getElementById('rosterEcPhone').value = p ? (p.ecPhone || '') : '';
     document.getElementById('rosterPassport').value = p ? (p.passport || '') : '';
+    // 去大陸看的是台胞證，標籤與說明都要跟著換，不然使用者會填錯本子
+    try {
+      const dk = tripDocKind();
+      document.getElementById('rosterPassportLabel').textContent = dk.name + '效期到';
+      document.getElementById('rosterPassportHint').innerHTML = dk.hint ||
+        '填了會幫你檢查<strong>回國那天護照還剩多久</strong>。多數國家要求回國時仍有 6 個月以上，不足會被拒絕登機。';
+    } catch (e) {}
     renderRosterDietQuick();
     document.getElementById('rosterModalTitle').innerHTML = p ? '編輯 <em>團員</em>' : '新增 <em>團員</em>';
     document.getElementById('rosterDeleteBtn').style.display = p ? '' : 'none';
@@ -30040,27 +30131,47 @@ ${baseSchema}
   }
   // 護照效期。⚠ 基準是「回國那天」不是今天——各國看的是入境／離境當下還剩多久，
   //   出發時還有 5 個月、回國時只剩 4 個月的人，一樣會在櫃檯被擋下來。
+  // 去哪裡，看的就不是同一本證件。
+  // CAUTION 台胞證「只要在有效期內」就好，沒有護照那條「回國後還要六個月」的規定——
+  //   對大陸團講六個月是錯的建議，會讓人白跑一趟。
+  //   （這團經澳門轉機，所以護照也要帶，只是效期看的是台胞證。）
+  function tripDocKind() {
+    let code = '';
+    // CAUTION 只讀 sosNorm().country，不要自己再 guess 一次——它「從沒存過」時本來就會猜一次，
+    //   使用者後來把目的地改回「（還沒選）」是他的決定，不該被蓋掉（v12.9 的教訓）。
+    //   不知道目的地時退回「護照＋六個月」這個比較保守的預設。
+    try { code = sosNorm().country || ''; } catch (e) { code = ''; }
+    if (code === 'CN') return {
+      name: '台胞證', sixMonth: false,
+      hint: '去大陸看的是<strong>台胞證</strong>（台灣居民來往大陸通行證），護照不能單獨用。' +
+            '台胞證<strong>只要在有效期內</strong>就好，沒有「回國後還要六個月」那條規定。' +
+            '這一團經澳門轉機，<strong>護照也要帶著</strong>。'
+    };
+    return { name: '護照', sixMonth: true, hint: '' };
+  }
+
   function passportStatus(p) {
     const exp = p && p.passport ? String(p.passport) : '';
     if (!exp) return null;
     const t = new Date(exp + 'T00:00:00');
     if (isNaN(t.getTime())) return null;
     const back = tripReturnDate();
+    const doc = tripDocKind(), D = doc.name;
     const dayDiff = (a, b) => Math.round((a.getTime() - b.getTime()) / 86400000);
     if (!back) {
       // 沒有行程資料就只能跟今天比，話也要跟著講得保守一點
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const d = dayDiff(t, today);
-      if (d < 0) return { level: 'bad', text: `護照已經過期（${exp} 到期）`, days: d };
-      if (t < addMonthsClamped(today, 6)) return { level: 'warn', text: `護照剩不到 6 個月（${exp} 到期）`, days: d };
-      return { level: 'ok', text: `護照有效到 ${exp}`, days: d };
+      if (d < 0) return { level: 'bad', text: `${D}已經過期（${exp} 到期）`, days: d };
+      if (doc.sixMonth && t < addMonthsClamped(today, 6)) return { level: 'warn', text: `${D}剩不到 6 個月（${exp} 到期）`, days: d };
+      return { level: 'ok', text: `${D}有效到 ${exp}`, days: d };
     }
     const bt = new Date(back + 'T00:00:00');
     if (isNaN(bt.getTime())) return null;
     const left = dayDiff(t, bt);
-    if (left < 0) return { level: 'bad', text: `護照在回國前就過期了（${exp} 到期，${back} 才回國）`, days: left };
-    if (t < addMonthsClamped(bt, 6)) return { level: 'warn', text: `回國那天護照只剩 ${left} 天（${exp} 到期），不到 6 個月`, days: left };
-    return { level: 'ok', text: `護照有效到 ${exp}，回國時還剩約 ${Math.floor(left / 30)} 個月`, days: left };
+    if (left < 0) return { level: 'bad', text: `${D}在回國前就過期了（${exp} 到期，${back} 才回國）`, days: left };
+    if (doc.sixMonth && t < addMonthsClamped(bt, 6)) return { level: 'warn', text: `回國那天${D}只剩 ${left} 天（${exp} 到期），不到 6 個月`, days: left };
+    return { level: 'ok', text: `${D}有效到 ${exp}，回國時還剩 ${left} 天`, days: left };
   }
   function rosterPassportIssues() {
     const r = trvRosterNorm();
@@ -30624,6 +30735,25 @@ ${baseSchema}
           { t: `信用卡、機票、保單也一起拍。<strong>存離線相簿，不要只放在需要網路才打得開的地方。</strong>` }
         ]
       },
+      // ⚠ 只有這趟真的會上到高處才出現。平地團看到這張卡只是雜訊。
+      ...((tripMaxAlt() || 0) >= ALT_WATCH ? [{
+        id: 'altitude', icon: '⛰', title: '高原反應', sub: '頭痛 · 想吐 · 喘不過氣',
+        steps: [
+          '先確認是不是：上到高處<strong>幾小時到一天內開始頭痛</strong>，再加上頭暈、想吐、沒胃口、睡不著、比平常喘——這幾樣一起來，多半就是。',
+          '<strong>立刻停下來休息，不要再往上走。</strong>大部分人休息之後會自己好。',
+          '慢慢深呼吸，小口小口喝水。<strong>不要喝酒、不要抽菸、不要泡熱水澡</strong>，這三件事都會讓症狀變重。',
+          '有氧氣瓶就用（景區與飯店多半買得到）。<strong>但是吸了覺得舒服，不等於可以繼續往上走</strong>——氧氣只是讓你撐著下山，不是治好了。',
+          `通知 ${guide}${c.localPhone ? ` 與 ${local}` : ''}，他知道最近的醫務站在哪裡。`,
+          '<strong>出現這幾種情況要馬上往低處下降，不要等、不要「再看看」</strong>：走路歪斜站不穩、講話怪怪的或叫不太醒、休息了還是一直喘、嘴唇或指甲發紫、咳嗽有粉紅色泡沫痰。<strong>下降高度是唯一真正有效的處置。</strong>',
+          `同時 ${amb}${c.insurerPhone ? `，並通知 ${insurer}` : ''}。`
+        ],
+        tips: [
+          { t: `<strong>藥要出發前就準備好</strong>：預防高原反應常用的丹木斯（Diamox / acetazolamide）在台灣是<strong>處方藥</strong>，要先看醫生。到了當地才想買就來不及了。` },
+          { t: `<strong>上高原的第一天：走路放慢一半、不要洗澡、不要劇烈運動。</strong>很多人是因為一到就衝景點才發作的。` },
+          { t: `感冒、發燒、前一晚熬夜的人風險高很多。上山前一晚<strong>睡飽</strong>比吃什麼都有用。` },
+          { t: altTripLine() }
+        ]
+      }] : []),
       {
         id: 'medical', icon: '🚑', title: '生病 · 受傷 · 送醫', sub: '有人不舒服',
         steps: [
@@ -31245,6 +31375,9 @@ ${baseSchema}
     const html = ITINERARY.days.map(d => {
       const isToday = d.date === todayStr;
       const dayBadge = isToday ? '<span class="day-badge">TODAY</span>' : '';
+      const da = dayAlt(d);
+      const altBadge = da.max != null && altLevel(da.max) > 0
+        ? `<span class="alt-badge lv${altLevel(da.max)}" title="最高點：${escape(da.maxName)}">▲ 最高 ${escape(altText(da.max))}</span>` : '';
       const spotsHtml = d.spots.map((s, i) => {
         const iconMap = { '景點': '◐', '餐': '◉', '住宿': '⌂', '航班': '✈' };
         const icon = iconMap[s.type] || '◇';
@@ -31265,7 +31398,9 @@ ${baseSchema}
               ? `<div class="spot-media" data-spot-img="${d.day}-${i}">${mediaInitial}</div>`
               : `<div class="spot-icon">${icon}</div>`}
             <div class="spot-body">
-              <div class="spot-name">${escape(s.name)}${isCurrentSpot ? ' <em>· 進行中</em>' : ''}</div>
+              <div class="spot-name">${escape(s.name)}${isCurrentSpot ? ' <em>· 進行中</em>' : ''}${
+                spotAlt(s) != null && altLevel(spotAlt(s)) > 0
+                  ? ` <span class="alt-chip lv${altLevel(spotAlt(s))}">▲ ${escape(altText(spotAlt(s)))}</span>` : ''}</div>
               <div class="spot-desc">${escape(s.desc || '—')}</div>
               <div class="spot-actions">
                 <button class="spot-mini-btn" onclick="openSpotModal(${d.day}, ${i})">詳細</button>
@@ -31283,6 +31418,7 @@ ${baseSchema}
               <span class="day-num">DAY · ${String(d.day).padStart(2, '0')}</span>
               <span class="day-title">${escape(d.title)}</span>
               <span class="day-date">${escape(d.date)} · ${escape(d.weekday)}</span>
+              ${altBadge}
               ${dayBadge}
             </div>
             <div class="day-card-arrow">→</div>
