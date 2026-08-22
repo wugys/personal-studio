@@ -7927,6 +7927,18 @@
           </div>
         </div>
         <div class="info-card">
+          <h3><span class="glyph">◉</span>上網與通訊</h3>
+          <ul>
+            <li><strong>LINE、Google（搜尋／地圖／Gmail／相簿）、Facebook、Instagram、YouTube 在中國大陸都連不上。</strong>飯店 Wi-Fi 也一樣，因為它也是當地的網路。</li>
+            <li><strong>最簡單可靠：台灣門號直接開國際漫遊上網。</strong>漫遊的流量會繞回台灣電信的網路，<strong>不受當地限制</strong>，LINE 跟 Google 照樣能用。出發前在電信公司的 App 開通日租型方案即可。</li>
+            <li><strong>在當地買的 SIM、或一般的中國 eSIM 走的是當地網路，上面那些會被擋</strong>——除非方案本身寫明含翻牆／走香港路由（例如 3HK 大灣區卡）。買之前一定要看清楚。</li>
+            <li>當地正常能用的：<strong>微信、支付寶、高德地圖、百度地圖</strong>。</li>
+            <li><strong>這個 App 本身</strong>：加到主畫面之後<strong>沒網路也打得開</strong>，行程、點名、集合倒數、花費、房間座位都能用。</li>
+            <li>會失效的是要連外的部分：<strong>景點的維基縮圖、AI 管家、Google 導航</strong>。導航按「⊕ 導航」改選<strong>高德地圖</strong>就好。</li>
+            <li><strong>「同團」連的是國外的伺服器，在大陸不一定通</strong>——所以<strong>不要把點名押在它上面</strong>。點名本來就存在你自己的手機裡，斷線照樣點。</li>
+          </ul>
+        </div>
+        <div class="info-card">
           <h3><span class="glyph">☀</span>氣候提醒</h3>
           <ul>
             <li>9 月 · 九寨溝氣溫 <strong>7~18°C</strong>，晝夜溫差大</li>
@@ -29836,6 +29848,11 @@ ${baseSchema}
             : '把止痛藥、腸胃藥帶齊，<strong>上山前一晚一定要睡飽</strong>。'),
           toStart <= 7 ? 'warn' : '');
       }
+      // 大陸團才講。⚠ 這件事要在還來得及處理的時候講——到了當地才發現 LINE 不通就晚了。
+      if (tripIsCN() && toStart <= 10) {
+        add('◉', 'LINE 跟 Google 在<strong>中國大陸連不上</strong>。最保險的是<strong>台灣門號開國際漫遊上網</strong>（走台灣的網路，不受影響）；' +
+          '當地買的 SIM 卡多半擋。細節在「保險 eSIM」分頁。', toStart <= 3 ? 'warn' : '');
+      }
       if (toStart <= 1) add('⏰', toStart === 0 ? '<strong>今天就出發</strong>，證件、充電線、藥品最後再確認一次。' : '<strong>明天就出發</strong>，今晚把證件、充電線、藥品再確認一次，早點睡。', 'warn');
       else add('📅', `還有 <strong>${toStart} 天</strong>出發。`);
       if (undone > 0) add('☑', `行前清單還有 <strong>${undone} 項</strong>沒打勾。`, toStart <= 3 ? 'warn' : '');
@@ -31404,7 +31421,7 @@ ${baseSchema}
               <div class="spot-desc">${escape(s.desc || '—')}</div>
               <div class="spot-actions">
                 <button class="spot-mini-btn" onclick="openSpotModal(${d.day}, ${i})">詳細</button>
-                ${s.gps ? `<button class="spot-mini-btn" onclick="navigateTo(${s.gps[0]}, ${s.gps[1]})">⊕ 導航</button>` : ''}
+                ${s.gps ? `<button class="spot-mini-btn" onclick="navigateTo(${s.gps[0]}, ${s.gps[1]}, '${escape(String(s.name).replace(/'/g, ''))}')">⊕ 導航</button>` : ''}
                 ${s.desc ? `<button class="spot-mini-btn" onclick="ttsReadSpot(${d.day}, ${i}); event.stopPropagation();">🔊 念給我聽</button>` : ''}
               </div>
             </div>
@@ -31465,6 +31482,9 @@ ${baseSchema}
     const mediaActions = `
       <div class="spot-media-actions">
         <div class="label">深度探索</div>
+        ${tripIsCN() ? `<div style="grid-column:1/-1; font-size:11px; color:var(--ink-tertiary); line-height:1.7; margin:-2px 0 6px;">
+          ⚠ 下面這些是 Google / YouTube / 維基，<strong>在中國大陸連不上</strong>（除非你用台灣門號漫遊上網）。
+          導航請按上一頁的「⊕ 導航」選高德地圖。</div>` : ''}
         <a class="spot-media-btn" href="https://www.google.com/search?q=${encodeURIComponent(cleanName + ' 美食 必吃')}" target="_blank">
           <span class="icon">🍜</span><span class="label-cn">美食</span>
         </a>
@@ -31634,7 +31654,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     }
   }
   function ttsSpot() { if (trvCurrentSpot) ttsRead(`${trvCurrentSpot.name}。${trvCurrentSpot.desc || ''}`); }
-  function navigateSpot() { if (trvCurrentSpot && trvCurrentSpot.gps) navigateTo(trvCurrentSpot.gps[0], trvCurrentSpot.gps[1]); else showToast('此景點無 GPS 資料'); }
+  function navigateSpot() { if (trvCurrentSpot && trvCurrentSpot.gps) navigateTo(trvCurrentSpot.gps[0], trvCurrentSpot.gps[1], trvCurrentSpot.name); else showToast('此景點無 GPS 資料'); }
   function shareSpotLine() {
     if (!trvCurrentSpot) return;
     const text = `【${trvCurrentSpot.name}】\n${trvCurrentSpot.desc || ''}\n${trvCurrentSpot.gps ? `https://maps.google.com/?q=${trvCurrentSpot.gps[0]},${trvCurrentSpot.gps[1]}` : ''}`;
@@ -31963,9 +31983,39 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const la = Math.sin(dLat/2)**2 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)**2;
     return R * 2 * Math.atan2(Math.sqrt(la), Math.sqrt(1-la));
   }
-  function navigateTo(lat, lng) {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-    window.open(url, '_blank');
+  // 這一團在不在大陸（拿目的地國家判斷，沒選就退回看座標）
+  function tripIsCN() {
+    try { if (sosNorm().country === 'CN') return true; } catch (e) {}
+    return false;
+  }
+  // 座標落在中國大陸範圍內
+  function gpsInChina(lat, lng) { return lat >= 18 && lat <= 53 && lng >= 73 && lng <= 135; }
+
+  // 地圖 App 選項。CAUTION 只寫一份，集合點與每個景點共用——
+  //   原本景點那顆是寫死 Google Maps，在大陸按下去是一片空白，而它一天要按十幾次。
+  function mapNavOptions(lat, lng, name, mode) {
+    const n = encodeURIComponent(name || '目的地');
+    const inCN = gpsInChina(lat, lng) || tripIsCN();
+    const amapMode = mode === 'walk' ? 'walk' : 'car';
+    const gMode = mode === 'walk' ? '&travelmode=walking' : '';
+    return [
+      { name: '高德地圖', en: 'AMAP',
+        // coordinate=wgs84（GPS 原始座標）· callnative=1 嘗試喚起 app · 座標順序是 lng,lat
+        url: `https://uri.amap.com/navigation?to=${lng},${lat},${n}&mode=${amapMode}&policy=1&src=personal-studio&coordinate=wgs84&callnative=1`,
+        recommended: inCN, desc: '中國大陸首選' },
+      { name: '百度地圖', en: 'BAIDU',
+        url: `https://api.map.baidu.com/direction?destination=latlng:${lat},${lng}|name=${n}&mode=${mode === 'walk' ? 'walking' : 'driving'}&coord_type=wgs84&output=html&src=webapp.personal-studio`,
+        recommended: false, desc: '中國大陸備選' },
+      { name: 'Google Maps', en: 'GOOGLE',
+        url: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}${gMode}`,
+        recommended: !inCN, desc: inCN ? '在中國大陸連不上' : '海外首選' },
+      { name: 'Apple Maps', en: 'APPLE',
+        url: `https://maps.apple.com/?daddr=${lat},${lng}${mode === 'walk' ? '&dirflg=w' : ''}`,
+        recommended: false, desc: 'iPhone 內建' }
+    ];
+  }
+  function navigateTo(lat, lng, name) {
+    showMapPickerMenu(mapNavOptions(lat, lng, name, 'car'), lat, lng);
   }
 
   // ===== Map =====
@@ -32707,39 +32757,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     }
     const lat = trvGather.lat;
     const lng = trvGather.lng;
-    const name = encodeURIComponent(trvGather.desc || '集合點');
-    // 中國大陸大致範圍（GPS 經緯度 bounding box）
-    const isInChina = lat >= 18 && lat <= 53 && lng >= 73 && lng <= 135;
-
-    const options = [
-      {
-        name: '高德地圖', en: 'AMAP',
-        // coordinate=wgs84 (GPS 原始座標) · callnative=1 嘗試喚起 app · 注意座標順序是 lng,lat
-        url: `https://uri.amap.com/navigation?to=${lng},${lat},${name}&mode=walk&policy=1&src=personal-studio&coordinate=wgs84&callnative=1`,
-        recommended: isInChina,
-        desc: '中國大陸首選'
-      },
-      {
-        name: '百度地圖', en: 'BAIDU',
-        url: `https://api.map.baidu.com/direction?destination=latlng:${lat},${lng}|name=${name}&mode=walking&coord_type=wgs84&output=html&src=webapp.personal-studio`,
-        recommended: false,
-        desc: '中國大陸備選'
-      },
-      {
-        name: 'Google Maps', en: 'GOOGLE',
-        url: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`,
-        recommended: !isInChina,
-        desc: '海外首選 · 中國大陸不可用'
-      },
-      {
-        name: 'Apple Maps', en: 'APPLE',
-        url: `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=w`,
-        recommended: false,
-        desc: 'iPhone 內建'
-      }
-    ];
-
-    showMapPickerMenu(options, lat, lng);
+    showMapPickerMenu(mapNavOptions(lat, lng, trvGather.desc || '集合點', 'walk'), lat, lng);
   }
 
   function showMapPickerMenu(options, lat, lng) {
@@ -32766,7 +32784,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
           `).join('')}
         </div>
         <button onclick="document.getElementById('mapPickerMenu').remove();"
-          style="width:100%; margin-top:12px; padding:10px; background:transparent; color:var(--ink-secondary); border:1px solid var(--line); border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em;">取消</button>
+          data-tap style="width:100%; margin-top:12px; padding:14px; background:transparent; color:var(--ink-secondary); border:1px solid var(--line); border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em;">取消</button>
       </div>
     `;
     document.body.appendChild(modal);
