@@ -9083,7 +9083,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.5 · ξ</div>
+    <div>v 14.6 · ξ</div>
   </footer>
 </div>
 
@@ -18092,12 +18092,27 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     if (plan.freq === 'weekly' || plan.freq === 'biweekly') {
       const wd = Number(plan.weekday) || 1;
       const step = plan.freq === 'weekly' ? 7 : 14;
+      // ⚠ 錨點一定要從 plan.startDate 起算，不能從查詢起點起算——
+      //   「每兩週」是單雙週交替，錨點一變，同一個計畫在不同日子打開就會看到不同的日期。
       const anchor = new Date((plan.startDate || start) + 'T00:00:00');
       let guard = 0;
       while (anchor.getDay() !== wd && guard++ < 8) anchor.setDate(anchor.getDate() + 1);
       const d = new Date(anchor);
+      // ⚠ 直接算出要跳幾期，不要從錨點一週一週走過來。
+      //   舊寫法走到第 600 次就停：每週 ＝ 11.5 年、每兩週 ＝ 23 年。
+      //   startDate 比這更早的計畫（例如 2015 年就開始每週扣款），
+      //   迴圈在還沒走到今天之前就用完了 → **回傳空陣列**：
+      //   排程整段消失、「下次扣款」變成「沒有排程」、首頁的漏登記提醒也不會出聲，
+      //   而且畫面上完全看不出來，看起來就像這個計畫不存在。
+      const startMs = new Date(start + 'T00:00:00').getTime();
+      if (startMs > d.getTime()) {
+        const skip = Math.floor(Math.round((startMs - d.getTime()) / 86400000) / step);
+        if (skip > 0) d.setDate(d.getDate() + skip * step);
+      }
+      // 迴圈上限照「這次要查的區間」算，不是寫死的數字——區間再長也不會被無聲截斷
+      const maxLoops = Math.floor(Math.max(0, Math.round((new Date(end + 'T00:00:00') - d.getTime()) / 86400000)) / step) + 4;
       let loops = 0;
-      while (dcaIso(d) <= end && loops++ < 600) {
+      while (dcaIso(d) <= end && loops++ < maxLoops) {
         const iso = dcaIso(d);
         if (iso >= start) out.push(iso);
         d.setDate(d.getDate() + step);
@@ -18165,6 +18180,17 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       });
     });
     return rows.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // 下一次要扣的是哪一筆？
+  //
+  // ⚠ 不能只看未來 60 天。每季（甚至一年一次）的計畫，剛扣完之後下一期是 90～365 天以後，
+  //   用 60 天去找會找不到 → 統計卡寫「下次扣款 —／沒有排程」。
+  //   可是那個計畫明明還在跑，只是下一期比較遠——**「沒有排程」是假話**，
+  //   使用者看到只會以為自己的計畫壞掉了。改成往後找一年半，
+  //   真的找不到（計畫已經跑到 endDate）才說沒有排程。
+  function dcaNextDue(days = 550) {
+    return dcaBuildSchedule(days, 0).filter(r => !r.done)[0] || null;
   }
 
   // ===== 讀寫 =====
@@ -18397,8 +18423,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const pnl = valueSum - costSum;
     const pnlPct = costSum > 0 ? (pnl / costSum * 100) : 0;
     const pnlClass = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat';
-    const sched = dcaBuildSchedule(60, 0).filter(r => !r.done);
-    const next = sched[0];
+    const next = dcaNextDue();
     const overdue = dcaBuildSchedule(0, 90).filter(r => r.overdue).length;
     el.innerHTML = `
       <div class="stat-card">
@@ -18435,9 +18460,14 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     if (!el) return;
     const rows = dcaBuildSchedule(60, 90).filter(r => !r.done).slice(0, 40);
     if (rows.length === 0) {
+      // ⚠ 只寫「未來 60 天內沒有」的話，每季／每年的計畫看起來就像停掉了。
+      //   把真正的下一次講出來，使用者才知道系統還記得這個計畫。
+      const nx = dcaNextDue();
       el.innerHTML = dcaPlans.length === 0 ? '' : `
-        <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:18px; color:var(--ink-tertiary); font-size:12.5px;">
-          未來 60 天內沒有待處理的扣款（或都已登記完畢）。
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:18px; color:var(--ink-tertiary); font-size:12.5px; line-height:1.7;">
+          未來 60 天內沒有待處理的扣款（或都已登記完畢）。${nx
+            ? `<br>下一次是 <strong style="color:var(--ink-secondary);">${escape(nx.date)}</strong>（${escape(nx.plan.symbol)}${nx.plan.name ? ' · ' + escape(nx.plan.name) : ''}），還有 ${nx.diff} 天。`
+            : ''}
         </div>`;
       return;
     }
