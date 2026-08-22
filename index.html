@@ -33131,7 +33131,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     }).join('');
     document.getElementById('budgetSummary').innerHTML = catHtml;
     const bn = document.getElementById('budgetShopNote');
-    if (bn) bn.innerHTML = shopUnbilledHtml('budget');
+    if (bn) bn.innerHTML = shopDupHtml('budget') + shopUnbilledHtml('budget');
 
     // 明細列表
     const sorted = trvExpenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt - a.createdAt));
@@ -33266,7 +33266,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     `).join('');
     document.getElementById('shoppingGrid').innerHTML = html || '<div class="group-empty" style="grid-column:1/-1;">尚無購物記錄 · 點上方「+ 記錄購物」開始</div>';
     const ub = document.getElementById('shopUnbilledBox');
-    if (ub) ub.innerHTML = shopUnbilledHtml('shopping');
+    if (ub) ub.innerHTML = shopDupHtml('shopping') + shopUnbilledHtml('shopping');
   }
   function openShopModal(id) {
     const isEdit = !!id;
@@ -33360,10 +33360,19 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const list = shopUnbilled();
     if (!list.length) { showToast('每一筆都已經記進花費了'); return; }
     const total = list.reduce((s, x) => s + shopSum(x), 0);
-    if (!confirm('把還沒記進花費的 ' + list.length + ' 件購物，一次記成 ' + list.length + ' 筆花費？' + String.fromCharCode(10) +
-      '合計 NT$' + total.toLocaleString() + '，分類都是「購物」。' + String.fromCharCode(10) + String.fromCharCode(10) +
-      '⚠ 如果這幾件你已經在「花費」那邊自己記過一次，' + String.fromCharCode(10) +
-      '　 這樣做會變成同一筆錢算兩次——那就先按取消。')) return;
+    const NL = String.fromCharCode(10);
+    // 先比對「花費那邊是不是已經有金額對得起來的購物」——攔在記下去之前，
+    // 比事後才發現有用；而且能直接指名是哪幾件，不是含糊地叫人自己想
+    const hits = shopBillDupHits(list);
+    const dupMsg = hits.length
+      ? NL + '⚠ 這 ' + hits.length + ' 件在「花費」那邊看起來已經記過一次了：' + NL +
+        hits.map(h => '　· ' + (h.item.name || '購物') + ' NT$' + shopSum(h.item).toLocaleString() +
+          '（花費那筆：' + (h.dup.note || '無備註') + ' · ' + (h.dup.date || '沒填日期') + '）').join(NL) + NL +
+        '　 記下去會變成同一筆錢算兩次。真的是分開的兩次消費才按確定。' + NL
+      : NL + '⚠ 如果這幾件你已經在「花費」那邊自己記過一次，' + NL +
+        '　 這樣做會變成同一筆錢算兩次——那就先按取消。';
+    if (!confirm('把還沒記進花費的 ' + list.length + ' 件購物，一次記成 ' + list.length + ' 筆花費？' + NL +
+      '合計 NT$' + total.toLocaleString() + '，分類都是「購物」。' + NL + dupMsg)) return;
     list.forEach(shopSyncExpense);
     await saveTravelKey(TRAVEL_STORAGE.shopping, trvShopping);
     await saveTravelKey(TRAVEL_STORAGE.expenses, trvExpenses);
@@ -33386,6 +33395,87 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
           ${where === 'budget' ? '<button class="btn btn-sm" data-tap onclick="setTravelTab(\'shopping\')">看購物清單</button>' : ''}
         </div>
       </div>`;
+  }
+
+  // ===== 同一筆錢被記兩次 =====
+  // v13.4 把購物連動進花費時，確認訊息有警告過「已經自己記過就會算兩次」——
+  // 但那只是一句警告：真的發生之後，沒有任何東西看得出來。
+  // 「已用」會默默多算一份（跟 v13.4 少算相反方向，一樣是畫面上完全看不出來的錯）。
+  function expDateClose(a, b) {
+    if (!a || !b) return true;                 // 沒填日期就不要拿日期當否決條件
+    const d = Math.abs((new Date(a + 'T00:00:00') - new Date(b + 'T00:00:00')) / 86400000);
+    return !isFinite(d) || d <= 7;
+  }
+  function shopManualExpenses() {
+    // 「自己記的購物花費」＝ 分類是購物、又不是從購物清單連動過來的
+    return (Array.isArray(trvExpenses) ? trvExpenses : []).filter(e => e.category === '購物' && !e.fromShop);
+  }
+  function shopDupPairs() {
+    const manual = shopManualExpenses();
+    const used = new Set();
+    const out = [];
+    (Array.isArray(trvShopping) ? trvShopping : []).forEach(x => {
+      const linked = shopExpOf(x);
+      if (!linked) return;
+      const amt = shopSum(x);
+      if (!(amt > 0)) return;
+      const hit = manual.find(e => !used.has(e.id) &&
+        Math.abs(Number(e.amount || 0) - amt) < 0.005 && expDateClose(e.date, linked.date));
+      if (hit) { used.add(hit.id); out.push({ item: x, linked, dup: hit }); }
+    });
+    return out;
+  }
+  // 還沒連動的那幾件，按下去之前先比對——攔在記下去之前，比事後才發現有用
+  function shopBillDupHits(list) {
+    const manual = shopManualExpenses();
+    const used = new Set();
+    const hits = [];
+    list.forEach(x => {
+      const amt = shopSum(x);
+      const when = todayISO(x.createdAt ? new Date(x.createdAt) : undefined);
+      const hit = manual.find(e => !used.has(e.id) &&
+        Math.abs(Number(e.amount || 0) - amt) < 0.005 && expDateClose(e.date, when));
+      if (hit) { used.add(hit.id); hits.push({ item: x, dup: hit }); }
+    });
+    return hits;
+  }
+  function shopDupHtml(where) {
+    const pairs = shopDupPairs();
+    if (!pairs.length) return '';
+    const total = pairs.reduce((s, p) => s + Number(p.dup.amount || 0), 0);
+    const lines = pairs.slice(0, 5).map(p =>
+      `<div style="margin-top:4px;">· <strong>${escape(p.item.name || '購物')}</strong> NT$${shopSum(p.item).toLocaleString()}` +
+      `<span style="color:var(--ink-tertiary);">（購物清單一筆、花費那邊又有一筆${p.dup.note ? '「' + escape(String(p.dup.note).slice(0, 14)) + '」' : ''}）</span></div>`).join('');
+    return `<div style="border:1px solid rgba(201,123,106,0.55); border-left-width:3px; border-radius:4px;
+        padding:12px 14px; margin-bottom:14px; font-size:12.5px; color:var(--ink-secondary); line-height:1.85;">
+        <strong style="color:var(--danger);">有 ${pairs.length} 筆錢看起來被記了兩次 · 多算了 NT$${total.toLocaleString()}</strong><br>
+        ${lines}${pairs.length > 5 ? `<div style="margin-top:4px; color:var(--ink-tertiary);">…還有 ${pairs.length - 5} 筆</div>` : ''}
+        <div style="margin-top:7px;">${where === 'budget'
+          ? '所以上面的「已用」<strong>比你實際花的還多</strong>。'
+          : '這樣預算的「已用」會<strong>比你實際花的還多</strong>。'}</div>
+        <div style="margin-top:5px; color:var(--ink-tertiary);">如果它們其實是<strong>分開的兩次消費</strong>（買了兩個一樣的東西），忽略這一段就好。</div>
+        <div style="margin-top:9px;">
+          <button class="btn btn-sm" data-tap onclick="shopRemoveDupExpenses()">↳ 刪掉自己記的那 ${pairs.length} 筆</button>
+          ${where === 'shopping' ? '<button class="btn btn-sm" data-tap onclick="setTravelTab(\'budget\')">看花費明細</button>' : ''}
+        </div>
+      </div>`;
+  }
+  async function shopRemoveDupExpenses() {
+    const pairs = shopDupPairs();
+    if (!pairs.length) { showToast('沒有重複的花費'); return; }
+    const NL = String.fromCharCode(10);
+    const total = pairs.reduce((s, p) => s + Number(p.dup.amount || 0), 0);
+    const lines = pairs.map(p => '　· ' + (p.item.name || '購物') + ' NT$' + shopSum(p.item).toLocaleString() +
+      (p.dup.note ? '（花費那筆寫「' + p.dup.note + '」）' : '')).join(NL);
+    if (!confirm('要刪掉下面這 ' + pairs.length + ' 筆「你自己在花費那邊記的」嗎？共 NT$' + total.toLocaleString() + NL + NL +
+      lines + NL + NL +
+      '購物清單連動過來的那幾筆會留著，錢不會消失，只是不再算兩次。' + NL + NL +
+      '⚠ 如果它們其實是分開的兩次消費，請按取消。')) return;
+    const ids = new Set(pairs.map(p => p.dup.id));
+    trvExpenses = trvExpenses.filter(e => !ids.has(e.id));
+    await saveTravelKey(TRAVEL_STORAGE.expenses, trvExpenses);
+    renderShopping(); renderBudget(); renderHomeStats();
+    showToast('已刪掉 ' + pairs.length + ' 筆重複的花費，共 NT$' + total.toLocaleString());
   }
 
   async function saveShopItem(e) {
