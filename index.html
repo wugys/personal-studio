@@ -9057,7 +9057,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.1 · ξ</div>
+    <div>v 14.2 · ξ</div>
   </footer>
 </div>
 
@@ -9509,6 +9509,41 @@ alter publication supabase_realtime add table party_locations;</pre>
     showToast(`🧹 已釋放約 ${storageSizeLabel(freed)}`);
   }
 
+  // 版本升級時，把「新版的預設模組」跟「使用者現在這一份」逐個欄位合併。
+  // ⚠ 舊寫法是 modules = [...DEFAULT_MODULES, ...使用者自建的]，於是使用者對內建模組
+  //   做過的每一件事——拖到別的群組、改名字、換圖示、排順序——在我每次發新版
+  //   （升 CURRENT_VERSION）時全部被打回原樣，而且沒有任何提示，他也不知道是誰動的。
+  //   實測：把「台股個股」拖進自建的「我的最愛」＋把「AI API 收藏館」改名改圖示，
+  //   升一次版本三件事全部復原，那個群組還變成只剩自訂模組的空殼。
+  // ⚠ 代價講清楚：name / nameEn / icon / desc / groupId / order 一律以使用者那一份為準，
+  //   所以我以後如果改了某個內建模組的「預設名字」，老使用者不會自動看到新名字——
+  //   真要改就得另外寫一次性遷移。把使用者排好的版面打亂，代價比這個大得多。
+  //   status / target / builtin 則一律以新版為準（那是程式面的東西，不是使用者排的）。
+  function mergeDefaultModules(rawOld) {
+    let old = [];
+    try { old = rawOld ? JSON.parse(rawOld) : []; } catch (e) { old = []; }
+    if (!Array.isArray(old)) old = [];
+    const oldById = new Map(old.map(x => [x && x.id, x]));
+    const added = [];
+    const keep = (prev, def, k) => (prev[k] !== undefined && prev[k] !== null && prev[k] !== '') ? prev[k] : def[k];
+    const merged = DEFAULT_MODULES.map(d => {
+      const prev = oldById.get(d.id);
+      if (!prev) { added.push(d); return { ...d }; }
+      return {
+        ...d,
+        name: keep(prev, d, 'name'),
+        nameEn: keep(prev, d, 'nameEn'),
+        icon: keep(prev, d, 'icon'),
+        desc: prev.desc !== undefined ? prev.desc : d.desc,   // 使用者清空說明也算數
+        groupId: prev.groupId !== undefined ? prev.groupId : d.groupId,  // null＝他刻意設成未分組
+        order: typeof prev.order === 'number' ? prev.order : d.order
+      };
+    });
+    const defaultIds = new Set(DEFAULT_MODULES.map(d => d.id));
+    const userCustom = old.filter(x => x && x.id && !defaultIds.has(x.id) && !x.builtin);
+    return { modules: [...merged, ...userCustom], added };
+  }
+
   async function loadAll() {
     setSyncStatus('syncing', '◌ 同步中...');
     try {
@@ -9520,22 +9555,36 @@ alter publication supabase_realtime add table party_locations;</pre>
       const CURRENT_VERSION = '18';
 
       if (!m || versionStored !== CURRENT_VERSION) {
-        // 首次或舊版本：合併現有自訂模組 + 新版預設
-        let userCustom = [];
-        if (m) {
-          try {
-            const old = JSON.parse(m);
-            // 保留使用者自己新增的模組（不在新版預設清單裡的）
-            const defaultIds = new Set(DEFAULT_MODULES.map(d => d.id));
-            userCustom = old.filter(x => !defaultIds.has(x.id) && !x.builtin);
-          } catch (e) {}
+        // 首次或舊版本：逐個欄位合併，不要整個蓋掉（見 mergeDefaultModules 的說明）
+        const mm = mergeDefaultModules(m);
+        modules = mm.modules;
+        // 新模組指到的群組如果不在使用者那一份裡，補上那一個——
+        // 不補的話它會掉進「未分組」，看起來像新模組根本沒出現。
+        // ⚠ 只補新模組真的需要的那一個，不整份還原：使用者自己刪掉的群組是他的決定，
+        //   不該偷偷長回來（v12.9 的教訓）。
+        let groupsChanged = false;
+        for (const d of mm.added) {
+          if (!d.groupId || groups.find(x => x.id === d.groupId)) continue;
+          const dg = DEFAULT_GROUPS.find(x => x.id === d.groupId);
+          if (dg) { groups.push({ ...dg }); groupsChanged = true; }
         }
-        modules = [...DEFAULT_MODULES.slice(), ...userCustom];
+        if (groupsChanged) await writeKey(STORAGE.groups, JSON.stringify(groups));
         await writeKey(STORAGE.modules, JSON.stringify(modules));
         await writeKey(STORAGE.modulesVersion, CURRENT_VERSION);
+        // 有新模組就講一聲——不然使用者根本不知道多了什麼（首次安裝不用講）
+        if (m && mm.added.length) {
+          const names = mm.added.map(d => d.name);
+          setTimeout(() => showToast('這次更新多了 ' + names.length + ' 個新模組：'
+            + names.slice(0, 3).join('、') + (names.length > 3 ? ' 等' : '')), 1200);
+        }
       } else {
         modules = JSON.parse(m);
-        if (!modules.find(x => x.id === 'm_apis')) modules.push(DEFAULT_MODULES[0]);
+        // 預設模組少了就補回來（storage 被動過、備份還原不完整時會發生）。
+        // ⚠ 原本只補 m_apis，而且是用 DEFAULT_MODULES[0] 抓——只要哪天重排這個陣列的順序，
+        //   補進去的就會是別的模組。改成用 id 找，而且 20 個都檢查。
+        for (const d of DEFAULT_MODULES) {
+          if (!modules.find(x => x.id === d.id)) modules.push({ ...d });
+        }
       }
 
       const a = await readKey(STORAGE.apis);
@@ -10848,6 +10897,9 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   function enterGroup(groupId) {
+    // 群組已經被刪掉了（按上一頁、或舊的深連結）就退回總覽，
+    // 不要停在一個空殼畫面讓人以為東西不見了
+    if (groupId && !groups.find(g => g.id === groupId)) { backToGroupsOverview(); return; }
     dashLevel = 'group';
     currentGroupId = groupId;
     document.body.classList.toggle('dense-page', groupId === 'g_invest');
@@ -10948,16 +11000,71 @@ alter publication supabase_realtime add table party_locations;</pre>
       : '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">◌</span><h3>還沒有模組</h3><p>點擊右上「+ 新模組」開始建立</p></div>';
   }
 
+  // 模組卡片下緣那一行「有幾筆」。
+  // ⚠ 原本是：不是 m_apis 的一律寫「籌備中」。20 個模組全部完成之後那句話就是假的，
+  //   而且同一張卡片右上角還寫著「● ACTIVE」——自己打自己的臉。
+  //   投資中心因為 dense-group 把 footer 藏起來所以看不到，
+  //   但桌機打開「生活規劃」，旅遊規劃與協會兩張卡都明白寫著「籌備中」（實測）。
+  const MODULE_COUNT_KEYS = {
+    m_tw_stock: ['tw_holdings_v1', '檔持股'],
+    m_us_stock: ['us_holdings_v1', '檔持股'],
+    m_etf_market: ['mketf_holdings_v1', '檔'],
+    m_etf_dividend: ['hdetf_holdings_v1', '檔'],
+    m_active_fund: ['fund_holdings_v1', '檔'],
+    m_bond: ['bond_holdings_v1', '檔'],
+    m_crypto: ['crypto_holdings_v1', '種'],
+    m_metals: ['metal_holdings_v1', '項'],
+    m_forex: ['fxdep_holdings_v1', '筆'],
+    m_rental: ['re_rental_props_v1', '間'],
+    m_commercial: ['re_com_props_v1', '間'],
+    m_dca: ['dca_plans_v1', '個計畫'],
+    m_goals: ['goals_v1', '個目標'],
+    m_assoc: ['assoc_members_v1', '位會員']
+  };
+  // 讀不到 / 壞掉就回 null，讓卡片什麼都不寫——不要顯示 0 讓人以為真的是空的。
+  function moduleRowCount(key) {
+    try {
+      const v = localStorage.getItem(key);
+      if (!v) return 0;
+      const a = JSON.parse(v);
+      return Array.isArray(a) ? a.length : null;
+    } catch (e) { return null; }
+  }
+  function moduleStatText(m) {
+    if (m.status !== 'active') return '籌備中';
+    if (m.id === 'm_apis') return `<strong class="api-count-display">${apis.length}</strong> 項收藏`;
+    if (m.id === 'm_travel') {
+      try {
+        const custom = moduleRowCount('travel_custom_trips_v1') || 0;
+        const n = Object.keys(ITINERARIES).length
+                + (typeof EXTERNAL_TRIPS !== 'undefined' ? EXTERNAL_TRIPS.length : 0) + custom;
+        return n > 0 ? `<strong>${n}</strong> 趟行程` : '';
+      } catch (e) { return ''; }
+    }
+    if (m.id === 'm_double' || m.id === 'm_leverage') {
+      try {
+        const raw = localStorage.getItem(OPP_STORAGE);
+        const all = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(all)) return '';
+        const want = m.id === 'm_double' ? 'double' : 'leverage';
+        return `<strong>${all.filter(o => o && o.type === want).length}</strong> 個機會`;
+      } catch (e) { return ''; }
+    }
+    const cfg = MODULE_COUNT_KEYS[m.id];
+    if (!cfg) return '';   // 現金流儀表板 / 資產配置分析沒有自己的資料，不硬湊
+    const c = moduleRowCount(cfg[0]);
+    return c === null ? '' : `<strong>${c}</strong> ${cfg[1]}`;
+  }
+
   function moduleCardHtml(m, showGroupTag = false) {
     const statusBadge = m.status === 'active'
       ? '<span class="module-status status-active">● ACTIVE</span>'
       : '<span class="module-status status-soon">即將推出</span>';
     const group = groups.find(g => g.id === m.groupId);
+    const statText = moduleStatText(m);
     const footerLeft = (showGroupTag && group)
       ? `<span class="module-stat">${escape(group.emoji)} ${escape(group.name)}</span>`
-      : (m.id === 'm_apis'
-          ? `<span class="module-stat"><strong class="api-count-display">${apis.length}</strong> 項收藏</span>`
-          : '<span class="module-stat">籌備中</span>');
+      : (statText ? `<span class="module-stat">${statText}</span>` : '<span class="module-stat"></span>');
 
     return `
       <div class="module" draggable="true" data-module-id="${m.id}"
@@ -11082,9 +11189,17 @@ alter publication supabase_realtime add table party_locations;</pre>
     modules.forEach(m => { if (m.groupId === id) m.groupId = null; });
     await saveGroups();
     await saveModules();
-    renderDashboard();
     closeGroupModal();
-    showToast('群組已刪除');
+    // ⚠ 如果刪的正好是現在站著的那個群組，不退回總覽的話畫面會停在
+    //   「◌ 未分組 · 0 項 · 這個群組還沒有模組」——使用者上一秒才被告訴
+    //   「模組不會被刪除」，下一秒看到 0 項，會以為模組真的被刪光了（實測）。
+    if (dashLevel === 'group' && currentGroupId === id) {
+      backToGroupsOverview();
+      showToast(inGroup > 0 ? `群組已刪除，裡面的 ${inGroup} 個模組移到「未分組」` : '群組已刪除');
+      return;
+    }
+    renderDashboard();
+    showToast(inGroup > 0 ? `群組已刪除，裡面的 ${inGroup} 個模組移到「未分組」` : '群組已刪除');
   }
 
   function openModuleModal(id) {
