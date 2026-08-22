@@ -9083,7 +9083,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.4 · ξ</div>
+    <div>v 14.5 · ξ</div>
   </footer>
 </div>
 
@@ -10538,13 +10538,19 @@ alter publication supabase_realtime add table party_locations;</pre>
     try {
       const cfg = await readJson('alloc_config_v1', null);
       const rows = await cfCompute();
-      const byKey = {}; rows.forEach(r => byKey[r.key] = r.value);
-      const fundBondish = rows.reduce((a, r) => a + (Number(r.bondish) || 0), 0);
-      const c = { cash: 0, bond: 0, realEstate: 0, otherAlt: 0, tEquity: 60, tBondCash: 10, tAlt: 30, ...(cfg || {}) };
-      const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0) + (byKey.mketf || 0) + (byKey.fund || 0) - fundBondish;
-      const alt = CF_ALT_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + (Number(c.realEstate) || 0) + (Number(c.otherAlt) || 0);
-      const bondCash = CF_BOND_CASH_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + fundBondish + (Number(c.cash) || 0) + (Number(c.bond) || 0);
-      const total = equity + bondCash + alt;
+      // ⚠ 直接用 allocSplit()，不要在這裡重寫一份算式——
+      //   兩邊分岔的話會出現「首頁說偏離、點進去說沒偏離」（v10.9 的教訓）。
+      const A = allocSplit(rows, cfg);
+      const c = A.cfg, equity = A.equity, alt = A.alt, bondCash = A.bondCash, total = A.total;
+      // 手動填的錢跟模組重複計算的話，下面算出來的百分比本來就是歪的 → 先講這件事
+      const dupHits = allocDupHits(rows, cfg);
+      if (dupHits.length) {
+        push('warn', '◐',
+          `資產配置裡手動填的 <strong>${escape(dupHits.map(h => h.field).join('、'))}</strong>，` +
+          `模組裡已經自動帶進來了——同一筆錢可能<strong>被算了兩次</strong>，` +
+          `總資產與再平衡建議都會跟著錯`,
+          'allocationView', 'allocdup');
+      }
       // 資產太小的時候談配置沒有意義（差幾個百分點只是幾千塊）
       if (total > 100000) {
         const cats = [
@@ -25880,6 +25886,29 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         reStale[0].view, reStale.length);
     }
 
+    // 13) 資產配置裡「手動填的錢」跟模組自動帶進來的重複計算 → 總資產多算、再平衡建議跟著錯
+    //     v6.6 做那一頁時還沒有債券模組（v7.0）與不動產模組（v7.2），當時只能手動填；
+    //     模組做出來、資料建進去之後，兩邊會被加在一起，而畫面上完全看不出來。
+    //     ⚠ 只提醒不自動改：真的可能有模組外的公司債，或填的是自住宅。
+    try {
+      const allocCfg = await readJson(ALLOC_STORAGE, null);
+      const allocRows = await cfCompute();
+      const hits = allocDupHits(allocRows, allocCfg);
+      if (hits.length) {
+        const over = hits.reduce((a, h) => a + h.manual, 0);
+        add('warn', `資產配置有 ${hits.length} 項手動輸入，可能跟模組重複計算`,
+          hits.map(h =>
+            `手動填的 <strong>${escape(h.field)} ${cfMoney(h.manual)}</strong>，` +
+            `而「${escape(h.mod)}」模組已經自動帶進來 <strong>${cfMoney(h.auto)}</strong>`
+          ).join('<br>') +
+          `<br><br>如果是同一筆錢，總資產<strong>多算了 ${cfMoney(over)}</strong>，` +
+          `而且三個格子的百分比會一起算歪——「建議加碼／減碼多少錢」跟著錯。<br>` +
+          `到「資產配置分析」把那格改成 <strong>0</strong> 再按儲存就好（模組那邊的資料不會動）。<br>` +
+          `⚠ 如果你手上真的有<strong>模組外的</strong>債券（公司債、儲蓄險）或不動產（自住宅），那本來就該填，這條可以直接忽略。`,
+          'allocationView', hits.length);
+      }
+    } catch (e) {}
+
     F.sort((a, b) => HEALTH_LEVEL[a.level] - HEALTH_LEVEL[b.level]);
     return F;
   }
@@ -28374,17 +28403,104 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   // 資產配置分析 · Allocation（60-10-30，重用 cfCompute + 匯率）
   // ============================================================
   const ALLOC_STORAGE = 'alloc_config_v1';
-  let allocConfig = { cash: 0, bond: 0, realEstate: 0, otherAlt: 0, tEquity: 60, tBondCash: 10, tAlt: 30 };
+  const ALLOC_DEFAULT = { cash: 0, bond: 0, realEstate: 0, otherAlt: 0, tEquity: 60, tBondCash: 10, tAlt: 30 };
+  let allocConfig = { ...ALLOC_DEFAULT };
+
+  // ⚠ 這段算式「首頁的配置偏離提醒」也要用。**不要各寫一份**——
+  //   兩邊分岔的話會出現「首頁說偏離、點進去說沒偏離」，比不提醒更糟（v10.9 的教訓）。
+  function allocSplit(rows, cfg) {
+    const c = { ...ALLOC_DEFAULT, ...(cfg || {}) };
+    const byKey = {}; (rows || []).forEach(r => byKey[r.key] = r.value);
+    // 基金模組中屬於債券型／貨幣型的部分，要從股票那格挪到債券／現金那格
+    const fundBondish = (rows || []).reduce((a, r) => a + (Number(r.bondish) || 0), 0);
+    const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0) + (byKey.mketf || 0) + (byKey.fund || 0) - fundBondish;
+    // 加密貨幣 + 貴金屬 + 不動產（用淨值，不是市價——貸款那部分不是你的）自動帶入
+    const altAuto = CF_ALT_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0);
+    const alt = altAuto + (Number(c.realEstate) || 0) + (Number(c.otherAlt) || 0);
+    // 債券模組 + 外幣存款模組自動帶入，再加手動填的現金／其他債券
+    const bondCashAuto = CF_BOND_CASH_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + fundBondish;
+    const bondCash = bondCashAuto + (Number(c.cash) || 0) + (Number(c.bond) || 0);
+    return {
+      cfg: c, byKey, fundBondish, equity, bondCash, alt,
+      total: equity + bondCash + alt,
+      autoBond: byKey.bond || 0,                              // 債券模組自己的現值
+      autoFxdep: byKey.fxdep || 0,
+      autoRe: (byKey.rental || 0) + (byKey.commercial || 0),  // 兩個不動產模組的淨值
+      autoOtherAlt: (byKey.crypto || 0) + (byKey.metal || 0),
+      altAuto, bondCashAuto
+    };
+  }
+
+  // 手動填的錢，跟模組裡已經自動帶進來的那一筆重複了嗎？
+  //
+  // 為什麼會發生：v6.6 做這一頁的時候還沒有債券模組（v7.0 才有）、也還沒有不動產模組（v7.2 才有），
+  //   所以當時只能手動填。等模組做出來、使用者把資料建進去之後，**兩邊會被加在一起**，
+  //   而畫面上完全看不出來——它只是顯示一個比較大的總資產，
+  //   並且把三個格子的百分比全部算歪，於是「建議加碼／減碼多少錢」也跟著錯。
+  //
+  // ⚠ 只挑「手動欄位有一個同名模組」的兩項來看（債券、不動產）。
+  //   現金、其他另類沒有對應模組，硬要比對只會誤報——
+  //   會亂叫的保護比沒有保護更糟，它會訓練使用者忽略它（v12.1b 的教訓）。
+  // ⚠ 一律只提醒、把兩個數字都講出來，不自動改：
+  //   使用者手上真的可能有模組外的公司債，或填的是自住宅（模組裡只放出租與商業）。
+  function allocDupHits(rows, cfg) {
+    const s = allocSplit(rows, cfg);
+    const hits = [];
+    if ((Number(s.cfg.bond) || 0) > 0 && s.autoBond > 0) {
+      hits.push({
+        field: '債券 / 債券ETF', manual: Number(s.cfg.bond) || 0, auto: s.autoBond,
+        mod: '債券 · 債券 ETF', view: 'bondView',
+        ok: '如果你手上真的有<strong>模組外的債券</strong>（例如公司債、儲蓄險），那就是對的，忽略這一段就好。'
+      });
+    }
+    if ((Number(s.cfg.realEstate) || 0) > 0 && s.autoRe > 0) {
+      hits.push({
+        field: '不動產', manual: Number(s.cfg.realEstate) || 0, auto: s.autoRe,
+        mod: '出租 ＋ 商業不動產', view: 'rentalView',
+        ok: '如果你填的是<strong>自住宅</strong>（模組裡只放出租與商業），那就是對的，忽略這一段就好。'
+      });
+    }
+    return hits;
+  }
+
+  function allocDupHtml(hits) {
+    if (!hits.length) return '';
+    const over = hits.reduce((a, h) => a + h.manual, 0);
+    return `
+      <div style="background:rgba(201,123,106,0.10); border:1px solid var(--danger); border-radius:6px; padding:16px; margin-bottom:20px;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--danger); margin-bottom:10px;">⚠ 這些錢可能被算了兩次</div>
+        ${hits.map(h => `
+          <div style="font-size:12.5px; line-height:1.7; margin-bottom:10px;">
+            你在下面手動填了 <strong>${escape(h.field)} ${cfMoney(h.manual)}</strong>，
+            但「${escape(h.mod)}」模組裡<strong>已經自動帶進來 ${cfMoney(h.auto)}</strong>了。<br>
+            如果那是同一筆錢，總資產就<strong>多算了 ${cfMoney(h.manual)}</strong>，
+            三個格子的百分比會一起算歪，下面的「建議加碼／減碼多少錢」也會跟著錯。<br>
+            <span style="color:var(--ink-secondary);">→ 是同一筆的話，把下面那格<strong>改成 0</strong> 再按儲存就好（模組那邊的資料不會動）。</span><br>
+            <span style="color:var(--ink-tertiary);">${h.ok}</span>
+          </div>`).join('')}
+        <div style="font-size:11px; color:var(--ink-tertiary); border-top:1px solid var(--line); padding-top:8px;">
+          目前總資產裡有 ${cfMoney(over)} 是手動填的，程式沒有辦法自己判斷它跟模組是不是同一筆，所以只提醒、不會替你改。
+        </div>
+      </div>`;
+  }
+
   async function saveAllocConfig() { await writeKey(ALLOC_STORAGE, JSON.stringify(allocConfig)); }
   async function loadAllocation() {
-    try { const v = await readKey(ALLOC_STORAGE); if (v) allocConfig = { ...allocConfig, ...JSON.parse(v) }; } catch (e) {}
+    // ⚠ storage 可能被備份還原／雲端同步弄成別的形狀（陣列、字串、null）。
+    //   直接展開的話會生出一堆 "0"/"1" 這種索引鍵，數字欄位變 undefined → 畫面顯示 NaN。
+    try {
+      const v = await readKey(ALLOC_STORAGE);
+      const o = v ? JSON.parse(v) : null;
+      allocConfig = (o && typeof o === 'object' && !Array.isArray(o))
+        ? { ...ALLOC_DEFAULT, ...o } : { ...ALLOC_DEFAULT };
+    } catch (e) { allocConfig = { ...ALLOC_DEFAULT }; }
     await loadCashflowFx();
     if (!cashflowFx.updatedAt) await refreshCashflowFx();
     const rows = await cfCompute();
     renderAllocation(rows);
   }
   function applyAllocInputs() {
-    const g = (id) => Number(document.getElementById(id).value) || 0;
+    const g = (id) => Number(document.getElementById(id)?.value) || 0;
     allocConfig.cash = g('allocCash'); allocConfig.bond = g('allocBond');
     allocConfig.realEstate = g('allocRe'); allocConfig.otherAlt = g('allocOther');
     allocConfig.tEquity = g('allocTEq'); allocConfig.tBondCash = g('allocTBc'); allocConfig.tAlt = g('allocTAlt');
@@ -28397,17 +28513,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     saveAllocConfig(); loadAllocation(); showToast('已套用 60-10-30 目標');
   }
   function renderAllocation(rows) {
-    const byKey = {}; rows.forEach(r => byKey[r.key] = r.value);
-    // 基金模組中屬於債券型／貨幣型的部分，要從股票那格挪到債券／現金那格
-    const fundBondish = rows.reduce((a, r) => a + (Number(r.bondish) || 0), 0);
-    const equity = (byKey.tw || 0) + (byKey.us || 0) + (byKey.etf || 0) + (byKey.mketf || 0) + (byKey.fund || 0) - fundBondish;
-    // 加密貨幣 + 貴金屬 + 不動產（用淨值，不是市價——貸款那部分不是你的）自動帶入
-    const altAuto = CF_ALT_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0);
-    const alt = altAuto + (Number(allocConfig.realEstate) || 0) + (Number(allocConfig.otherAlt) || 0);
-    // 債券模組 + 外幣存款模組自動帶入，再加手動填的現金／其他債券
-    const bondCashAuto = CF_BOND_CASH_KEYS.reduce((a, k) => a + (byKey[k] || 0), 0) + fundBondish;
-    const bondCash = bondCashAuto + (Number(allocConfig.cash) || 0) + (Number(allocConfig.bond) || 0);
-    const total = equity + bondCash + alt;
+    const S = allocSplit(rows, allocConfig);
+    const { equity, bondCash, alt, total } = S;
+    const dupHits = allocDupHits(rows, allocConfig);
     const cats = [
       { name: '公開市場股票', en: 'EQUITIES', color: '#d4a574', value: equity, target: Number(allocConfig.tEquity) || 0, note: '台股 + 美股 + ETF + 股票型基金（自動）' },
       { name: '債券／現金', en: 'BONDS · CASH', color: '#9aa06a', value: bondCash, target: Number(allocConfig.tBondCash) || 0, note: '債券 + 外幣存款 + 債券型基金（自動）+ 手動現金' },
@@ -28424,8 +28532,11 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       const a = total > 0 ? c.value / total * 100 : 0;
       const dev = a - c.target;
       const devNT = (c.target - a) / 100 * total; // 需調整金額（正=加碼）
-      const advCls = dev > 2 ? 'loss' : dev < -2 ? 'profit' : 'flat';
-      const adv = Math.abs(dev) < 2 ? '接近目標 ✓'
+      const advCls = total <= 0 ? 'flat' : dev > 2 ? 'loss' : dev < -2 ? 'profit' : 'flat';
+      // ⚠ 總資產是 0 的時候，devNT 一定是 0 →「低於目標 60.0% → 建議加碼 NT$0」
+      //   這句話自己打自己的臉（叫你加碼，又說加碼 0 元），新使用者第一次打開就看到三次。
+      const adv = total <= 0 ? '還沒有資料 · 到各模組建立持股，或在下面手動填'
+        : Math.abs(dev) < 2 ? '接近目標 ✓'
         : dev < 0 ? `低於目標 ${(-dev).toFixed(1)}% → 建議加碼 ${cfMoney(devNT)}`
         : `高於目標 ${dev.toFixed(1)}% → 建議減碼 ${cfMoney(-devNT)}`;
       return `
@@ -28441,8 +28552,20 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
           <div class="${advCls}" style="font-family:var(--mono); font-size:11px; margin-top:4px;">${adv}</div>
         </div>`;
     }).join('');
+    // 手動欄位：每一格都寫出「模組已經自動帶進來多少」，
+    // 使用者才不會把同一筆錢再填一次（這是 v14.5 之前重複計算的根源）。
+    const autoHint = (n, what) => n > 0
+      ? `<div style="font-family:var(--mono); font-size:9.5px; color:var(--accent-warm); margin-top:4px; line-height:1.4;">${escape(what)}已自動帶入 ${cfMoney(n)}<br>這格只填模組以外的</div>`
+      : `<div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-top:4px;">模組裡目前沒有資料</div>`;
+    const manualFields = [
+      ['allocCash', '現金 / 活存', allocConfig.cash, S.autoFxdep, '外幣存款模組'],
+      ['allocBond', '債券 / 債券ETF（模組外的）', allocConfig.bond, S.autoBond, '債券模組'],
+      ['allocRe', '不動產（模組外的，例如自住宅）', allocConfig.realEstate, S.autoRe, '出租＋商業不動產模組'],
+      ['allocOther', '其他另類', allocConfig.otherAlt, S.autoOtherAlt, '加密＋貴金屬模組']
+    ];
     const bodyEl = document.getElementById('allocBody');
     if (bodyEl) bodyEl.innerHTML = `
+      ${allocDupHtml(dupHits)}
       <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; margin-bottom:20px;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px;">
           <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">ACTUAL vs TARGET · 白線＝目標</div>
@@ -28454,8 +28577,8 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px;">
         <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:14px;">手動輸入 · 未在模組中的資產（台幣）</div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-bottom:16px;">
-          ${[['allocCash', '現金 / 活存', allocConfig.cash], ['allocBond', '債券 / 債券ETF', allocConfig.bond], ['allocRe', '不動產（模組外的，例如自住宅）', allocConfig.realEstate], ['allocOther', '其他另類', allocConfig.otherAlt]].map(([id, label, val]) => `
-            <div><label class="form-label">${label}</label><input type="number" id="${id}" class="form-input" value="${Number(val) || 0}" style="font-family:var(--mono);"></div>`).join('')}
+          ${manualFields.map(([id, label, val, auto, what]) => `
+            <div><label class="form-label">${label}</label><input type="number" id="${id}" class="form-input" value="${Number(val) || 0}" style="font-family:var(--mono);">${autoHint(auto, what)}</div>`).join('')}
         </div>
         <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:10px;">目標比例 %（合計建議 100）</div>
         <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
