@@ -29736,6 +29736,7 @@ ${baseSchema}
         <button class="btn btn-sm" data-tap onclick="setTravelTab('gather')">⚑ 點名</button>
         <button class="btn btn-sm" data-tap onclick="setTravelTab('timeline')">✦ 完整行程</button>
         <button class="btn btn-sm" data-tap onclick="enterFieldMode()">🔦 現場模式</button>
+        <button class="btn btn-sm" data-tap onclick="copyTodayBrief()">📋 今天的重點</button>
         ${delayChip}
       </div>`;
 
@@ -30449,7 +30450,8 @@ ${baseSchema}
     </div>`;
 
     return gatherCard + nowCard + btns +
-      `<div class="fm-note">現場模式只留最要緊的三件事。要記帳、看完整行程、改團員資料，請按右上角<strong>離開現場模式</strong>。</div>`;
+      `<button class="fm-back" data-tap onclick="copyTodayBrief()">📋 複製今天的重點（貼 LINE 群）</button>
+       <div class="fm-note">現場模式只留最要緊的三件事。要記帳、看完整行程、改團員資料，請按右上角<strong>離開現場模式</strong>。</div>`;
   }
   function fmSosSub() {
     const s = sosNorm(), co = sosCountry(), c = s.c || {};
@@ -30567,6 +30569,70 @@ ${baseSchema}
       ${missing.length ? `<div class="fm-note">還有 <strong>${escape(missing.join('、'))}</strong> 沒填電話。
         現場模式不做設定；離開之後到「🆘 狀況」分頁補上，這裡就會多幾顆可以直接按的按鈕。</div>` : ''}` + fmBack();
   }
+  // ===== 今天的重點（一段可以貼 LINE 群、存下來離線看的純文字）=====
+  // CAUTION 全部從既有資料生成，沒填的就不寫——寧可少一行，也不要編一個電話號碼出來。
+  //   這是給「沒訊號、或手機沒電只能看別人截圖」的情況用的，寫錯比沒有更糟。
+  function todayBriefText() {
+    const d = trvTodayDay();
+    if (!d) return null;
+    const L = [];
+    const push = s => L.push(s);
+    push(`【第 ${d.day} 天 · ${d.date}（${d.weekday || ''}）】${d.title || ''}`);
+    if (d.subtitle) push(d.subtitle);
+    const delay = trvDelayOf(d.date);
+    if (delay) push(`※ 今天整團${delay > 0 ? '延後' : '提前'} ${Math.abs(delay)} 分鐘（下面已經是調整後的時間）`);
+
+    push('');
+    push('── 今天的行程 ──');
+    d.spots.forEach(s => push(`${trvSpotTimeText(d.date, s.time)}  ${s.name}`));
+
+    push('');
+    push('── 集合 ──');
+    if (trvGather && trvGather.date === d.date && trvGather.time) {
+      push(`${trvGather.time}  ${trvGather.desc || '集合點'}`);
+    } else {
+      push('今天還沒設定集合時間');
+    }
+
+    const da = dayAlt(d);
+    if (da.max != null && altLevel(da.max) > 0) {
+      push('');
+      push(`── 今天最高 ${altText(da.max)}（${da.maxName}）──`);
+      push(altLevel(da.max) === 2
+        ? '走路放慢一半、不要跑、不要提重物，小口喝水。頭痛想吐就停下來說出來，不要忍。'
+        : '走慢一點、多喝水，不舒服就講。');
+    }
+
+    // 電話：使用者填過的優先，沒填的整行不出現
+    const s = sosNorm(), co = sosCountry(), c = s.c || {};
+    const tel = [];
+    if (c.guidePhone) tel.push(`領隊${c.guideName ? ' ' + c.guideName : ''}  ${c.guidePhone}`);
+    if (c.localPhone) tel.push(`當地地陪${c.localName ? ' ' + c.localName : ''}  ${c.localPhone}`);
+    if (c.insurerPhone) tel.push(`保險 24 小時${c.insurerName ? ' ' + c.insurerName : ''}  ${c.insurerPhone}`);
+    if (c.embassyPhone) tel.push(`${c.embassyName || '駐外館處'}  ${c.embassyPhone}`);
+    if (co) tel.push(`報警 ${co.police}　救護車 ${co.amb}${co.fire && co.fire !== co.amb ? '　火警 ' + co.fire : ''}（${co.name}）`);
+    tel.push(`外交部急難救助  ${SOS_MOFA.paid}`);
+    push('');
+    push('── 電話 ──');
+    tel.forEach(push);
+
+    // 住宿：使用者填的飯店優先，沒填就用行程上的
+    const hotelSpot = d.spots.find(x => x.type === '住宿');
+    const hotelLine = c.hotelName
+      ? `${c.hotelName}${c.hotelAddr ? '　' + c.hotelAddr : ''}${c.hotelPhone ? '　' + c.hotelPhone : ''}`
+      : (hotelSpot ? hotelSpot.name : '');
+    if (hotelLine) { push(''); push('── 今晚住 ──'); push(hotelLine); }
+
+    push('');
+    push('（把這段存起來，沒訊號的時候也看得到）');
+    return L.join(String.fromCharCode(10));
+  }
+  function copyTodayBrief() {
+    const txt = todayBriefText();
+    if (!txt) { showToast('今天不在行程表上，沒有今天的重點可以複製'); return; }
+    trvCopy(txt, '已複製今天的重點 · 可以貼到 LINE 群了');
+  }
+
   function trvCopy(txt, okMsg) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(() => showToast(okMsg)).catch(() => showToast('複製失敗，請手動選取'));
