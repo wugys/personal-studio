@@ -7836,16 +7836,17 @@
         <div class="budget-bar"><div class="budget-bar-fill" id="budgetBarFill" style="width:0%"></div></div>
         <div class="budget-labels">
           <span>已用 NT$<span id="budgetUsed">0</span></span>
-          <span>剩餘 NT$<span id="budgetRemaining">0</span> / NT$<span id="budgetTotal">0</span></span>
+          <span id="budgetRemainLabel">剩餘 NT$<span id="budgetRemaining">0</span> / NT$<span id="budgetTotal">0</span></span>
         </div>
       </div>
 
+      <div id="budgetTotalNote"></div>
       <div id="budgetShopNote"></div>
       <div class="budget-summary" id="budgetSummary"></div>
 
       <div style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn btn-primary" onclick="openExpenseModal()">+ 記錄花費</button>
-        <button class="btn" onclick="openBudgetTotalModal()">⚙ 調整總預算</button>
+        <button class="btn" onclick="openBudgetTotalModal()">⚙ 設定零用金</button>
         <button class="btn" onclick="openTripFxModal()">💱 匯率</button>
       </div>
       <!-- 代墊分帳：誰先付了誰的，最後誰該給誰多少 -->
@@ -8405,7 +8406,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:18px;">
         <label class="pdf-opt"><input type="checkbox" id="pdfOptItinerary" checked disabled> <span>逐日行程 + 航班 + 住宿（必含）</span></label>
         <label class="pdf-opt"><input type="checkbox" id="pdfOptChecklist"> <span>行前清單（含勾選狀態）</span></label>
-        <label class="pdf-opt"><input type="checkbox" id="pdfOptBudget"> <span>預算明細（總預算、各類別、花費清單）</span></label>
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptBudget"> <span>預算明細（零用金、各類別、花費清單）</span></label>
         <label class="pdf-opt"><input type="checkbox" id="pdfOptShopping"> <span>購物記錄（金額、店家、備註）</span></label>
         <label class="pdf-opt"><input type="checkbox" id="pdfOptEmergency" checked> <span>緊急聯絡 + 行前必備</span></label>
       </div>
@@ -8959,11 +8960,15 @@ alter publication supabase_realtime add table party_locations;</pre>
   <!-- ============ Budget Total Modal ============ -->
   <div class="modal-backdrop" id="budgetTotalModal">
     <div class="modal">
-      <h2>調整 <em>預算</em></h2>
+      <h2>這趟的 <em>零用金</em></h2>
       <form onsubmit="saveBudgetTotal(event)">
         <div class="form-group">
-          <label class="form-label">總預算 (NT$)</label>
-          <input type="number" class="form-input" id="budgetTotalInput" required>
+          <label class="form-label">零用金 (NT$)</label>
+          <input type="number" class="form-input" id="budgetTotalInput" min="0" required>
+          <div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.75; margin-top:7px;">
+            填你<strong>在當地要花的錢</strong>——購物、飲料、自費項目。<br>
+            <strong>不要填團費</strong>：那筆錢出發前就付掉了，也不會出現在下面的花費明細裡。
+          </div>
         </div>
         <div class="form-actions" style="justify-content:flex-end;">
           <div class="form-actions-right">
@@ -28538,7 +28543,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     ttsAzureRegion: 'eastasia',
     ttsAzureVoice: 'zh-TW-HsiaoChenNeural'
   };
-  let trvBudgetTotal = 43000;
+  let trvBudgetTotal = 0;          // 0 ＝ 還沒設定（不要拿團費當預設，那是兩種不同的錢）
   let trvLineGroup = '';
   let trvMap = null;
   let trvMapMarkers = [];
@@ -28785,9 +28790,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       <div class="print-section" style="page-break-before:always;">
         <h2>預算 <em>明細</em></h2>
         <div style="display:flex; gap:8mm; margin-bottom:4mm; font-size:11pt;">
-          <div><span style="color:#888 !important;">總預算</span> <strong>NT$${trvBudgetTotal.toLocaleString()}</strong></div>
-          <div><span style="color:#888 !important;">已用</span> <strong style="color:#d4a574 !important;">NT$${used.toLocaleString()}</strong> (${pct}%)</div>
-          <div><span style="color:#888 !important;">剩餘</span> <strong>NT$${remaining.toLocaleString()}</strong></div>
+          ${trvBudgetTotal > 0 ? `<div><span style="color:#888 !important;">零用金</span> <strong>NT$${trvBudgetTotal.toLocaleString()}</strong></div>` : ''}
+          <div><span style="color:#888 !important;">已花</span> <strong style="color:#d4a574 !important;">NT$${used.toLocaleString()}</strong>${trvBudgetTotal > 0 ? ` (${pct}%)` : ''}</div>
+          ${trvBudgetTotal > 0 ? `<div><span style="color:#888 !important;">剩餘</span> <strong>NT$${remaining.toLocaleString()}</strong></div>` : ''}
         </div>
         ${catRows ? `
           <table style="width:100%; border-collapse:collapse; margin-bottom:5mm; border:1px solid #ddd;">
@@ -29315,8 +29320,8 @@ ${baseSchema}
     } catch (e) {}
     try {
       const bt = await readKey(TRAVEL_STORAGE.budgetTotal);
-      trvBudgetTotal = bt ? Number(bt) : (ITINERARY.cost || 50000);
-    } catch (e) { trvBudgetTotal = ITINERARY.cost || 50000; }
+      trvBudgetTotal = bt ? (Number(bt) || 0) : 0;
+    } catch (e) { trvBudgetTotal = 0; }
     try {
       const lg = await readKey(TRAVEL_STORAGE.lineGroup);
       if (lg) trvLineGroup = lg;
@@ -29406,8 +29411,9 @@ ${baseSchema}
       : '尚未設定';
     // 預算
     const used = trvOutOfPocket();
-    const remaining = trvBudgetTotal - used;
-    document.getElementById('hc-budget').textContent = `剩 NT$${remaining.toLocaleString()} / ${trvBudgetTotal.toLocaleString()}`;
+    document.getElementById('hc-budget').textContent = Number(trvBudgetTotal) > 0
+      ? `剩 NT$${(trvBudgetTotal - used).toLocaleString()} / ${trvBudgetTotal.toLocaleString()}`
+      : (used > 0 ? `已花 NT$${used.toLocaleString()} · 未設預算` : '未設預算');
     // 購物
     const shopTotal = trvShopping.reduce((s, x) => s + Number(x.amount || 0) * (Number(x.qty)||1), 0);
     document.getElementById('hc-shop').textContent = trvShopping.length > 0
@@ -33065,18 +33071,51 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   }
 
   // ===== 預算 =====
+  // 團費 vs 零用金：兩種完全不同的錢，但原本共用同一個數字。
+  // 團費（ITINERARY.cost）出發前就付掉了；這一頁在記的是你在當地花的購物、飲料、自費項目。
+  function budgetLooksLikeTripCost() {
+    const c = Number(ITINERARY && ITINERARY.cost) || 0;
+    return c > 0 && Number(trvBudgetTotal) === c;
+  }
+  function budgetNoteHtml() {
+    const box = (title, body) => `<div style="border:1px solid rgba(212,165,116,0.5); border-left-width:3px; border-radius:4px;
+        padding:12px 14px; margin-bottom:14px; font-size:12.5px; color:var(--ink-secondary); line-height:1.85;">
+        <strong style="color:var(--accent);">${title}</strong><br>${body}
+        <div style="margin-top:9px;"><button class="btn btn-sm" data-tap onclick="openBudgetTotalModal()">⚙ 設定零用金</button></div>
+      </div>`;
+    if (!(Number(trvBudgetTotal) > 0)) {
+      return box('還沒設定這趟要帶多少零用金',
+        '設定之後，上面就會顯示<strong>用掉幾成、還剩多少</strong>，快用完時管家也會先講一聲。<br>' +
+        '<span style="color:var(--ink-tertiary);">填的是你在當地要花的錢（購物、飲料、自費項目），<strong>不是團費</strong>。</span>');
+    }
+    if (budgetLooksLikeTripCost()) {
+      return box('這個 NT$' + Number(trvBudgetTotal).toLocaleString('en-US') + ' 看起來是團費',
+        '團費是出發前就付掉的錢；這一頁記的是你<strong>在當地實際花的錢</strong>（購物、飲料、自費項目）。<br>' +
+        '拿它跟團費比，進度條會<strong>永遠停在「還很寬裕」</strong>，等於沒有作用。<br>' +
+        '<span style="color:var(--ink-tertiary);">如果你就是要用這個數字，忽略這一段即可。</span>');
+    }
+    return '';
+  }
+
   function renderBudget() {
     try { renderTrvBrief(); } catch (e) {}   // 花費一改，管家提醒裡的預算與今日花費也要跟著變
     const used = trvOutOfPocket();
+    const hasBudget = Number(trvBudgetTotal) > 0;
     const remaining = trvBudgetTotal - used;
-    const pct = trvBudgetTotal > 0 ? Math.min(100, (used / trvBudgetTotal) * 100) : 0;
+    const pct = hasBudget ? Math.min(100, (used / trvBudgetTotal) * 100) : 0;
     document.getElementById('budgetUsed').textContent = used.toLocaleString();
-    document.getElementById('budgetRemaining').textContent = remaining.toLocaleString();
-    document.getElementById('budgetTotal').textContent = trvBudgetTotal.toLocaleString();
-    document.getElementById('budgetPercent').textContent = pct.toFixed(1) + '%';
+    // 沒設定零用金就不要算「剩餘 -1,200 / 0」這種數字出來——那看起來就是壞掉
+    document.getElementById('budgetRemaining').textContent = hasBudget ? remaining.toLocaleString() : '0';
+    document.getElementById('budgetTotal').textContent = hasBudget ? trvBudgetTotal.toLocaleString() : '0';
+    document.getElementById('budgetPercent').textContent = hasBudget ? pct.toFixed(1) + '%' : '未設定零用金';
+    const blab = document.getElementById('budgetRemainLabel');
+    // 整句「剩餘 NT$— / NT$—」讀起來像壞掉，沒設定就整句換成一句話
+    if (blab) blab.style.display = hasBudget ? '' : 'none';
     const fill = document.getElementById('budgetBarFill');
     fill.style.width = pct + '%';
-    fill.classList.toggle('warn', pct > 85);
+    fill.classList.toggle('warn', hasBudget && pct > 85);
+    const bnote = document.getElementById('budgetTotalNote');
+    if (bnote) bnote.innerHTML = budgetNoteHtml();
 
     // 類別摘要
     const cats = ['餐飲', '購物', '門票', '交通', '小費', '其他'];
@@ -33190,16 +33229,19 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     renderBudget();
   }
   function openBudgetTotalModal() {
-    document.getElementById('budgetTotalInput').value = trvBudgetTotal;
+    // 還沒設定過就留白，不要預填一個 0 讓人以為已經設定過了
+    document.getElementById('budgetTotalInput').value = Number(trvBudgetTotal) > 0 ? trvBudgetTotal : '';
     document.getElementById('budgetTotalModal').classList.add('active');
   }
   function closeBudgetTotalModal() { document.getElementById('budgetTotalModal').classList.remove('active'); }
   async function saveBudgetTotal(e) {
     e.preventDefault();
-    trvBudgetTotal = Number(document.getElementById('budgetTotalInput').value);
+    // 空的、負的、亂打的都落到 0 ＝ 沒設定，不要讓 NaN 寫進 storage 變成永久的
+    trvBudgetTotal = Math.max(0, Number(document.getElementById('budgetTotalInput').value) || 0);
     await saveTravelKey(TRAVEL_STORAGE.budgetTotal, String(trvBudgetTotal));
     closeBudgetTotalModal();
     renderBudget();
+    try { renderHomeStats(); } catch (err) {}   // 首頁那張「預算」小卡也要跟著變
   }
 
   // ===== 購物 =====
