@@ -903,6 +903,14 @@
        剛好卡在門檻上，之後檢查很難判斷到底過了沒。留一點餘裕。 */
     .filter-tab { min-height: 38px; padding: 8px 12px; display: inline-flex; align-items: center; justify-content: center; }
     .travel-tab { min-height: 38px; }
+    /* 卡片右上角那顆 ✎／× 的方形小鈕，實測只有 28x28——v10.1 訂 38px 門檻時
+       只掃了 .btn 系列與分頁鈕，這種漏掉了。它出現在機會卡、模組卡、群組、API 收藏，
+       而且是「編輯／刪除」這類按錯代價高的動作。
+       CAUTION 有一顆寫了 inline 的 width:36px，靠 min-width 才蓋得過去（min-* 會夾住 width）。 */
+    .icon-btn { min-width: 38px; min-height: 38px; }
+    /* API 卡片的「官網 ↗ / 文件 ↗」，實測只有 27px——跟 v11.1 抓到的協會電話連結同一種：
+       是 <a> 不是 <button>，所以掃 .btn 系列的時候整批漏掉。 */
+    .api-card-link { min-height: 38px; }
     /* 表格／卡片裡那些自己寫 inline style 的小圖示鈕（🔕 靜音、✕ 移除…）
        沒有 class 可以掛，統一用這個屬性標記，才不會每加一顆就漏一顆。 */
     [data-tap] { min-height: 38px; min-width: 38px; display: inline-flex; align-items: center; justify-content: center; }
@@ -3069,6 +3077,24 @@
 
     <div class="risk-banner">
       ⚠ 高風險警語：此模組僅為投資想法的整理工具，AI 提供的分析不構成投資建議。「以小搏大」本質高風險，可能完全虧損。請只投入可承受損失的金額。
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">追蹤中的機會</div>
+        <div class="stat-value" id="levCount">0</div>
+        <div class="stat-sub">LIVE · IDEAS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">最好的賠率</div>
+        <div class="stat-value" id="levBestRR">—</div>
+        <div class="stat-sub">RISK · REWARD</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">本月新增</div>
+        <div class="stat-value" id="levNewThisMonth">0</div>
+        <div class="stat-sub">ADDED · MTD</div>
+      </div>
     </div>
 
     <div class="filter-tabs" style="margin-bottom:24px;">
@@ -11171,6 +11197,43 @@ alter publication supabase_realtime add table party_locations;</pre>
     setSyncStatus('ok', '● 雲端已同步');
   }
 
+  // 「還在追蹤」＝ 觀察中 或 已進場。
+  // CAUTION 統計卡之間的口徑一定要一樣：原本「追蹤中」排除已放棄、
+  //   「最高目標漲幅」卻連已放棄的都算進去，於是左邊寫「追蹤中 1 檔」、
+  //   右邊寫「+900%」——那個 900% 來自一檔你早就放棄的股票，兩格在講不同的東西。
+  function oppLive(o) { return o && (o.status === '觀察中' || o.status === '已進場'); }
+  function oppUpside(o) { return (o && o.entry > 0 && o.target) ? ((o.target - o.entry) / o.entry) * 100 : null; }
+  function oppDownside(o) { return (o && o.entry > 0 && o.stop) ? ((o.stop - o.entry) / o.entry) * 100 : null; }
+  // 賠率：賺得到的空間 ÷ 賠得起的空間。這是「以小搏大」整個模組的重點數字。
+  // 只在「目標在上、停損在下」都成立時才算得出來——填反了就不給數字，不要算一個看起來很合理的假數字。
+  function oppRR(o) {
+    if (!o || !(o.entry > 0) || !o.target || !o.stop) return null;
+    const up = o.target - o.entry, down = o.entry - o.stop;
+    if (!(up > 0) || !(down > 0)) return null;
+    return up / down;
+  }
+  function oppPct(v) { return (v >= 0 ? '+' : '') + v.toFixed(0) + '%'; }
+
+  // 價位填反的當下就問一句——那是使用者唯一可能發現自己打錯的時機。
+  // CAUTION 不要默默存下去：卡片上「風險」會變成正數（例如「風險 20%」），
+  //   讀起來像「跌到停損還會賺 20%」，而畫面上完全看不出來是資料填錯。
+  function confirmOppPrices(entry, target, stop) {
+    const msgs = [];
+    if (entry > 0 && target && target <= entry) {
+      msgs.push('目標價 ' + target + ' 沒有比進場價 ' + entry + ' 高。' + String.fromCharCode(10) +
+        '這樣算出來的「上漲空間」會是 0 或負的。');
+    }
+    if (entry > 0 && stop && stop >= entry) {
+      msgs.push('停損價 ' + stop + ' 沒有比進場價 ' + entry + ' 低。' + String.fromCharCode(10) +
+        '這樣一進場就等於已經跌破停損，而且卡片上的「風險」會變成正數，' + String.fromCharCode(10) +
+        '看起來像「跌到停損還會賺錢」。');
+    }
+    if (!msgs.length) return true;
+    return confirm(msgs.join(String.fromCharCode(10) + String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) +
+      '兩個價位是不是打反了？' + String.fromCharCode(10) +
+      '【確定】照這樣存　【取消】回去改');
+  }
+
   function openOppModal(type, id) {
     currentOppType = type;
     const isEdit = !!id;
@@ -11228,6 +11291,8 @@ alter publication supabase_realtime add table party_locations;</pre>
       status: document.getElementById('oppStatus').value
     };
 
+    if (!confirmOppPrices(data.entry, data.target, data.stop)) return;   // 取消就留在視窗裡讓他改
+
     if (id) {
       const i = opportunities.findIndex(x => x.id === id);
       if (i > -1) opportunities[i] = { ...opportunities[i], ...data, updatedAt: Date.now() };
@@ -11272,21 +11337,30 @@ alter publication supabase_realtime add table party_locations;</pre>
     let leverageOpps = opportunities.filter(o => o.type === 'leverage');
     if (leverageFilter !== 'all') leverageOpps = leverageOpps.filter(o => o.market === leverageFilter);
 
-    // Stats for double
-    document.getElementById('doubleCount').textContent = doubleOpps.filter(o => o.status !== '已放棄').length;
-    const maxUp = doubleOpps.reduce((max, o) => {
-      if (o.entry && o.target && o.entry > 0) {
-        const up = ((o.target - o.entry) / o.entry) * 100;
-        return Math.max(max, up);
-      }
-      return max;
-    }, 0);
-    document.getElementById('doubleMaxTarget').textContent = maxUp > 0 ? `+${maxUp.toFixed(0)}%` : '—';
-
+    // 統計一律只看「還在追蹤」的（觀察中 / 已進場），三格口徑才會一致
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const dLive = doubleOpps.filter(oppLive);
+    document.getElementById('doubleCount').textContent = dLive.length;
+    const maxUp = dLive.reduce((max, o) => {
+      const up = oppUpside(o);
+      return up != null ? Math.max(max, up) : max;
+    }, 0);
+    document.getElementById('doubleMaxTarget').textContent = maxUp > 0 ? `+${maxUp.toFixed(0)}%` : '—';
     document.getElementById('doubleNewThisMonth').textContent =
       doubleOpps.filter(o => (o.createdAt || 0) >= monthStart).length;
+
+    // 以小搏大：追蹤中 / 最好的賠率 / 本月新增（賠率是這個模組的重點）
+    const allLev = opportunities.filter(o => o.type === 'leverage');
+    const lLive = allLev.filter(oppLive);
+    const elLevCount = document.getElementById('levCount');
+    if (elLevCount) {
+      elLevCount.textContent = lLive.length;
+      const bestRR = lLive.reduce((max, o) => { const r = oppRR(o); return r != null ? Math.max(max, r) : max; }, 0);
+      document.getElementById('levBestRR').textContent = bestRR > 0 ? `1 : ${bestRR.toFixed(1)}` : '—';
+      document.getElementById('levNewThisMonth').textContent =
+        allLev.filter(o => (o.createdAt || 0) >= monthStart).length;
+    }
 
     doubleGrid.innerHTML = doubleOpps.length
       ? doubleOpps.map(o => oppCardHtml(o)).join('')
@@ -11301,12 +11375,13 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   function oppCardHtml(o) {
-    const upside = (o.entry && o.target && o.entry > 0)
-      ? ((o.target - o.entry) / o.entry) * 100
-      : null;
-    const downside = (o.entry && o.stop && o.entry > 0)
-      ? ((o.stop - o.entry) / o.entry) * 100
-      : null;
+    const upside = oppUpside(o);
+    const downside = oppDownside(o);
+    const rr = oppRR(o);
+    // 填反了就直接在卡片上講，不要只顯示一個看起來很正常的正數
+    const bad = [];
+    if (upside != null && upside <= 0) bad.push('目標價沒有比進場價高');
+    if (downside != null && downside >= 0) bad.push('停損價沒有比進場價低');
 
     const statusKey = o.status === '已進場' ? '進場'
       : o.status === '已出場' ? '出場'
@@ -11353,8 +11428,9 @@ alter publication supabase_realtime add table party_locations;</pre>
 
         <div class="opp-meta-line">
           <span>${o.createdAt ? new Date(o.createdAt).toLocaleDateString('zh-TW') : ''}</span>
-          ${upside !== null ? `<span><span class="opp-upside">+${upside.toFixed(0)}%</span> · 風險 ${downside !== null ? downside.toFixed(0) : '—'}%</span>` : ''}
+          ${upside !== null ? `<span><span class="opp-upside">${escape(oppPct(upside))}</span> · 風險 ${downside !== null ? escape(oppPct(downside)) : '—'}${rr != null ? ` · 賠率 1 : ${rr.toFixed(1)}` : ''}</span>` : ''}
         </div>
+        ${bad.length ? `<div class="opp-notes" style="border-left-color:var(--danger); color:var(--danger);">⚠ ${escape(bad.join('、'))}——這幾個百分比算出來會是反的，請回去把價位改一下。</div>` : ''}
       </div>
     `;
   }
