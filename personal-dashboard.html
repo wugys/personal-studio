@@ -9083,7 +9083,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.7 · ξ</div>
+    <div>v 14.8 · ξ</div>
   </footer>
 </div>
 
@@ -29182,9 +29182,14 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
 
     // 每日行程
     const daysHtml = it.days.map(d => {
+      // ⚠ 一定要套過「整團順延」再印。行程時刻是寫死的常數，順延只存「這一天延後幾分鐘」、
+      //   畫的時候才套上去（v12.6）。列印以前直接印 s.time，於是 App 上寫 07:25、
+      //   印出來給團員的那張紙寫 07:00——**兩個時間打架，而拿到紙的人不會知道**。
+      const pDelay = (typeof trvDelayOf === 'function') ? trvDelayOf(d.date) : 0;
+      const pTime = (t) => (typeof trvSpotTimeText === 'function') ? trvSpotTimeText(d.date, t) : (t || '');
       const spotsHtml = d.spots.map(s => `
         <div class="print-spot">
-          <div class="print-spot-time">${escape(s.time)}</div>
+          <div class="print-spot-time">${escape(pTime(s.time))}</div>
           <div class="print-spot-type">${escape(s.type)}</div>
           <div class="print-spot-body">
             <div class="print-spot-name">${escape(s.name)}</div>
@@ -29199,6 +29204,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
             <div class="day-num">DAY · ${String(d.day).padStart(2, '0')} · ${escape(d.date)} · ${escape(d.weekday)}</div>
             <h2>${escape(d.title)}</h2>
             ${d.subtitle ? `<div class="subtitle">${escape(d.subtitle)}</div>` : ''}
+            ${pDelay ? `<div class="subtitle">※ 這一天整團${pDelay > 0 ? '延後' : '提前'} ${Math.abs(pDelay)} 分鐘（下面已經是調整後的時間）</div>` : ''}
           </div>
           ${spotsHtml}
         </div>
@@ -29213,6 +29219,21 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const shoppingHtml = options.shopping ? buildPrintShopping() : '';
 
     // 緊急聯絡
+    // ⚠ 這一段以前整段是寫死的：外交部號碼是舊的（+886-3-3982629，跟 App 裡查證過的
+    //   SOS_MOFA 不一樣）、證件一律寫「護照（效期 6 個月以上）」（大陸團看的是台胞證，
+    //   而且沒有六個月那條規定，v13.5 已經查證過），而使用者在「🆘 狀況」分頁
+    //   辛苦填的領隊／地陪／保險／館處／飯店電話 **一支都沒印出來**。
+    //   印出來的那張紙正是「手機沒電時唯一還在的東西」——它必須跟 App 上的一模一樣。
+    const printPhones = (typeof sosPhoneList === 'function') ? sosPhoneList() : [];
+    const printMissing = (typeof sosPhoneMissing === 'function') ? sosPhoneMissing() : [];
+    const printDoc = (typeof tripDocKind === 'function') ? tripDocKind() : { name: '護照', sixMonth: true };
+    const docLine = printDoc.sixMonth
+      ? `${printDoc.name}（效期 6 個月以上）· 簽證`
+      : `${printDoc.name}（在有效期內即可）· 護照（轉機／備用，也要帶）`;
+    const printC = (typeof sosNorm === 'function') ? (sosNorm().c || {}) : {};
+    const printHotel = printC.hotelName
+      ? [printC.hotelName, printC.hotelAddr, printC.hotelPhone].filter(Boolean).join('　')
+      : '';
     const emergencyHtml = options.emergency ? `
       <div class="print-section print-emergency">
         <h2>緊急 <em>聯絡 & 注意事項</em></h2>
@@ -29225,16 +29246,27 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         <div class="print-emergency-card">
           <div class="label">行前必備</div>
           <div style="font-size:10pt; line-height:1.7;">
-            護照（效期 6 個月以上）· 台胞證 / 簽證 · 個人藥品 · 保暖衣物 · 防曬用品 · 行動電源（&lt;20000mAh）· 轉接頭 · 信用卡 / 現金
+            ${escape(docLine)} · 個人藥品 · 保暖衣物 · 防曬用品 · 行動電源（&lt;20000mAh）· 轉接頭 · 信用卡 / 現金
           </div>
         </div>
         <div class="print-emergency-card">
-          <div class="label">當地通用</div>
-          <div style="font-size:10pt; line-height:1.7;">
-            台灣外交部全球急難救助 · +886-3-3982629（24h）<br>
-            駐外館處：請依旅遊國家查詢 boca.gov.tw
+          <div class="label">出事的時候打這幾支</div>
+          <div style="font-size:10pt; line-height:1.8;">
+            ${printPhones.map(x => `<strong>${escape(x.label)}</strong>　${escape(x.num)}`).join('<br>')}
           </div>
+          <div style="font-size:9pt; color:#888; line-height:1.6; margin-top:6px;">
+            外交部另有全球免付費專線 ${escape(SOS_MOFA.free)}，只能從國外打、僅部分國家適用，各國要加的冠碼不一樣；
+            上面那支付費號碼是「一定打得通」的。台灣的家人要找你，請他們打 ${escape(SOS_MOFA.domestic)}（國內免付費）。
+          </div>
+          ${printMissing.length ? `<div style="font-size:9pt; color:#888; margin-top:6px;">
+            （${escape(printMissing.join('、'))}的電話還沒填，所以這張紙上沒有——到 App 的「🆘 狀況」分頁補上，下次匯出就會印出來。）
+          </div>` : ''}
         </div>
+        ${printHotel ? `
+        <div class="print-emergency-card">
+          <div class="label">住宿（可以直接給計程車看）</div>
+          <div style="font-size:10pt; line-height:1.7;">${escape(printHotel)}</div>
+        </div>` : ''}
       </div>
     ` : '';
 
@@ -31120,6 +31152,39 @@ ${baseSchema}
       ${missing.length ? `<div class="fm-note">還有 <strong>${escape(missing.join('、'))}</strong> 沒填電話。
         現場模式不做設定；離開之後到「🆘 狀況」分頁補上，這裡就會多幾顆可以直接按的按鈕。</div>` : ''}` + fmBack();
   }
+  // 這一團所有「打得出去」的電話。使用者填過的優先，沒填的整行不出現。
+  //
+  // ⚠ 一個號碼都不編——最急的時候撥一個假號碼，比手上沒有號碼更糟。
+  // ⚠ 「今天的重點」（貼 LINE 群那段）與 **PDF 列印** 共用這一份，不要各寫一份：
+  //   兩邊分岔的話，印出來拿在手上的那張紙會跟手機上的不一樣，
+  //   而那張紙正是手機沒電時唯一還在的東西（v10.9 的教訓）。
+  function sosPhoneList() {
+    const s = sosNorm(), co = sosCountry(), c = s.c || {};
+    const out = [];
+    const add = (label, num, line) => out.push({ label, num, line: line || (label + '  ' + num) });
+    if (c.guidePhone) add(`領隊${c.guideName ? ' ' + c.guideName : ''}`, c.guidePhone);
+    if (c.localPhone) add(`當地地陪${c.localName ? ' ' + c.localName : ''}`, c.localPhone);
+    if (c.insurerPhone) add(`保險 24 小時${c.insurerName ? ' ' + c.insurerName : ''}`, c.insurerPhone);
+    if (c.embassyPhone) add(c.embassyName || '駐外館處', c.embassyPhone);
+    if (co) {
+      const extra = co.fire && co.fire !== co.amb ? `　火警 ${co.fire}` : '';
+      add(`當地緊急電話（${co.name}）`, `報警 ${co.police}　救護車 ${co.amb}${extra}`,
+          `報警 ${co.police}　救護車 ${co.amb}${extra}（${co.name}）`);
+    }
+    add('外交部急難救助', SOS_MOFA.paid);
+    return out;
+  }
+  // 還有哪幾項沒填（列印時要老實講，不然拿到紙的人會以為上面就是全部了）
+  function sosPhoneMissing() {
+    const c = (sosNorm().c) || {};
+    const miss = [];
+    if (!c.guidePhone) miss.push('領隊');
+    if (!c.localPhone) miss.push('當地地陪');
+    if (!c.insurerPhone) miss.push('保險 24 小時');
+    if (!c.embassyPhone) miss.push('駐外館處');
+    return miss;
+  }
+
   // ===== 今天的重點（一段可以貼 LINE 群、存下來離線看的純文字）=====
   // CAUTION 全部從既有資料生成，沒填的就不寫——寧可少一行，也不要編一個電話號碼出來。
   //   這是給「沒訊號、或手機沒電只能看別人截圖」的情況用的，寫錯比沒有更糟。
@@ -31156,13 +31221,7 @@ ${baseSchema}
 
     // 電話：使用者填過的優先，沒填的整行不出現
     const s = sosNorm(), co = sosCountry(), c = s.c || {};
-    const tel = [];
-    if (c.guidePhone) tel.push(`領隊${c.guideName ? ' ' + c.guideName : ''}  ${c.guidePhone}`);
-    if (c.localPhone) tel.push(`當地地陪${c.localName ? ' ' + c.localName : ''}  ${c.localPhone}`);
-    if (c.insurerPhone) tel.push(`保險 24 小時${c.insurerName ? ' ' + c.insurerName : ''}  ${c.insurerPhone}`);
-    if (c.embassyPhone) tel.push(`${c.embassyName || '駐外館處'}  ${c.embassyPhone}`);
-    if (co) tel.push(`報警 ${co.police}　救護車 ${co.amb}${co.fire && co.fire !== co.amb ? '　火警 ' + co.fire : ''}（${co.name}）`);
-    tel.push(`外交部急難救助  ${SOS_MOFA.paid}`);
+    const tel = sosPhoneList().map(x => x.line);
     push('');
     push('── 電話 ──');
     tel.forEach(push);
