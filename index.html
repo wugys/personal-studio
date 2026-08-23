@@ -7794,7 +7794,7 @@
           <span><span class="label">精度</span> <span class="val" id="gpsAccuracy">—</span></span>
           <span><span class="label">下一站</span> <span class="val" id="gpsNextSpot">—</span></span>
           <span><span class="label">距離</span> <span class="val" id="gpsNextDistance">—</span></span>
-          <span><span class="label">步行</span> <span class="val" id="gpsNextEta">—</span></span>
+          <span><span class="label" id="gpsNextEtaLabel">抵達</span> <span class="val" id="gpsNextEta">—</span></span>
         </div>
       </div>
       <div id="travelMapBig"></div>
@@ -9158,7 +9158,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.4 · π</div>
+    <div>v 16.5 · π</div>
   </footer>
 </div>
 
@@ -33217,9 +33217,13 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
         const next = findNextSpot();
         if (next) {
           const d = haversine(trvGpsCurrent, next.spot.gps);
-          document.getElementById('gpsNext').innerHTML = `下一站 <em>${escape(next.spot.name)}</em> · 約 ${d > 1 ? d.toFixed(1) + ' km' : Math.round(d*1000) + ' m'}`;
+          const eta = gpsEtaText(d);
+          document.getElementById('gpsNext').innerHTML = `下一站 <em>${escape(next.spot.name)}</em> · 直線 ${d > 1 ? d.toFixed(1) + ' km' : Math.round(d*1000) + ' m'}` +
+            (eta.text !== '—' ? ` · ${escape(eta.label)} ${escape(eta.text)}` : '');
         } else {
-          document.getElementById('gpsNext').textContent = '行程已完成 / 沒有下一站';
+          document.getElementById('gpsNext').textContent = tripHasGps()
+            ? '行程已完成 / 沒有下一站'
+            : '這趟行程沒有填座標，所以算不出距離（景點的 GPS 在行程資料裡）';
         }
       },
       (err) => {
@@ -33231,21 +33235,45 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function refreshGpsSilent() {
     if (trvGpsCurrent) document.getElementById('gpsCard').style.display = '';
   }
+  // 地圖／GPS 卡的「下一站」。
+  // ⚠ 必須跟「行程分頁的下一個」（trvCurNext）用**同一套算法**：套整團順延 ＋ 依時間排序。
+  //   以前這裡自己算一份、而且**不套順延**：領隊按了「整團延後 40 分」之後，
+  //   15:10 時行程分頁說「下一個 抵達成都（15:40）」、地圖卻說「下一站 黃龍溪古鎮」——
+  //   兩個畫面對同一件事給不同答案，在現場會直接造成誤判（v16.5 實測抓到）。
+  //   差別只有一個：這裡只看**有座標**的景點（沒有座標算不出距離），所以下一項沒座標時會往後找。
   function findNextSpot() {
+    if (!ITINERARY || !Array.isArray(ITINERARY.days)) return null;
+    const todayStr = todayISO();
     const now = new Date();
-    const todayStr = todayISO(now);
+    const nowMin = now.getHours() * 60 + now.getMinutes();
     for (const d of ITINERARY.days) {
-      if (d.date < todayStr) continue;
-      for (const s of d.spots) {
-        if (!s.gps) continue;
-        if (d.date > todayStr) return { day: d.day, spot: s };
-        const [h, m] = s.time.split(':').map(Number);
-        const spotMin = h * 60 + m;
-        const nowMin = now.getHours() * 60 + now.getMinutes();
-        if (spotMin >= nowMin) return { day: d.day, spot: s };
-      }
+      if (!d || !d.date || d.date < todayStr) continue;
+      const list = (Array.isArray(d.spots) ? d.spots : [])
+        .map(s => ({ s, min: trvSpotMin(d.date, s && s.time) }))
+        .filter(x => x.s && x.s.gps && x.min != null)
+        .sort((a, b) => a.min - b.min);
+      if (!list.length) continue;
+      if (d.date > todayStr) return { day: d.day, spot: list[0].s };
+      const hit = list.find(x => x.min >= nowMin);
+      if (hit) return { day: d.day, spot: hit.s };
     }
     return null;
+  }
+  // 這趟到底有沒有座標資料——沒有的話「行程已完成」是假話（自建行程常常一個座標都沒填）
+  function tripHasGps() {
+    try { return (ITINERARY.days || []).some(d => (d.spots || []).some(s => s && s.gps)); } catch (e) { return false; }
+  }
+  // 直線距離換算「大概多久到」。
+  // ⚠ 一律是直線距離，實際路線一定更遠——所以只在「走得到」的距離講步行時間。
+  //   以前不管多遠都用步行 5 km/h 算：成都 → 九寨溝 290 公里會顯示「步行 58 小時」，
+  //   那個數字沒有任何用處，而且看起來就像程式壞掉。山路拉車猜幾小時都是錯的，所以不猜。
+  function gpsEtaText(km) {
+    // ⚠ 不能寫 `!(Number(km) >= 0)`——`Number(null)` 是 0，會通過守衛然後回「步行 1 分」（自己第一版踩到）
+    const v = Number(km);
+    if (km == null || km === '' || !isFinite(v) || v < 0) return { label: '抵達', text: '—' };
+    if (v <= 3) return { label: '步行', text: Math.max(1, Math.round(v / 5 * 60)) + ' 分' };
+    if (v <= 30) return { label: '車程', text: '約 ' + Math.max(1, Math.round(v / 30 * 60)) + ' 分' };
+    return { label: '抵達', text: '拉車 · 看行程' };
   }
   function haversine(a, b) {
     const R = 6371;
@@ -33329,7 +33357,10 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       d.spots.forEach(s => {
         if (!s.gps) return;
         const marker = L.marker(s.gps).addTo(trvMap);
-        marker.bindPopup(`<strong>${escape(s.name)}</strong><br><small>DAY ${d.day} · ${escape(s.time)}</small><br>${escape((s.desc || '').slice(0, 80))}…`);
+        // 沒有介紹的景點以前會顯示一個孤零零的「…」；時間也要套整團順延（跟行程表一致）
+        const dsc = String(s.desc || '').trim();
+        marker.bindPopup(`<strong>${escape(s.name)}</strong><br><small>DAY ${d.day} · ${escape(trvSpotTimeText(d.date, s.time))}</small>` +
+          (dsc ? `<br>${escape(dsc.slice(0, 80))}${dsc.length > 80 ? '…' : ''}` : ''));
         trvMapMarkers.push(marker);
         points.push(s.gps);
       });
@@ -33344,14 +33375,23 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     if (points.length) trvMap.fitBounds(L.latLngBounds(points), { padding: [40, 40] });
   }
   function locateMeOnMap() {
-    if (!trvMap || !('geolocation' in navigator)) return;
+    // ⚠ 以前只有成功的 callback：使用者拒絕定位權限、或室內收不到訊號時，
+    //   按鈕按下去**完全沒有任何反應**——看起來像按鈕壞了，他會一直按。
+    if (!trvMap) { showToast('地圖還沒載入'); return; }
+    if (!('geolocation' in navigator)) { showToast('此裝置不支援定位'); return; }
+    showToast('定位中…');
     navigator.geolocation.getCurrentPosition(pos => {
       const ll = [pos.coords.latitude, pos.coords.longitude];
       const me = L.circleMarker(ll, { radius: 10, color: '#06c755', fillColor: '#06c755', fillOpacity: 0.6 }).addTo(trvMap);
       me.bindPopup('我在這裡').openPopup();
       trvMapMarkers.push(me);
+      trvGpsCurrent = ll;
       trvMap.setView(ll, 13);
-    });
+    }, err => {
+      showToast(err && err.code === 1
+        ? '定位被拒絕——到手機的瀏覽器設定把「位置」打開'
+        : '定位失敗：' + ((err && err.message) || '收不到訊號，室內或山區常發生'));
+    }, { enableHighAccuracy: true, timeout: 10000 });
   }
 
   // ===== GPS 即時追蹤 =====
@@ -33445,17 +33485,20 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function updateGpsStatusBar(accuracy) {
     document.getElementById('gpsAccuracy').textContent = `±${Math.round(accuracy)} m`;
     const next = findNextSpot();
+    const lab = document.getElementById('gpsNextEtaLabel');
     if (next && trvGpsCurrent) {
       const d = haversine(trvGpsCurrent, next.spot.gps);
+      const eta = gpsEtaText(d);
       document.getElementById('gpsNextSpot').textContent = next.spot.name.length > 8 ? next.spot.name.slice(0, 8) + '…' : next.spot.name;
       document.getElementById('gpsNextDistance').textContent = d > 1 ? d.toFixed(1) + ' km' : Math.round(d * 1000) + ' m';
-      // 步行：5 km/h
-      const minutes = (d / 5) * 60;
-      const etaTxt = minutes < 60 ? `${Math.round(minutes)} 分` : `${Math.floor(minutes/60)}h${Math.round(minutes%60)}m`;
-      document.getElementById('gpsNextEta').textContent = etaTxt;
+      if (lab) lab.textContent = eta.label;
+      document.getElementById('gpsNextEta').textContent = eta.text;
     } else {
-      document.getElementById('gpsNextSpot').textContent = '行程已完成';
+      // ⚠ 沒有下一站有兩種完全不同的原因，不能都說「行程已完成」——
+      //   自建行程一個座標都沒填時說「已完成」是假話。
+      document.getElementById('gpsNextSpot').textContent = tripHasGps() ? '行程已完成' : '這趟沒填座標';
       document.getElementById('gpsNextDistance').textContent = '—';
+      if (lab) lab.textContent = '抵達';
       document.getElementById('gpsNextEta').textContent = '—';
     }
   }
