@@ -9087,7 +9087,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.3 · ο</div>
+    <div>v 15.4 · ο</div>
   </footer>
 </div>
 
@@ -11875,7 +11875,7 @@ ${userQuery}`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-5',
           max_tokens: 2000,
           messages: [{ role: 'user', content: prompt }]
         })
@@ -29883,7 +29883,7 @@ ${baseSchema}
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-5',
         max_tokens: 8000,
         system,
         messages: [{ role: 'user', content: userInput }]
@@ -32436,7 +32436,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-5',
           max_tokens: 2500,
           system,
           messages: [{ role: 'user', content: userPrompt }]
@@ -33151,7 +33151,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-5',
         max_tokens: 2500,
         tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
         messages: [{ role: 'user', content: prompt }]
@@ -34350,7 +34350,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-5',
           max_tokens: 2000,
           system: buildButlerSystem(),
           messages: trvButlerHistory.filter(m => m.content !== '思考中…').slice(-10).map(m => ({
