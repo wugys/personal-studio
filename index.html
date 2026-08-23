@@ -9134,7 +9134,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.5 · ο</div>
+    <div>v 15.6 · ο</div>
   </footer>
 </div>
 
@@ -9664,10 +9664,10 @@ alter publication supabase_realtime add table party_locations;</pre>
         }
       }
 
-      const a = await readKey(STORAGE.apis);
-      apis = a ? JSON.parse(a) : [];
+      // ⚠ parse 失敗或不是陣列（被同步寫壞）都退回空陣列——不能讓 renderApis 對著 {} 呼叫 .filter
+      try { const a = await readKey(STORAGE.apis); const o = a ? JSON.parse(a) : []; apis = Array.isArray(o) ? o : []; } catch (e) { apis = []; }
       // 舊版匯入過的資料可能帶著長相不對的 id（會撐破卡片的 onclick），載入時洗一次
-      if (Array.isArray(apis)) apis.forEach(x => { if (x && typeof apiSafeId === 'function') x.id = apiSafeId(x.id); });
+      apis.forEach(x => { if (x && typeof apiSafeId === 'function') x.id = apiSafeId(x.id); });
       const v = await readKey(STORAGE.viewMode);
       if (v) viewMode = v;
       setSyncStatus('ok', '● 雲端已同步');
@@ -11548,8 +11548,13 @@ alter publication supabase_realtime add table party_locations;</pre>
   const OPP_STORAGE = 'studio_opps_v1';
 
   async function loadOpps() {
-    const raw = await readKey(OPP_STORAGE);
-    opportunities = raw ? JSON.parse(raw) : [];
+    // ⚠ storage 可能被雲端同步／備份還原寫壞（不是 JSON、或不是陣列）。
+    //   v15.6 的全鍵毒化掃盪抓到這裡會直接丟未捕捉例外——壞一個 key 不該讓整頁載入中斷。
+    try {
+      const raw = await readKey(OPP_STORAGE);
+      const o = raw ? JSON.parse(raw) : [];
+      opportunities = Array.isArray(o) ? o : [];
+    } catch (e) { opportunities = []; }
     renderOpps();
   }
 
@@ -12214,9 +12219,9 @@ ${userQuery}`;
   let twSyncClient = null;
 
   async function loadTwStock() {
-    try { const h = await readKey(TW_STORAGE.holdings); twHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(TW_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; twHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { twHoldings = []; }
-    try { const t = await readKey(TW_STORAGE.txns); twTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(TW_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; twTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { twTxns = []; }
     // ⚠ 用 `Number(r) || 0` 而不是 `r ? Number(r) : 0`：存進去的若不是數字字串
     //   （備份還原、雲端同步弄壞），Number() 會給 NaN，畫面就直接在金額欄位寫「非數值」，
@@ -13298,9 +13303,9 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
   const usShares = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
   async function loadUsStock() {
-    try { const h = await readKey(US_STORAGE.holdings); usHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(US_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; usHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { usHoldings = []; }
-    try { const t = await readKey(US_STORAGE.txns); usTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(US_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; usTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { usTxns = []; }
     try { const r = await readKey(US_STORAGE.realized); usRealizedPnL = Number(r) || 0; }
     catch (e) { usRealizedPnL = 0; }
@@ -15670,9 +15675,9 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
   const cryptoPrice = n => { n = Number(n || 0); return n >= 1 ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : n.toLocaleString('en-US', { maximumFractionDigits: 6 }); };
 
   async function loadCrypto() {
-    try { const h = await readKey(CRYPTO_STORAGE.holdings); cryptoHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(CRYPTO_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; cryptoHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { cryptoHoldings = []; }
-    try { const t = await readKey(CRYPTO_STORAGE.txns); cryptoTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(CRYPTO_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; cryptoTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { cryptoTxns = []; }
     try { const r = await readKey(CRYPTO_STORAGE.realized); cryptoRealizedPnL = Number(r) || 0; }
     catch (e) { cryptoRealizedPnL = 0; }
@@ -16442,9 +16447,9 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
   }
 
   async function loadHdEtf() {
-    try { const h = await readKey(HD_ETF_STORAGE.holdings); hdEtfHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(HD_ETF_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; hdEtfHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { hdEtfHoldings = []; }
-    try { const t = await readKey(HD_ETF_STORAGE.txns); hdEtfTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(HD_ETF_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; hdEtfTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { hdEtfTxns = []; }
     try { const r = await readKey(HD_ETF_STORAGE.realized); hdEtfRealizedPnL = Number(r) || 0; }
     catch (e) { hdEtfRealizedPnL = 0; }
@@ -17289,9 +17294,9 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
   }
 
   async function loadMkEtf() {
-    try { const h = await readKey(MK_ETF_STORAGE.holdings); mkEtfHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(MK_ETF_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; mkEtfHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { mkEtfHoldings = []; }
-    try { const t = await readKey(MK_ETF_STORAGE.txns); mkEtfTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(MK_ETF_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; mkEtfTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { mkEtfTxns = []; }
     try { const r = await readKey(MK_ETF_STORAGE.realized); mkEtfRealizedPnL = Number(r) || 0; }
     catch (e) { mkEtfRealizedPnL = 0; }
@@ -18283,8 +18288,8 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
 
   // ===== 讀寫 =====
   async function loadDca() {
-    try { const v = await readKey(DCA_STORAGE.plans); dcaPlans = v ? JSON.parse(v) : []; } catch (e) { dcaPlans = []; }
-    try { const v = await readKey(DCA_STORAGE.execs); dcaExecs = v ? JSON.parse(v) : []; } catch (e) { dcaExecs = []; }
+    try { const v = await readKey(DCA_STORAGE.plans); { const _o = v ? JSON.parse(v) : []; dcaPlans = Array.isArray(_o) ? _o : []; } } catch (e) { dcaPlans = []; }
+    try { const v = await readKey(DCA_STORAGE.execs); { const _o = v ? JSON.parse(v) : []; dcaExecs = Array.isArray(_o) ? _o : []; } } catch (e) { dcaExecs = []; }
     try {
       await loadCashflowFx();
       if (!cashflowFx.updatedAt) await refreshCashflowFx();
@@ -18309,7 +18314,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
     const map = {};
     for (const key of Object.keys(DCA_TARGETS)) {
       let holdings = [];
-      try { const v = await readKey(DCA_TARGETS[key].hKey); holdings = v ? JSON.parse(v) : []; } catch (e) { holdings = []; }
+      try { const v = await readKey(DCA_TARGETS[key].hKey); { const _o = v ? JSON.parse(v) : []; holdings = Array.isArray(_o) ? _o : []; } } catch (e) { holdings = []; }
       holdings.forEach(h => { map[key + ':' + h.symbol] = { price: Number(h.currentPrice) || 0, name: h.name || '' }; });
     }
     dcaPriceMap = map;
@@ -19258,7 +19263,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
 
   // ===== 讀寫 =====
   async function loadGoals() {
-    try { const v = await readKey(GOAL_STORAGE.goals); goalList = v ? JSON.parse(v) : []; } catch (e) { goalList = []; }
+    try { const v = await readKey(GOAL_STORAGE.goals); { const _o = v ? JSON.parse(v) : []; goalList = Array.isArray(_o) ? _o : []; } } catch (e) { goalList = []; }
     await goalRefreshAssets();
     await loadGoalSyncConfig();
     renderGoals();
@@ -19870,9 +19875,9 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
   }
 
   async function loadBond() {
-    try { const h = await readKey(BOND_STORAGE.holdings); bondHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(BOND_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; bondHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { bondHoldings = []; }
-    try { const t = await readKey(BOND_STORAGE.txns); bondTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(BOND_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; bondTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { bondTxns = []; }
     try { const r = await readKey(BOND_STORAGE.realized); bondRealizedPnL = Number(r) || 0; }
     catch (e) { bondRealizedPnL = 0; }
@@ -20797,9 +20802,9 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
   }
 
   async function loadFxDep() {
-    try { const h = await readKey(FX_DEP_STORAGE.holdings); fxDepHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(FX_DEP_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; fxDepHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { fxDepHoldings = []; }
-    try { const t = await readKey(FX_DEP_STORAGE.txns); fxDepTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(FX_DEP_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; fxDepTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { fxDepTxns = []; }
     try { const r = await readKey(FX_DEP_STORAGE.realized); fxDepRealizedPnL = Number(r) || 0; }
     catch (e) { fxDepRealizedPnL = 0; }
@@ -21692,9 +21697,9 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
   }
 
   async function loadFund() {
-    try { const h = await readKey(FUND_STORAGE.holdings); fundHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(FUND_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; fundHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { fundHoldings = []; }
-    try { const t = await readKey(FUND_STORAGE.txns); fundTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(FUND_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; fundTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { fundTxns = []; }
     try { const r = await readKey(FUND_STORAGE.realized); fundRealizedPnL = Number(r) || 0; }
     catch (e) { fundRealizedPnL = 0; }
@@ -22599,9 +22604,9 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
   }
 
   async function loadMetal() {
-    try { const h = await readKey(METAL_STORAGE.holdings); metalHoldings = h ? JSON.parse(h) : []; }
+    try { const h = await readKey(METAL_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; metalHoldings = Array.isArray(_o) ? _o : []; } }
     catch (e) { metalHoldings = []; }
-    try { const t = await readKey(METAL_STORAGE.txns); metalTxns = t ? JSON.parse(t) : []; }
+    try { const t = await readKey(METAL_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; metalTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { metalTxns = []; }
     try { const r = await readKey(METAL_STORAGE.realized); metalRealizedPnL = Number(r) || 0; }
     catch (e) { metalRealizedPnL = 0; }
@@ -23554,9 +23559,9 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
   async function loadRe(kind) {
     const cfg = RE_MODULES[kind];
     if (!cfg) return;
-    try { const v = await readKey(cfg.pKey); reData[kind].props = v ? JSON.parse(v) : []; }
+    try { const v = await readKey(cfg.pKey); { const _o = v ? JSON.parse(v) : []; reData[kind].props = Array.isArray(_o) ? _o : []; } }
     catch (e) { reData[kind].props = []; }
-    try { const v = await readKey(cfg.tKey); reData[kind].txns = v ? JSON.parse(v) : []; }
+    try { const v = await readKey(cfg.tKey); { const _o = v ? JSON.parse(v) : []; reData[kind].txns = Array.isArray(_o) ? _o : []; } }
     catch (e) { reData[kind].txns = []; }
     reData[kind].props.forEach(reSyncDerived);
     await loadReSyncConfig();
@@ -24262,9 +24267,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function loadAssoc() {
     try { const v = await readKey(ASSOC_STORAGE.org); if (v) assocOrg = { ...assocOrg, ...JSON.parse(v) }; } catch (e) {}
     if (!Array.isArray(assocOrg.levels) || !assocOrg.levels.length) assocOrg.levels = ASSOC_DEFAULT_LEVELS.slice();
-    try { const v = await readKey(ASSOC_STORAGE.members); assocMembers = v ? JSON.parse(v) : []; } catch (e) { assocMembers = []; }
-    try { const v = await readKey(ASSOC_STORAGE.events); assocEvents = v ? JSON.parse(v) : []; } catch (e) { assocEvents = []; }
-    try { const v = await readKey(ASSOC_STORAGE.dues); assocDues = v ? JSON.parse(v) : []; } catch (e) { assocDues = []; }
+    // ⚠ 除了 parse 失敗，還要防「parse 得出來但不是陣列」（例如被寫成 "corrupted" 字串）
+    try { const v = await readKey(ASSOC_STORAGE.members); const o = v ? JSON.parse(v) : []; assocMembers = Array.isArray(o) ? o : []; } catch (e) { assocMembers = []; }
+    try { const v = await readKey(ASSOC_STORAGE.events); const o = v ? JSON.parse(v) : []; assocEvents = Array.isArray(o) ? o : []; } catch (e) { assocEvents = []; }
+    try { const v = await readKey(ASSOC_STORAGE.dues); const o = v ? JSON.parse(v) : []; assocDues = Array.isArray(o) ? o : []; } catch (e) { assocDues = []; }
     await loadAssocSyncConfig();
     renderAssocAll();
     if (assocSyncConfig.enabled) {
@@ -25412,9 +25418,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const fx = cashflowFx.usdTwd || 32;
     const rows = [];
     for (const s of CF_SOURCES) {
+      // ⚠ try/catch 只擋得住「不是 JSON」；被同步寫成 {}／"字串"／123 的話 parse 會成功，
+      //   下一行 .reduce 就炸——cfCompute 一炸，總資產／資產配置／目標／健檢／首頁提醒全部啞掉。
+      //   壞一個模組的 key，只該讓那個模組算成 0，不該拖垮整個聚合（v15.6 毒化掃盪抓到的）。
       let holdings = [], txns = [];
-      try { const v = await readKey(s.hKey); holdings = v ? JSON.parse(v) : []; } catch (e) { holdings = []; }
-      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) { txns = []; }
+      try { const v = await readKey(s.hKey); const o = v ? JSON.parse(v) : []; holdings = Array.isArray(o) ? o : []; } catch (e) { holdings = []; }
+      try { const v = await readKey(s.tKey); const o = v ? JSON.parse(v) : []; txns = Array.isArray(o) ? o : []; } catch (e) { txns = []; }
       const cost = holdings.reduce((a, h) => a + holdingCost(h) * cfItemRate(s, h, fx), 0);
       const value = holdings.reduce((a, h) => a + holdingValue(h) * cfItemRate(s, h, fx), 0);
       const div = txns.filter(t => t.type === 'dividend').reduce((a, t) => a + (Number(t.shares) || 0) * (Number(t.price) || 0) * cfItemRate(s, t, fx), 0);
@@ -26259,7 +26268,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const fx = cashflowFx.usdTwd || 32;
     for (const s of CF_SOURCES) {
       let txns = [];
-      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) { txns = []; }
+      try { const v = await readKey(s.tKey); { const _o = v ? JSON.parse(v) : []; txns = Array.isArray(_o) ? _o : []; } } catch (e) { txns = []; }
       if (!Array.isArray(txns) || !txns.length) continue;
       replayTxnsForYear(txns, t => cfItemRate(s, t, fx));
     }
@@ -26376,7 +26385,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const typeName = { buy: '買進', sell: '賣出', dividend: '配息/收入', stock_div: '股票股利' };
     for (const s of CF_SOURCES) {
       let txns = [];
-      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) {}
+      try { const v = await readKey(s.tKey); { const _o = v ? JSON.parse(v) : []; txns = Array.isArray(_o) ? _o : []; } } catch (e) {}
       if (!Array.isArray(txns) || !txns.length) continue;
       const st = {};
       txns.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(t => {
@@ -28174,7 +28183,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   let histZeroSkipped = false;   // 今天讀到 0、所以沒有自動記快照（見 recordAssetSnapshot）
 
   async function loadAssetHistory() {
-    try { const v = await readKey(HIST_STORAGE); assetHistory = v ? JSON.parse(v) : []; }
+    try { const v = await readKey(HIST_STORAGE); { const _o = v ? JSON.parse(v) : []; assetHistory = Array.isArray(_o) ? _o : []; } }
     catch (e) { assetHistory = []; }
     if (!Array.isArray(assetHistory)) assetHistory = [];
     return assetHistory;
@@ -28532,8 +28541,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       // MIXED 模組的已實現損益存進 storage 時就已經是台幣了，不能再乘一次
       const realizedRate = s.cur === 'MIXED' ? 1 : (s.cur === 'USD' ? fx : 1);
       let holdings = [], txns = [], realized = 0;
-      try { const v = await readKey(s.hKey); holdings = v ? JSON.parse(v) : []; } catch (e) {}
-      try { const v = await readKey(s.tKey); txns = v ? JSON.parse(v) : []; } catch (e) {}
+      // ⚠ 同 cfCompute：形狀也要驗，parse 得出來的 {}／字串一樣會讓下面的迴圈炸
+      try { const v = await readKey(s.hKey); const o = v ? JSON.parse(v) : []; holdings = Array.isArray(o) ? o : []; } catch (e) {}
+      try { const v = await readKey(s.tKey); const o = v ? JSON.parse(v) : []; txns = Array.isArray(o) ? o : []; } catch (e) {}
       try { const v = await readKey(s.rKey); realized = v ? Number(v) : 0; } catch (e) {}
       realizedSum += (realized || 0) * realizedRate;
       holdings.forEach(h => {
@@ -32514,7 +32524,7 @@ ${baseSchema}
   // === AI 深度介紹（快取於 localStorage）===
   const SPOT_AI_CACHE_KEY = 'travel_spot_ai_cache_v1';
   function getSpotAiCache() {
-    try { return JSON.parse(localStorage.getItem(SPOT_AI_CACHE_KEY) || '{}'); } catch (e) { return {}; }
+    try { const _c = JSON.parse(localStorage.getItem(SPOT_AI_CACHE_KEY) || '{}'); return (_c && typeof _c === 'object' && !Array.isArray(_c)) ? _c : {}; } catch (e) { return {}; }
   }
   function saveSpotAiCache(cache) {
     try { localStorage.setItem(SPOT_AI_CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
@@ -32801,7 +32811,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   // ===== Wikipedia 縮圖 =====
   const WIKI_CACHE_KEY = 'travel_wiki_cache_v1';
   let wikiCache = {};
-  try { wikiCache = JSON.parse(localStorage.getItem(WIKI_CACHE_KEY) || '{}'); } catch (e) {}
+  try { const _w = JSON.parse(localStorage.getItem(WIKI_CACHE_KEY) || '{}'); wikiCache = (_w && typeof _w === 'object' && !Array.isArray(_w)) ? _w : {}; } catch (e) {}
 
   function cleanSpotName(name) {
     // 移除括號內補充說明、移除常見尾綴
