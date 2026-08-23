@@ -9087,7 +9087,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.1 · ο</div>
+    <div>v 15.2 · ο</div>
   </footer>
 </div>
 
@@ -28472,9 +28472,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       txns.forEach(t => {
         const rate = cfItemRate(s, t, fx);
         const amt = (Number(t.shares) || 0) * (Number(t.price) || 0), fee = (Number(t.fee) || 0);
+        // XIRR 要的是「真的進出口袋的錢」：賣出實拿 = 金額 − 手續費 − 證交稅。
+        // 稅以前沒扣（實測一筆 390 元的稅讓 XIRR 高估 0.05 個百分點——不大，但錯就是錯）。
+        const tax = Number(t.tax) || 0;
         if (t.type === 'dividend') { divSum += amt * rate; flows.push({ date: t.date, amount: amt * rate }); }
-        else if (t.type === 'buy') flows.push({ date: t.date, amount: -(amt + fee) * rate });
-        else if (t.type === 'sell') flows.push({ date: t.date, amount: (amt - fee) * rate });
+        else if (t.type === 'buy') flows.push({ date: t.date, amount: -(amt + fee + tax) * rate });
+        else if (t.type === 'sell') flows.push({ date: t.date, amount: (amt - fee - tax) * rate });
       });
     }
     if (allH.length === 0) { el.innerHTML = '<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; color:var(--ink-tertiary); font-size:12.5px;">尚無持股，加了持股後這裡會顯示績效與風險分析。</div>'; return; }
