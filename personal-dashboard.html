@@ -7569,7 +7569,7 @@
     <div class="stats-row" id="cfStats"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; align-items:center;">
       <button class="btn btn-sm btn-primary" data-refresh-prices onclick="refreshAllPrices()"
-              title="台股走 FinMind 收盤、美股走 Finnhub 即時、加密走 CoinGecko、外幣走即時匯率">⚡ 一鍵更新全部現價</button>
+              title="台股走證交所收盤、美股走 Finnhub 即時、加密走 CoinGecko、外幣走即時匯率">⚡ 一鍵更新全部現價</button>
       <span id="cfPriceAge" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);"></span>
       <button class="btn btn-sm" id="cfAutoPriceBtn" onclick="toggleAutoPrice()" title="開 App 時自動更新（最多 6 小時一次，背景進行）">⟳ 自動更新</button>
       <span style="flex:1;"></span>
@@ -9158,7 +9158,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.5 · π</div>
+    <div>v 16.6 · ρ</div>
   </footer>
 </div>
 
@@ -13715,7 +13715,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   // ===== 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF 用，TradingView + 重用 AI）=====
   let tvChartPrompt = '';
   let twChartObj = null;
-  // 台股 K 線：FinMind 日線資料（CORS 允許、免 token）+ lightweight-charts 自繪
+  // 台股 K 線：證交所官方日線（免金鑰、免額度；上櫃退回 FinMind，見 twPriceRows）+ lightweight-charts 自繪
   // （免費 TradingView 嵌入 widget 不提供台股資料，故自繪）
   // 共用繪圖：K 線 + MA20 + 趨勢線(迴歸) + 成交量（台股/美股 FinMind 皆用）
   function drawFmCandleChart(containerId, candles, vols) {
@@ -13838,8 +13838,7 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       if (!window.LightweightCharts) await loadScript('https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', 'sdk-lwc');
       if (!window.LightweightCharts) throw new Error('圖表元件載入失敗');
       const start = todayISO(Date.now() - 400 * 864e5);
-      const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-      const rows = await finmindFetch(url);   // v11.4：拉不到資料時講真正的原因，不要丟「Failed to fetch」給使用者看
+      const rows = await twPriceRows(code, start);   // 上市走證交所（免額度）、上櫃退回 FinMind；v11.4：拉不到時講真正的原因
       if (!rows.length) { cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">查無此代號的台股日線（' + escape(code) + '）</div>'; const sp = document.getElementById('tvSignalsPanel'); if (sp) sp.innerHTML = ''; return; }
       const candles = rows.map(r => ({ time: r.date, open: +r.open, high: +r.max, low: +r.min, close: +r.close })).filter(c => c.close > 0);
       const vols = rows.map(r => ({ time: r.date, value: +r.Trading_Volume || 0, color: (+r.close >= +r.open) ? 'rgba(212,165,116,0.4)' : 'rgba(201,123,106,0.4)' }));
@@ -14025,6 +14024,179 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   // 額度用完時會安靜地回傳空陣列 → 畫面顯示「查無此代號歷史資料」，
   // 使用者以為是這檔股票沒資料，其實是額度用完了。**錯的訊息比沒有訊息更糟**，
   // 所以這裡把 API 的錯誤變成看得懂的例外往上丟。
+  // ═══════════════════════════════════════════════════════════════
+  // 台股日線 · 證交所官方（v16.6）
+  // ───────────────────────────────────────────────────────────────
+  // 為什麼加這個：台股價格本來全部走 FinMind，而 FinMind 免費層是
+  //   **每小時約 300 次總請求**，打爆之後回 402／403——而且那兩個狀態
+  //   **沒有 CORS 標頭**，瀏覽器只看得到「Failed to fetch」。使用者跑一次
+  //   掃描器就可能把額度用光，接下來一小時什麼都查不到（v11.4 的教訓）。
+  //
+  // 證交所官方 API（2026-08-23 實測）：
+  //   `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=YYYYMMDD&stockNo=2330&response=json`
+  //   · `Access-Control-Allow-Origin: *` → **瀏覽器可直連，不需要代理**
+  //   · 免金鑰、免註冊、**沒有每小時額度**（15 連發約 2 次/秒全部 200）
+  //   · 一次回**那個月每一天**的開高低收＋成交量（給月中的日期也是回整個月）
+  //   · ⚠ 日期是**民國年**（115/08/21）、數字**帶逗號**（18,922,480）→ 一定要自己轉
+  //   · ⚠ **只有上市**：上櫃（5483／3105／6488／4966／8069 實測）一律 0 筆 → 那些退回 FinMind
+  //
+  // 所以：**上市走證交所（免額度）、上櫃走 FinMind（用量大減）**。
+  // 已完成的月份不會再變 → 存起來，下次只抓當月那一個請求。
+  const TWSE_MONTH_CACHE = 'studio_twse_month_v1';
+  const TWSE_CACHE_MAX = 300;          // 一筆約 1KB，上限 ~300KB
+  const TWSE_CUR_MONTH_TTL = 30 * 60 * 1000;   // 當月的資料每天收盤後才變，30 分鐘內不重抓
+  let twseMonthCache = null;
+  // 上一次是哪個來源抓到的——畫面要講實話（使用者才知道「查不到」是誰的問題）。
+  // ⚠ 宣告一定要放在用到它的函式**前面**：const/let 有 TDZ，宣告在後面的話
+  //   初始化期間連 typeof 都會丟例外（v15.1 踩過）。
+  let twPriceLastSource = 'twse';
+  let twPriceTwseDown = false;     // 這次退回 FinMind，是因為證交所連不上（不是「證交所沒這一檔」）
+  const twPriceSourceName = () => twPriceLastSource === 'finmind' ? 'FinMind（上櫃）' : '證交所';
+
+  // 民國 115/08/21 → 2026-08-21（轉不出來回空字串，讓呼叫端丟掉這一列）
+  function twseRocToIso(s) {
+    const m = String(s || '').match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
+    if (!m) return '';
+    const y = Number(m[1]) + 1911;
+    return y + '-' + String(Number(m[2])).padStart(2, '0') + '-' + String(Number(m[3])).padStart(2, '0');
+  }
+  // '18,922,480' → 18922480；'--'／'X0.00'／空 → null（不要變成 0，0 會被當成真的價格）
+  function twseNum(v) {
+    const t = String(v == null ? '' : v).replace(/,/g, '').replace(/^\+/, '').trim();
+    if (!t || t === '--' || t === '-') return null;
+    const n = Number(t);
+    return isFinite(n) ? n : null;
+  }
+  async function twseLoadCache() {
+    if (twseMonthCache) return twseMonthCache;
+    twseMonthCache = await readJson(TWSE_MONTH_CACHE, {}) || {};
+    return twseMonthCache;
+  }
+  async function twseSaveCache() {
+    const c = twseMonthCache || {};
+    const keys = Object.keys(c);
+    if (keys.length > TWSE_CACHE_MAX) {
+      // 丟掉最舊的（照 at 排序），不要無限長大
+      keys.sort((a, b) => (c[a] && c[a].at || 0) - (c[b] && c[b].at || 0))
+          .slice(0, keys.length - TWSE_CACHE_MAX).forEach(k => { delete c[k]; });
+    }
+    await writeKey(TWSE_MONTH_CACHE, JSON.stringify(c));
+  }
+  const twseCurYm = () => { const d = new Date(); return d.getFullYear() * 100 + (d.getMonth() + 1); };
+
+  // ⚠ **全域**併發閘，不是每次呼叫各自算的。
+  //   掃描器自己開 8 個 worker，每個 worker 又要抓好幾個月 → 不擋的話會變成 8×N 個請求同時打證交所。
+  //   證交所沒有額度，但那樣打人家遲早會封 IP（而且我們也沒必要）。
+  //   實測 15 連發約 2 次/秒全部 200；這裡壓在 4 個同時，安全又夠快。
+  const TWSE_MAX_CONCURRENT = 4;
+  let twseRunning = 0;
+  const twseWaiting = [];
+  function twseGate() {
+    if (twseRunning < TWSE_MAX_CONCURRENT) { twseRunning++; return Promise.resolve(); }
+    return new Promise(res => twseWaiting.push(res));
+  }
+  function twseRelease() {
+    const next = twseWaiting.shift();
+    if (next) next(); else twseRunning = Math.max(0, twseRunning - 1);
+  }
+
+  // 抓某一檔某一個月。回 FinMind 同款欄位（date/open/max/min/close/Trading_Volume），
+  // 呼叫端就不用為了兩個來源各寫一份對應。
+  // 回 null ＝ 抓失敗（網路／格式壞）；回 [] ＝ 抓到了但那個月沒有資料（上櫃、還沒上市、未來月份）。
+  async function twseFetchMonth(code, ym) {
+    const key = code + '-' + ym;
+    const cache = await twseLoadCache();
+    const hit = cache[key];
+    const isCur = ym === twseCurYm();
+    if (hit && Array.isArray(hit.rows) && (!isCur || (Date.now() - (hit.at || 0)) < TWSE_CUR_MONTH_TTL)) {
+      return hit.rows.map(r => ({ date: r[0], open: r[1], max: r[2], min: r[3], close: r[4], Trading_Volume: r[5] }));
+    }
+    const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${ym}01&stockNo=${encodeURIComponent(code)}&response=json`;
+    let j = null;
+    await twseGate();
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) return null;
+      j = await r.json();
+    } catch (e) { return null; }
+    finally { twseRelease(); }
+    if (!j || typeof j !== 'object') return null;
+    // stat 不是 OK ＝ 沒有這個月的資料（不是失敗）——未來月份、上櫃、代號不存在都走這裡
+    const rows = (j.stat === 'OK' && Array.isArray(j.data)) ? j.data : [];
+    const out = [];
+    const compact = [];
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length < 7) continue;
+      const date = twseRocToIso(row[0]);
+      const close = twseNum(row[6]);
+      if (!date || !(close > 0)) continue;      // 沒開盤／格式怪的那幾天直接丟掉
+      const open = twseNum(row[3]), max = twseNum(row[4]), min = twseNum(row[5]);
+      const vol = twseNum(row[1]) || 0;
+      out.push({ date, open: open != null ? open : close, max: max != null ? max : close,
+                 min: min != null ? min : close, close, Trading_Volume: vol });
+      compact.push([date, open != null ? open : close, max != null ? max : close, min != null ? min : close, close, vol]);
+    }
+    // ⚠ 只有「真的拿到資料」才存快取——空的存下去，之後那一檔就永遠是空的（失敗的抓取不要快取）。
+    //   當月可能真的還沒開盤（月初第一天），空的也不存，下次再問。
+    if (compact.length) {
+      cache[key] = { at: Date.now(), rows: compact };
+      twseSaveCache().catch(() => {});
+    }
+    return out;
+  }
+
+  // 這一檔從 startISO 到今天的日線。上市 → 證交所；抓不到（上櫃／證交所掛了）→ 退回 FinMind。
+  // 回傳跟 finmindFetch(TaiwanStockPrice) 完全一樣的形狀，呼叫端不用改對應。
+  async function twPriceRows(code, startISO) {
+    twPriceLastSource = 'twse';
+    twPriceTwseDown = false;
+    const start = new Date(String(startISO || '') + 'T00:00:00');
+    const now = new Date();
+    const months = [];
+    if (!isNaN(start.getTime())) {
+      let y = start.getFullYear(), m = start.getMonth() + 1;
+      const endYm = now.getFullYear() * 100 + (now.getMonth() + 1);
+      let guard = 0;
+      while (y * 100 + m <= endYm && guard++ < 240) {   // 上限 20 年，防呆
+        months.push(y * 100 + m);
+        m++; if (m > 12) { m = 1; y++; }
+      }
+    }
+    let rows = [], allFail = months.length > 0;
+    if (months.length) {
+      const results = new Array(months.length);
+      let idx = 0;
+      // 這裡開幾條不重要，真正擋流量的是上面的 twseGate（全域 4 條）
+      await Promise.all(Array.from({ length: Math.min(4, months.length) }, async () => {
+        while (idx < months.length) { const k = idx++; results[k] = await twseFetchMonth(code, months[k]); }
+      }));
+      results.forEach(r => { if (r !== null) { allFail = false; rows = rows.concat(r); } });
+    }
+    if (rows.length) {
+      const seen = new Set();
+      const uniq = rows.filter(r => (seen.has(r.date) ? false : (seen.add(r.date), true)));
+      uniq.sort((a, b) => a.date.localeCompare(b.date));
+      return uniq.filter(r => !startISO || r.date >= startISO);
+    }
+    // 走到這裡有兩種完全不同的原因，錯誤訊息不能混為一談：
+    //   allFail   ＝ 每個月都抓失敗 → 證交所連不上（多半是網路斷線；證交所沒有額度這回事）
+    //   否則      ＝ 證交所有回應但這一檔 0 筆 → 上櫃／興櫃／代號不存在 → FinMind 才有
+    twPriceLastSource = 'finmind';
+    twPriceTwseDown = allFail;
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${startISO}`;
+    try {
+      return await finmindFetch(url);
+    } catch (e) {
+      // ⚠ 兩邊都連不上時，FinMind 那句「最可能是查太多次被擋住」會**誤導**——
+      //   證交所根本沒有額度，兩個來源同時掛掉最可能就是網路斷線。講錯原因會害使用者白等一小時。
+      if (allFail && e && e.finmindBlocked) {
+        const err = new Error('證交所與 FinMind 都連不上——最可能是網路斷線（證交所沒有查詢次數限制，所以不會是「查太多次」）。確認網路後再試一次。');
+        err.bothDown = true;
+        throw err;
+      }
+      throw e;
+    }
+  }
   function finmindRows(j, res) {
     if (j && j.status === 200) return j.data || [];
     const msg = String((j && j.msg) || '');
@@ -25107,7 +25279,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // 但除了美股以外全都要手動輸入。資料一舊，所有數字與提醒就跟著失準。
   //
   // ⚠ 資料源都查證過（見 SKILL.md §5.8.19）：
-  //   台股 → FinMind 逐檔（證交所官方 API 一次能給全市場，但沒有 CORS 標頭，瀏覽器擋掉）
+  //   台股 → **證交所官方**逐檔（2026-08-23 複測：`www.twse.com.tw/rwd/*` 現在有 `Access-Control-Allow-Origin: *`，
+  //          瀏覽器可直連、免金鑰、沒有每小時額度。⚠ 只有上市，上櫃自動退回 FinMind。見 twPriceRows）
   //   美股 → Finnhub（要免費金鑰；沒設定就跳過，不當成錯誤）
   //   加密 → CoinGecko，一次帶多個 id
   //   外幣 → open.er-api，一次拿全部匯率
@@ -25156,11 +25329,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       push: h => pushFxDepHoldingToSupabase(h), render: () => { renderFxDepHoldings(); renderFxDepStats(); } }
   ];
 
-  // FinMind 逐檔抓最近收盤（只要 10 天，不像畫圖要 400 天）
+  // 逐檔抓最近收盤（只要 12 天，不像畫圖要 400 天）。
+  // 上市走證交所——這裡是最常跑的操作（每次「更新價格」都是 N 檔 × 1 次），
+  // 以前整批打 FinMind，20 檔就吃掉額度的 7%。
   async function quoteTwClose(code) {
     const start = todayISO(Date.now() - 12 * 864e5);
-    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-    const rows = await finmindFetch(url);   // v11.4：額度用完時會丟看得懂的例外，而不是默默回空
+    const rows = await twPriceRows(code, start);   // v11.4：額度用完時會丟看得懂的例外，而不是默默回空
     for (let i = rows.length - 1; i >= 0; i--) {
       const c = Number(rows[i].close);
       if (c > 0) return { price: c, date: rows[i].date };
@@ -27255,10 +27429,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   // 台股日線（欄位名跟美股不一樣：open/max/min/close/Trading_Volume）
+  // ⚠ 掃描器是最耗額度的地方（一次掃 152 檔）——改走證交所之後，上市的部分完全不吃 FinMind 額度。
+  // ⚠ 這裡只要 **210 天**，不是畫圖用的 400 天：掃描器最長只用到「近 60 日」
+  //   （MA60、usSwing(bars,60)、usDetectCross 回看 15 根 → 約 75 個交易日就夠）。
+  //   證交所一次只給一個月，多抓一天就多一個請求——400 天要 14 個月，210 天只要 7~8 個月（看今天幾號），直接砍一半。
+  //   指標算出來完全一樣（都只吃最後 N 根），所以這不是「為了快而降低品質」。
   async function fetchTwOhlc(code) {
-    const start = todayISO(Date.now() - 400 * 864e5);
-    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(code)}&start_date=${start}`;
-    const rows = await finmindFetch(url);
+    const start = todayISO(Date.now() - 210 * 864e5);
+    const rows = await twPriceRows(code, start);
     return rows.map(x => ({ time: x.date, open: +x.open, high: +x.max, low: +x.min, close: +x.close, volume: +x.Trading_Volume || 0 }))
                .filter(b => b.close > 0);
   }
@@ -27302,7 +27480,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const lab = document.getElementById('usScanMarketLabel');
     if (lab) lab.textContent = m === 'tw' ? '台股短線' : '美股短線';
     const src = document.getElementById('usScanSourceLabel');
-    if (src) src.textContent = m === 'tw' ? 'FinMind 台股日線' : 'FinMind 美股日線';
+    if (src) src.textContent = m === 'tw' ? '證交所台股日線（上櫃退回 FinMind）' : 'FinMind 美股日線';
     const cust = document.getElementById('usScanCustom');
     if (cust) cust.placeholder = m === 'tw' ? '2330, 2454, 0050（逗號分隔）' : 'AAPL, NVDA, TSLA（逗號分隔）';
     const sel = document.getElementById('usScanScope');
@@ -27335,7 +27513,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const note = document.getElementById('usScanFundNote');
     if (note) {
       note.innerHTML = usScanMarket === 'tw'
-        ? '台股走 FinMind，免金鑰。每檔多抓一次，掃「全部個股」會比較久，建議先用權值 40 檔。'
+        ? '台股走證交所官方資料，免金鑰、沒有查詢次數上限（上櫃的股票證交所沒有，會自動改用 FinMind）。第一次掃比較久，之後過去的月份都有快取。'
         : (finnhubKey
             ? '美股走 Finnhub，免費層每分鐘 60 次 → 系統會自動放慢到約 <strong>1 秒/檔</strong>（42 檔約多花 45 秒）。'
             : '⚠ 美股基本面需要 Finnhub 金鑰，請先到工具列「🔑 金鑰」設定。<strong>沒設定的話勾了也抓不到。</strong>');
