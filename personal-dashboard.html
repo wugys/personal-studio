@@ -1733,6 +1733,24 @@
   .stl-pay .amt { margin-left: auto; font-family: var(--serif); font-size: 17px; color: var(--accent); white-space: nowrap; }
   .exp-fx { font-family: var(--mono); font-size: 10px; color: var(--ink-tertiary); display: block; margin-top: 2px; }
   .exp-split { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); }
+  .exp-other { font-family: var(--mono); font-size: 10px; color: var(--ink-muted); }
+  /* 別人先付的：不算在「已用」裡，所以調淡並集中列一區 */
+  .expense-row.by-other { opacity: 0.62; }
+  .expense-row.by-other .expense-amount { color: var(--ink-tertiary); }
+  .bud-others {
+    border: 1px solid var(--line); border-left: 3px solid var(--ink-muted); border-radius: 3px;
+    padding: 12px 14px; margin-bottom: 16px; background: var(--bg-group);
+  }
+  .bud-others .hd { font-size: 13px; color: var(--ink-primary); margin-bottom: 8px; }
+  .bud-others .hd span { font-family: var(--mono); font-size: 10px; color: var(--ink-tertiary); margin-left: 8px; }
+  .bud-others .ln { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--ink-secondary); padding: 4px 0; }
+  .bud-others .ln .d { font-family: var(--mono); font-size: 10px; color: var(--ink-muted); }
+  .bud-others .ln .who { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); }
+  .bud-others .ln .am { margin-left: auto; font-family: var(--serif); font-size: 15px; color: var(--ink-tertiary); white-space: nowrap; }
+  .bud-others .ft { font-family: var(--mono); font-size: 10px; color: var(--ink-muted); line-height: 1.8; margin-top: 8px; }
+  @media (max-width: 768px) {
+    .bud-others .hd span { display: block; margin-left: 0; margin-top: 3px; }
+  }
   .share-chip {
     font-family: var(--mono); font-size: 11px; padding: 7px 11px; cursor: pointer; min-height: 38px;
     background: transparent; border: 1px solid var(--line); border-radius: 3px; color: var(--ink-tertiary);
@@ -7878,6 +7896,8 @@
 
       <div id="budgetTotalNote"></div>
       <div id="budgetShopNote"></div>
+      <!-- 別人先付的那幾筆：不算在「已用」裡，另外列出來說明差額 -->
+      <div id="budgetOthersNote"></div>
       <div class="budget-summary" id="budgetSummary"></div>
 
       <div style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap;">
@@ -9158,7 +9178,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.6 · ρ</div>
+    <div>v 16.7 · σ</div>
   </footer>
 </div>
 
@@ -29762,11 +29782,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     //   於是同一張紙上「已花 NT$3,499」而類別小計加起來是 NT$4,699，**差的 1,200 沒有任何說明**，
     //   而那筆包車其實是王大明付的，紙上看起來卻像是你付的。
     //   小計改成只算自己付的，別人先付的另外列一區並寫出是誰付的——一塊錢都不會消失。
-    const paidByOthers = trvExpenses.filter(e => expPayer(e) !== 'me');
+    //   ⚠ 畫面版（renderBudget）與這裡吃同一份定義（expPaidByOthers／expMineIn），不各寫一份。
+    const paidByOthers = expPaidByOthers();
     const othersSum = paidByOthers.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const cats = ['餐飲', '購物', '門票', '交通', '小費', '其他'];
     const catRows = cats.map(c => {
-      const mine = trvExpenses.filter(e => e.category === c && expPayer(e) === 'me');
+      const mine = expMineIn(c);
       if (mine.length === 0) return '';
       const sum = mine.reduce((s, e) => s + (Number(e.amount) || 0), 0);
       return `<tr><td style="padding:1.5mm 3mm;">${escape(c)}</td><td style="padding:1.5mm 3mm; text-align:right;">${nt(sum)}</td><td style="padding:1.5mm 3mm; text-align:right; color:#888 !important;">${mine.length} 筆</td></tr>`;
@@ -32454,6 +32475,13 @@ ${baseSchema}
   function trvOutOfPocket() {
     return (Array.isArray(trvExpenses) ? trvExpenses : []).reduce((s, x) => s + expOutOfPocket(x), 0);
   }
+  // 別人先付的那幾筆（＝不算在「已花」裡的）。
+  // ⚠ v14.9 只把列印版的類別小計改成「只算自己付的」，**畫面上的預算分頁漏掉**——
+  //   同一頁上「已用 3,499」而類別小計加起來是 4,699，差的 1,200 是王大明付的包車錢，
+  //   畫面上沒有任何說明，看起來就像你自己付的。抽成共用的一份，兩邊吃同一個定義。
+  const expPaidByOthers = () => (Array.isArray(trvExpenses) ? trvExpenses : []).filter(e => expPayer(e) !== 'me');
+  const expMineIn = cat => (Array.isArray(trvExpenses) ? trvExpenses : [])
+    .filter(e => e.category === cat && expPayer(e) === 'me');
 
   // 每個人「先付了多少」與「該負擔多少」，差額就是誰欠誰。
   // ⚠ 只算有分帳的那些筆；沒分帳的是各付各的，不進來攪和。
@@ -34528,6 +34556,21 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     }
     return '';
   }
+  // 「別人先付的」那一區：一個人用的時候完全不出現（不對單人情況製造多餘的欄位，v14.9 的規矩）
+  function budgetOthersHtml() {
+    const others = expPaidByOthers();
+    if (!others.length) return '';
+    const nt = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+    const sum = others.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    return `<div class="bud-others">
+      <div class="hd"><strong>別人先付的 ${others.length} 筆 · ${nt(sum)}</strong>
+        <span>不算在上面的「已用」裡，因為錢不是從你口袋出去的</span></div>
+      ${others.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e =>
+        `<div class="ln"><span class="d">${escape(e.date || '')}</span>${escape(e.note || e.category || '—')}
+          <span class="who">${escape(splitNameOf(expPayer(e)))}付</span><span class="am">${nt(e.amount)}</span></div>`).join('')}
+      <div class="ft">上面的類別小計與筆數只算<strong>你自己付的</strong>，加起來剛好等於「已用」。</div>
+    </div>`;
+  }
 
   function renderBudget() {
     try { renderTrvBrief(); } catch (e) {}   // 花費一改，管家提醒裡的預算與今日花費也要跟著變
@@ -34550,18 +34593,23 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     if (bnote) bnote.innerHTML = budgetNoteHtml();
 
     // 類別摘要
+    // ⚠ 只算「自己付的」，才會跟上面的「已用」逐元對得起來（v14.9 列印版的修法，畫面當時漏了）。
+    //   別人先付的不是不見了，是另外列一區並寫出是誰付的——一塊錢都不會消失，只是放到對的地方。
     const cats = ['餐飲', '購物', '門票', '交通', '小費', '其他'];
     const catHtml = cats.map(c => {
-      const sum = trvExpenses.filter(e => e.category === c).reduce((s, e) => s + Number(e.amount || 0), 0);
+      const mine = expMineIn(c);
+      const sum = mine.reduce((s, e) => s + Number(e.amount || 0), 0);
       return `
         <div class="stat-card">
           <div class="stat-label">${escape(c)}</div>
           <div class="stat-value">NT$${sum.toLocaleString()}</div>
-          <div class="stat-sub">${trvExpenses.filter(e => e.category === c).length} 筆</div>
+          <div class="stat-sub">${mine.length} 筆</div>
         </div>
       `;
     }).join('');
     document.getElementById('budgetSummary').innerHTML = catHtml;
+    const bo = document.getElementById('budgetOthersNote');
+    if (bo) bo.innerHTML = budgetOthersHtml();
     const bn = document.getElementById('budgetShopNote');
     if (bn) bn.innerHTML = shopDupHtml('budget') + shopUnbilledHtml('budget');
 
@@ -34570,12 +34618,17 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const listHtml = sorted.map(e => {
       const share = expShareIds(e);
       const payer = expPayer(e);
+      // ⚠ 別人付的一律標出來並調淡——原本只有「有分帳」時才標，
+      //   所以「別人付的、沒分帳」那筆看起來完全像自己付的，卻不算在「已用」裡。
+      const byOther = payer !== 'me';
       return `
-      <div class="expense-row" onclick="openExpenseModal('${escape(e.id)}')">
+      <div class="expense-row${byOther ? ' by-other' : ''}" onclick="openExpenseModal('${escape(e.id)}')">
         <div class="expense-info">
           <div><span class="expense-cat-badge">${escape(e.category)}</span><span class="expense-note">${escape(e.note || '—')}</span></div>
           <div class="expense-meta">${escape(e.date || '')}${
-            share.length ? ` · <span class="exp-split">${escape(splitNameOf(payer))}付 · 分 ${share.length} 人</span>` : ''}</div>
+            share.length ? ` · <span class="exp-split">${escape(splitNameOf(payer))}付 · 分 ${share.length} 人</span>`
+                         : (byOther ? ` · <span class="exp-split">${escape(splitNameOf(payer))}付</span>` : '')}${
+            byOther ? ` · <span class="exp-other">不算你的</span>` : ''}</div>
         </div>
         <div class="expense-amount">NT$${Number(e.amount).toLocaleString()}${
           e.oc ? `<span class="exp-fx">${escape(ccySym(e.oc))}${Number(e.oa || 0).toLocaleString()} × ${e.fx}</span>` : ''}</div>
