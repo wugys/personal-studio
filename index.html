@@ -9140,7 +9140,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.7 · ο</div>
+    <div>v 15.8 · ο</div>
   </footer>
 </div>
 
@@ -32440,7 +32440,7 @@ ${baseSchema}
   // ⚠ 座標用「那一天第一個有 GPS 的景點」，沒有的沿用前一天（跨城市行程每天位置不同，
   //   拿單一點算整趟會把成都的雨報到九寨溝頭上）。整趟都沒 GPS（自建空殼）就不抓。
   let trvWx = null;            // { at, days: { 'YYYY-MM-DD': { code, tmax, tmin, pp } } }
-  let trvWxFetching = false;
+  let trvWxGen = 0;            // 世代號：換行程時 +1，還在飛的舊抓取回來就丟掉（不寫進新行程的快取）
   const WX_TTL_MS = 6 * 3600000;
   function wxInfo(code) {
     const c = Number(code);
@@ -32472,15 +32472,23 @@ ${baseSchema}
   }
   async function maybeFetchTripWeather() {
     trvWx = null;
+    const gen = ++trvWxGen;
     if (!ITINERARY || !Array.isArray(ITINERARY.days) || !ITINERARY.days.length) return false;
+    const wxKey = TRAVEL_STORAGE.wx;     // 先記下「這一趟」的 key——等 await 回來時使用者可能已經換行程了
+    let stale = null;                    // 過期但形狀正確的舊快取：離線／API 掛掉時總比沒有好
     try {
-      const cached = JSON.parse((await readKey(TRAVEL_STORAGE.wx)) || 'null');
-      if (cached && cached.at && (Date.now() - cached.at) < WX_TTL_MS && cached.days && typeof cached.days === 'object') {
-        trvWx = cached;
-        return true;   // 用快取，不打 API
+      const cached = JSON.parse((await readKey(wxKey)) || 'null');
+      if (cached && typeof cached === 'object' && !Array.isArray(cached) && isFinite(cached.at) &&
+          cached.days && typeof cached.days === 'object' && !Array.isArray(cached.days)) {
+        if ((Date.now() - cached.at) < WX_TTL_MS) {
+          if (gen !== trvWxGen) return false;
+          trvWx = cached;
+          return true;   // 用快取，不打 API
+        }
+        stale = cached;
       }
     } catch (e) {}
-    if (trvWxFetching) return false;
+    if (gen !== trvWxGen) return false;
     // 只抓「今天起、預報範圍內（15 天）」的行程日
     const today = todayISO();
     const maxDate = trvDateOffset(15);
@@ -32492,33 +32500,35 @@ ${baseSchema}
       if (d.date >= today && d.date <= maxDate && lastCoords) jobs.push({ date: d.date, gps: lastCoords });
     });
     if (!jobs.length) return false;
-    trvWxFetching = true;
-    try {
-      const days = {};
-      await Promise.all(jobs.map(async j => {
-        try {
-          const u = `https://api.open-meteo.com/v1/forecast?latitude=${j.gps[0]}&longitude=${j.gps[1]}` +
-            `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
-            `&timezone=auto&start_date=${j.date}&end_date=${j.date}`;
-          const r = await fetch(u);
-          if (!r.ok) return;
-          const jd = await r.json();
-          const dl = jd && jd.daily;
-          if (dl && dl.time && dl.time[0] === j.date) {
-            days[j.date] = {
-              code: Number(dl.weather_code[0]),
-              tmax: Number(dl.temperature_2m_max[0]),
-              tmin: Number(dl.temperature_2m_min[0]),
-              pp: Number(dl.precipitation_probability_max[0]) || 0
-            };
-          }
-        } catch (e) {}   // 單日失敗就沒那天的徽章，不影響其他天
-      }));
-      if (!Object.keys(days).length) return false;   // 全失敗 → 不寫快取（失敗不快取）
-      trvWx = { at: Date.now(), days };
-      await writeKey(TRAVEL_STORAGE.wx, JSON.stringify(trvWx));
-      return true;
-    } finally { trvWxFetching = false; }
+    const days = {};
+    await Promise.all(jobs.map(async j => {
+      try {
+        const u = `https://api.open-meteo.com/v1/forecast?latitude=${j.gps[0]}&longitude=${j.gps[1]}` +
+          `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+          `&timezone=auto&start_date=${j.date}&end_date=${j.date}`;
+        const r = await fetch(u);
+        if (!r.ok) return;
+        const jd = await r.json();
+        const dl = jd && jd.daily;
+        if (dl && dl.time && dl.time[0] === j.date) {
+          days[j.date] = {
+            code: Number(dl.weather_code[0]),
+            tmax: Number(dl.temperature_2m_max[0]),
+            tmin: Number(dl.temperature_2m_min[0]),
+            pp: Number(dl.precipitation_probability_max[0]) || 0
+          };
+        }
+      } catch (e) {}   // 單日失敗就沒那天的徽章，不影響其他天
+    }));
+    if (gen !== trvWxGen) return false;   // 抓到一半換行程了 → 這批是別趟的，丟掉、不寫快取
+    if (!Object.keys(days).length) {
+      // 全失敗 → 不寫快取（失敗不快取）；但有過期舊快取就先拿來用（山上沒網路時昨天的預報比空白有用）
+      if (stale) { trvWx = stale; return true; }
+      return false;
+    }
+    trvWx = { at: Date.now(), days };
+    await writeKey(wxKey, JSON.stringify(trvWx));
+    return true;
   }
 
   // dateStr 有給的話會套上「整團順延」，否則就照原時間（舊呼叫點照樣可用）
