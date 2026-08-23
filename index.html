@@ -1783,6 +1783,12 @@
   .alt-chip { font-size: 9px; padding: 2px 5px; vertical-align: middle; }
   .alt-badge.lv1, .alt-chip.lv1 { color: var(--accent); border-color: rgba(212, 165, 116, 0.5); }
   .alt-badge.lv2, .alt-chip.lv2 { color: var(--danger); border-color: rgba(201, 123, 106, 0.6); }
+  /* 天氣徽章（時間軸日卡）：長相跟海拔徽章一家人，雨天轉暖色 */
+  .wx-badge {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; white-space: nowrap;
+    padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink-secondary);
+  }
+  .wx-badge.rain { color: var(--accent-warm); border-color: rgba(232, 184, 138, 0.5); }
   .rs-front { font-family: var(--mono); font-size: 9.5px; color: var(--ink-tertiary); letter-spacing: 0.2em; text-align: center; padding-bottom: 9px; border-bottom: 1px dashed var(--line); margin-bottom: 11px; }
   /* ===== 現場模式 =====
      在馬路上、太陽底下、一隻手拿著手機的時候用的。所以：字大、按鈕大、東西少。
@@ -9134,7 +9140,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.6 · ο</div>
+    <div>v 15.7 · ο</div>
   </footer>
 </div>
 
@@ -28822,6 +28828,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     get sos()         { return tripKey('sos'); },      // 突發狀況要打的電話
     get fx()          { return tripKey('fx'); },       // 這趟的當地幣別與匯率
     get field()      { return tripKey('field'); },    // 現場模式（進去的時間戳）
+    get wx()         { return tripKey('wx'); },       // 天氣預報快取（Open-Meteo）
     // 全域共用（不分 trip）
     settings: 'travel_settings_v1',
     lineGroup: 'travel_line_group_v1',
@@ -30103,6 +30110,10 @@ ${baseSchema}
     //    購物 0 件 · 清單 0 / 0」，全部是假的，要點別的分頁再點回來才會對。
     //    首頁就是打開旅遊模組的第一個畫面，導遊在集合點看到「尚未設定」是會出事的。
     renderHomeStats();
+    // 天氣是非同步加分項：抓完（或快取命中）再把時間軸與管家補畫一次；失敗就安靜沒有徽章
+    maybeFetchTripWeather().then(ok => {
+      if (ok) { try { renderTimeline(); renderTrvBrief(); } catch (e) {} }
+    }).catch(() => {});
     document.getElementById('lineGroupUrl').value = trvLineGroup;
     if (trvGatherTimerId) clearInterval(trvGatherTimerId);
     trvGatherTimerId = setInterval(tickGather, 1000);
@@ -30636,6 +30647,9 @@ ${baseSchema}
           else if (filled === 0) add('🆘', '「狀況」分頁的緊急電話<strong>一個都還沒填</strong>（領隊、地陪、保險、館處、飯店）。真的出事時沒有時間翻行程表找號碼。');
         } catch (e) {}
       }
+      // 出發那天的天氣（預報只到 16 天，太遠就不會有資料，不硬湊）
+      const wxFirst = wxLine(first.date, '出發那天');
+      if (toStart <= 15 && wxFirst) add(wxFirst.icon, wxFirst.text, wxFirst.tone);
       return out;
     }
 
@@ -30660,6 +30674,8 @@ ${baseSchema}
       }
       const sp = spotsOf(dToday);
       if (sp.length >= 4) add('👟', `今天要走 <strong>${sp.length} 個景點</strong>，穿好走的鞋，水跟行動電源帶著。`);
+      const wxT = wxLine(today, '今天');
+      if (wxT) add(wxT.icon, wxT.text, wxT.tone);
       if (trvGather && trvGather.date === today) {
         const gm = trvTimeToMin(trvGather.time);
         if (gm != null && gm > nowMin && gm - nowMin <= 90) add('⚑', `<strong>${escape(trvGather.time)}</strong> 要在「${escape(trvGather.desc || '集合點')}」集合，還有 ${trvDurText(gm - nowMin)}。`, 'warn');
@@ -30696,6 +30712,8 @@ ${baseSchema}
         `。<strong>今晚不要喝酒、早點睡</strong>，明天走路放慢一半。`,
         altLevel(tmrAlt.max) === 2 ? 'warn' : '');
     }
+    const wxM = wxLine(dTmr.date, '明天');
+    if (wxM) add(wxM.icon, wxM.text, wxM.tone);
     const tf = flightOf(dTmr);
     if (tf) add('✈', `明天有班機 ${escape(tf.name)} ${escape(trvSpotTimeText(dTmr.date, tf.time))}，護照與登機證先準備好。`, 'warn');
     const tsp = spotsOf(dTmr);
@@ -31392,6 +31410,13 @@ ${baseSchema}
       push(`${trvGather.time}  ${trvGather.desc || '集合點'}`);
     } else {
       push('今天還沒設定集合時間');
+    }
+
+    const wxToday = wxLine(d.date, '今天');
+    if (wxToday) {
+      push('');
+      push('── 天氣 ──');
+      push(wxToday.text.replace(/<[^>]+>/g, ''));
     }
 
     const da = dayAlt(d);
@@ -32255,6 +32280,9 @@ ${baseSchema}
       const da = dayAlt(d);
       const altBadge = da.max != null && altLevel(da.max) > 0
         ? `<span class="alt-badge lv${altLevel(da.max)}" title="最高點：${escape(da.maxName)}">▲ 最高 ${escape(altText(da.max))}</span>` : '';
+      const wxD = wxOf(d.date);
+      const wxBadge = wxD
+        ? `<span class="wx-badge${wxD.pp >= 40 ? ' rain' : ''}" title="${escape(wxInfo(wxD.code).t)}${wxD.pp ? ' · 降雨機率 ' + wxD.pp + '%' : ''}">${wxInfo(wxD.code).e} ${Math.round(wxD.tmin)}~${Math.round(wxD.tmax)}°${wxD.pp >= 40 ? ' ☂' + wxD.pp + '%' : ''}</span>` : '';
       // 自建行程才有「加一站／✎／✕」——內建行程是 const 常數，改了存不住，不給編輯是誠實
       const editable = !!ITINERARY._userCreated;
       const spotEditBtns = (i) => editable
@@ -32303,6 +32331,7 @@ ${baseSchema}
               <span class="day-title">${escape(d.title)}</span>
               <span class="day-date">${escape(d.date)} · ${escape(d.weekday)}</span>
               ${altBadge}
+              ${wxBadge}
               ${dayBadge}
             </div>
             <div class="day-card-arrow">→</div>
@@ -32400,6 +32429,96 @@ ${baseSchema}
     try { renderTrvNowNext(); } catch (err) {}
     try { renderHomeStats(); } catch (err) {}
     showToast('已刪除');
+  }
+
+  // ===== 行程天氣（Open-Meteo，免費免金鑰、CORS *）=====
+  //
+  // 為什麼要有：v12.6 的管家願景寫了「前一晚提醒帶傘」，但 App 一直沒有天氣資料，
+  //   那句承諾從沒兌現過。九寨溝這種高海拔行程，雨天與溫差直接決定怎麼穿、要不要改行程。
+  // ⚠ 誠實原則：預報只到 16 天——更遠的**不顯示**，不假裝有資料；
+  //   抓不到就安靜沒有徽章（天氣是加分項，不值得跳紅框嚇人）；**失敗不寫快取**（老教訓）。
+  // ⚠ 座標用「那一天第一個有 GPS 的景點」，沒有的沿用前一天（跨城市行程每天位置不同，
+  //   拿單一點算整趟會把成都的雨報到九寨溝頭上）。整趟都沒 GPS（自建空殼）就不抓。
+  let trvWx = null;            // { at, days: { 'YYYY-MM-DD': { code, tmax, tmin, pp } } }
+  let trvWxFetching = false;
+  const WX_TTL_MS = 6 * 3600000;
+  function wxInfo(code) {
+    const c = Number(code);
+    if (c === 0) return { e: '☀', t: '晴' };
+    if (c === 1 || c === 2) return { e: '🌤', t: '多雲時晴' };
+    if (c === 3) return { e: '☁', t: '陰' };
+    if (c === 45 || c === 48) return { e: '🌫', t: '有霧' };
+    if (c >= 51 && c <= 57) return { e: '🌦', t: '毛毛雨' };
+    if ((c >= 61 && c <= 67) || (c >= 80 && c <= 82)) return { e: '🌧', t: '有雨' };
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) return { e: '🌨', t: '降雪' };
+    if (c >= 95) return { e: '⛈', t: '雷雨' };
+    return { e: '🌡', t: '' };
+  }
+  function wxOf(dateStr) {
+    const d = trvWx && trvWx.days && trvWx.days[dateStr];
+    return (d && isFinite(d.tmax) && isFinite(d.tmin)) ? d : null;
+  }
+  // 管家與「今天的重點」共用的一句話（不各寫一份——v10.9 的老規矩）
+  function wxLine(dateStr, who) {
+    const w = wxOf(dateStr);
+    if (!w) return null;
+    const info = wxInfo(w.code);
+    const span = Math.round(w.tmax - w.tmin);
+    let txt = `${who}${info.t ? info.t + '，' : ''}${Math.round(w.tmin)}~${Math.round(w.tmax)}°`;
+    if (w.pp >= 40) txt += `，降雨機率 ${w.pp}% — <strong>帶傘或雨衣</strong>`;
+    if (span >= 10) txt += `。早晚差 ${span} 度，洋蔥式穿法`;
+    txt += '。';
+    return { icon: info.e, text: txt, tone: w.pp >= 60 ? 'warn' : '' };
+  }
+  async function maybeFetchTripWeather() {
+    trvWx = null;
+    if (!ITINERARY || !Array.isArray(ITINERARY.days) || !ITINERARY.days.length) return false;
+    try {
+      const cached = JSON.parse((await readKey(TRAVEL_STORAGE.wx)) || 'null');
+      if (cached && cached.at && (Date.now() - cached.at) < WX_TTL_MS && cached.days && typeof cached.days === 'object') {
+        trvWx = cached;
+        return true;   // 用快取，不打 API
+      }
+    } catch (e) {}
+    if (trvWxFetching) return false;
+    // 只抓「今天起、預報範圍內（15 天）」的行程日
+    const today = todayISO();
+    const maxDate = trvDateOffset(15);
+    let lastCoords = null;
+    const jobs = [];
+    ITINERARY.days.forEach(d => {
+      const spot = (d.spots || []).find(s => Array.isArray(s.gps) && isFinite(s.gps[0]) && isFinite(s.gps[1]));
+      if (spot) lastCoords = spot.gps;
+      if (d.date >= today && d.date <= maxDate && lastCoords) jobs.push({ date: d.date, gps: lastCoords });
+    });
+    if (!jobs.length) return false;
+    trvWxFetching = true;
+    try {
+      const days = {};
+      await Promise.all(jobs.map(async j => {
+        try {
+          const u = `https://api.open-meteo.com/v1/forecast?latitude=${j.gps[0]}&longitude=${j.gps[1]}` +
+            `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+            `&timezone=auto&start_date=${j.date}&end_date=${j.date}`;
+          const r = await fetch(u);
+          if (!r.ok) return;
+          const jd = await r.json();
+          const dl = jd && jd.daily;
+          if (dl && dl.time && dl.time[0] === j.date) {
+            days[j.date] = {
+              code: Number(dl.weather_code[0]),
+              tmax: Number(dl.temperature_2m_max[0]),
+              tmin: Number(dl.temperature_2m_min[0]),
+              pp: Number(dl.precipitation_probability_max[0]) || 0
+            };
+          }
+        } catch (e) {}   // 單日失敗就沒那天的徽章，不影響其他天
+      }));
+      if (!Object.keys(days).length) return false;   // 全失敗 → 不寫快取（失敗不快取）
+      trvWx = { at: Date.now(), days };
+      await writeKey(TRAVEL_STORAGE.wx, JSON.stringify(trvWx));
+      return true;
+    } finally { trvWxFetching = false; }
   }
 
   // dateStr 有給的話會套上「整團順延」，否則就照原時間（舊呼叫點照樣可用）
