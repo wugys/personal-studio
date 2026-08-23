@@ -9087,7 +9087,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.0 · ο</div>
+    <div>v 15.1 · ο</div>
   </footer>
 </div>
 
@@ -10287,19 +10287,30 @@ alter publication supabase_realtime add table party_locations;</pre>
   //
   // 現價的優先順序：持股裡自己維護的 currentPrice > 上次開分析畫面抓到的市價（alogTouchMeta 存的）。
   // 兩個都沒有就標成 nopx，只列出來、不做任何判斷（沒有價格就不該說「跌破」）。
-  const PLAN_PRICE_KEYS = [
-    { key: 'us_holdings_v1', market: 'us', view: 'usStockView' },
-    { key: 'tw_holdings_v1', market: 'tw', view: 'twStockView' },
-    { key: 'mketf_holdings_v1', market: null, view: 'mkEtfView' },
-    { key: 'hdetf_holdings_v1', market: 'tw', view: 'hdEtfView' },
-    { key: 'crypto_holdings_v1', market: 'us', view: 'cryptoView' }
-  ];
+  // ⚠ 這張表以前是手寫的 5 個模組（us/tw/mketf/hdetf/crypto）——
+  //   可是債券、主動式基金、貴金屬的卡片也有「📈 分析／圖表」，一樣能設下單計畫。
+  //   00679B 只放在債券模組的人（它本來就是債券 ETF），計畫看守找不到他的持股，
+  //   就退回「上次開分析畫面的快照價」：模組裡的現價明明是新的 36.5，
+  //   看守卻拿 30 天前的 34 在判斷有沒有跌破停損——**用過期的價格在報警**，
+  //   而且畫面上標的是「快照（舊）」，使用者只會以為系統本來就這樣。
+  //   改成從 CF_SOURCES 生出來（手寫的清單一定會過期——v11.1 / v15.0 的教訓）。
+  //   排除的三個：外幣存款（currentPrice 是匯率不是股價）、
+  //   出租／商業不動產（currentPrice 是衍生的淨值，而且沒有圖表按鈕）。
+  //   ⚠ CF_SOURCES 是 const、宣告在這一段的**後面**——在這裡直接引用會踩到暫時死區
+  //     （對 TDZ 中的 const 連 typeof 都會丟 ReferenceError，整個 script 直接掛掉）。
+  //     所以做成函式，第一次被呼叫時（那時整個 script 早就跑完）才去讀。
+  const PLAN_PRICE_SKIP = ['fxdep', 'rental', 'commercial'];
+  function planPriceKeys() {
+    // 順序照 CF_SOURCES（同一代號以先找到的為準：tw → us → crypto → etf → mketf → bond → fund → metal）
+    return CF_SOURCES.filter(s => !PLAN_PRICE_SKIP.includes(s.key))
+      .map(s => ({ key: s.hKey, view: s.view }));
+  }
   async function buildPlanWatch() {
     const books = await readJson('analysis_log_v1', {});
     if (!books || typeof books !== 'object') return [];
     // 先把各模組的現價與所屬 view 收成一張表（同一代號以先找到的為準）
     const px = {};
-    for (const src of PLAN_PRICE_KEYS) {
+    for (const src of planPriceKeys()) {
       const hs = await readJson(src.key, []);
       (Array.isArray(hs) ? hs : []).forEach(h => {
         if (!h || !h.symbol || px[h.symbol]) return;
