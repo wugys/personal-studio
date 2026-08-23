@@ -9087,7 +9087,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.2 · ο</div>
+    <div>v 15.3 · ο</div>
   </footer>
 </div>
 
@@ -9619,6 +9619,8 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const a = await readKey(STORAGE.apis);
       apis = a ? JSON.parse(a) : [];
+      // 舊版匯入過的資料可能帶著長相不對的 id（會撐破卡片的 onclick），載入時洗一次
+      if (Array.isArray(apis)) apis.forEach(x => { if (x && typeof apiSafeId === 'function') x.id = apiSafeId(x.id); });
       const v = await readKey(STORAGE.viewMode);
       if (v) viewMode = v;
       setSyncStatus('ok', '● 雲端已同步');
@@ -11322,6 +11324,12 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   function openApiModal(id) {
     const isEdit = !!id;
+    // ⚠ id 找不到就安靜退場，不能讓 a.name 直接炸。
+    //   而且這裡炸不炸還牽動安全性：卡片的 onclick 是 `openApiModal('${id}')`，
+    //   匯入檔的 id 若帶單引號可以把字串撐破、在後面接自己的程式碼——
+    //   以前它「沒有執行」純粹是因為 openApiModal 先丟例外把整條表達式打斷了。
+    //   所以真正的防線在 apiSafeId()（匯入時就把危險的 id 換掉），這裡的 guard 只是禮貌。
+    if (isEdit && !apis.find(x => x.id === id)) { showToast('找不到這筆收藏，可能已被刪除'); return; }
     document.getElementById('apiModalTitle').innerHTML = isEdit ? '編輯 <em>AI API</em>' : '新增 <em>AI API</em>';
     document.getElementById('apiEditId').value = id || '';
     if (isEdit) {
@@ -11381,6 +11389,22 @@ alter publication supabase_realtime add table party_locations;</pre>
     renderApis();
   }
 
+  // 匯入檔的 id 是別人給的，會被塞進卡片的 onclick="openApiModal('<id>')" 裡——
+  // 帶單引號的 id 可以把字串撐破、接自己的程式碼（跳脫也救不了：
+  // HTML 屬性裡的 &#39; 會先被解回 ' 才輪到 JS 解析）。
+  // 所以在「資料進來的那一刻」就把長相不對的 id 換成自己產的，一勞永逸。
+  function apiSafeId(id) {
+    return (typeof id === 'string' && /^[\w-]{1,64}$/.test(id))
+      ? id
+      : 'api_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  }
+  // 連結只放真的網址：javascript: 這種「按下去就執行程式」的假網址一律不做成連結。
+  // escape() 擋不了它——它是合法字元組成的，惡意的是協定本身。
+  function apiSafeUrl(u) {
+    const s = String(u || '').trim();
+    return /^https?:\/\//i.test(s) ? s : '';
+  }
+
   function renderApis() {
     const grid = document.getElementById('apiGrid');
     if (!grid) return;
@@ -11410,8 +11434,8 @@ alter publication supabase_realtime add table party_locations;</pre>
         ${a.desc ? `<p class="api-card-desc">${escape(a.desc)}</p>` : '<p class="api-card-desc" style="color:var(--ink-muted);font-style:italic;">未填寫描述</p>'}
         ${(a.tags && a.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${a.tags.map(t => `<span style="font-family:var(--mono);font-size:10px;color:var(--ink-tertiary);padding:2px 8px;border:1px solid var(--line);border-radius:2px;">${escape(t)}</span>`).join('')}</div>` : ''}
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
-          ${a.url ? `<a class="api-card-link" href="${escape(a.url)}" target="_blank" rel="noopener">官網 ↗</a>` : ''}
-          ${a.docs ? `<a class="api-card-link" href="${escape(a.docs)}" target="_blank" rel="noopener">文件 ↗</a>` : ''}
+          ${apiSafeUrl(a.url) ? `<a class="api-card-link" href="${escape(apiSafeUrl(a.url))}" target="_blank" rel="noopener">官網 ↗</a>` : ''}
+          ${apiSafeUrl(a.docs) ? `<a class="api-card-link" href="${escape(apiSafeUrl(a.docs))}" target="_blank" rel="noopener">文件 ↗</a>` : ''}
         </div>
       </div>
     `).join('');
@@ -11442,7 +11466,9 @@ alter publication supabase_realtime add table party_locations;</pre>
         if (!data) throw new Error();
         if (!confirm(`匯入 ${data.length} 筆？會合併到現有收藏（不會蓋掉現有的 ${apis.length} 筆）。`)) return;
         const ids = new Set(apis.map(a => a.id));
-        const fresh = data.filter(a => a.id && !ids.has(a.id));
+        // 匯入的 id 先洗過（見 apiSafeId）：長相不對的直接換掉，不讓它進到卡片的 onclick
+        const fresh = data.filter(a => a && a.id && !ids.has(a.id))
+          .map(a => ({ ...a, id: apiSafeId(a.id) }));
         apis = [...fresh, ...apis];
         await saveApisData();
         renderApis();
