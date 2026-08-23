@@ -1734,6 +1734,12 @@
   .exp-fx { font-family: var(--mono); font-size: 10px; color: var(--ink-tertiary); display: block; margin-top: 2px; }
   .exp-split { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); }
   .exp-other { font-family: var(--mono); font-size: 10px; color: var(--ink-muted); }
+  /* 過期的集合時間：講清楚是哪一天的，但不用紅底嚇人（它已經不是要發生的事了） */
+  .gather-stale {
+    margin-top: 10px; padding: 9px 12px; border: 1px solid var(--line-strong); border-left: 3px solid var(--danger);
+    border-radius: 3px; font-size: 12px; line-height: 1.8; color: var(--ink-secondary); text-align: left;
+  }
+  .gather-stale strong { color: var(--danger); }
   /* 別人先付的：不算在「已用」裡，所以調淡並集中列一區 */
   .expense-row.by-other { opacity: 0.62; }
   .expense-row.by-other .expense-amount { color: var(--ink-tertiary); }
@@ -9178,7 +9184,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.7 · σ</div>
+    <div>v 16.8 · τ</div>
   </footer>
 </div>
 
@@ -30438,9 +30444,11 @@ ${baseSchema}
 
   // ===== 首頁卡片統計 =====
   function renderHomeStats() {
+    const hsDays = (ITINERARY && Array.isArray(ITINERARY.days)) ? ITINERARY.days : [];
     // 集合
+    // ⚠ 過去的集合時間要標「已過」——不然昨天的集合在首頁看起來就像等一下要集合的（v15.9 點名同一條病）
     document.getElementById('hc-gather').textContent = trvGather
-      ? `${trvGather.date} ${trvGather.time}`
+      ? `${trvGather.date} ${trvGather.time}` + (gatherIsStale() ? ' · 已過' : '')
       : '尚未設定';
     // 預算
     const used = trvOutOfPocket();
@@ -30456,11 +30464,22 @@ ${baseSchema}
     const done = trvChecklist.filter(x => x.done).length;
     document.getElementById('hc-checklist').textContent = `${done} / ${trvChecklist.length} 已完成`;
     // 行程
+    // ⚠ 以前 fallback 寫死「8 天 · 含景點/餐廳」——奧捷（10 天）、自建 3 天行程通通顯示 8 天，
+    //   而且出發前的每一天看到的都是這一句（今天不在行程裡就走 fallback）。改成從這趟資料算。
     const today = todayISO();
-    const todayDay = ITINERARY.days.find(d => d.date === today);
+    const todayDay = hsDays.find(d => d.date === today);
+    const hsSpots = hsDays.reduce((s, d) => s + ((d.spots || []).length), 0);
     document.getElementById('hc-timeline').textContent = todayDay
-      ? `今日 DAY ${todayDay.day} · ${todayDay.title.slice(0, 12)}…`
-      : '8 天 · 含景點/餐廳';
+      ? `今日 DAY ${todayDay.day} · ${String(todayDay.title || '').slice(0, 12)}…`
+      : `${hsDays.length} 天 · ${hsSpots > 0 ? '含景點/餐廳' : '尚未規劃'}`;
+    // 地圖：以前寫死「所有景點 GPS」——自建行程一個座標都沒填也這樣講。
+    // ⚠ v16.5 已經修過地圖狀態列的同一句假話（tripHasGps），首頁這張卡當時漏掉。
+    const hcMap = document.getElementById('hc-map');
+    if (hcMap) {
+      const withGps = hsDays.reduce((s, d) => s + (d.spots || []).filter(x => x && x.gps).length, 0);
+      hcMap.textContent = withGps === 0 ? '這趟沒填座標'
+        : (withGps === hsSpots ? `${withGps} 個點 · 都有座標` : `${withGps} / ${hsSpots} 個點有座標`);
+    }
     // 同團（V4 多人）
     const hcMulti = document.getElementById('hc-multi');
     if (hcMulti) {
@@ -34352,6 +34371,25 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     await saveTravelKey(TRAVEL_STORAGE.gather, null);
     renderGather();
   }
+  // ⚠ 集合時間過了之後永遠停在紅字「集合時間到」：昨天早上 08:00 的集合，隔天中午打開還在閃紅，
+  //   領隊瞄一眼會以為現在要集合——跟 v15.9「點名結果永不過期」是同一條病，那輪沒掃到集合卡片本身。
+  //   照老規矩「只提醒、不自動改」：3 小時內維持紅字（現在真的正在集合），超過就講清楚那是哪一天的、不再閃紅。
+  const GATHER_LATE_MS = 3 * 3600000;
+  function gatherLateMs() {
+    if (!trvGather || !trvGather.date || !trvGather.time) return null;
+    const t = new Date(`${trvGather.date}T${trvGather.time}:00`);
+    if (isNaN(t.getTime())) return null;
+    const d = Date.now() - t.getTime();
+    return d > 0 ? d : 0;
+  }
+  function gatherIsStale() { const l = gatherLateMs(); return l != null && l > GATHER_LATE_MS; }
+  function gatherWhenText() {
+    if (!trvGather) return '';
+    const n = daysBetweenToday(trvGather.date);
+    const day = n == null ? trvGather.date
+      : n === 0 ? '今天' : n === -1 ? '昨天' : n < 0 ? (-n) + ' 天前' : n === 1 ? '明天' : n + ' 天後';
+    return `${day} ${trvGather.time}`;
+  }
   function renderGather() {
     const card = document.getElementById('gatherCard');
     const photoDisplay = document.getElementById('gatherPhotoDisplay');
@@ -34364,7 +34402,9 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       if (navBtn) navBtn.style.display = 'none';
       return;
     }
-    document.getElementById('gatherTarget').innerHTML = `${escape(trvGather.date)} ${escape(trvGather.time)} · <em style="color:var(--accent); font-family:var(--serif); font-style:italic;">${escape(trvGather.desc)}</em>`;
+    document.getElementById('gatherTarget').innerHTML = `${escape(trvGather.date)} ${escape(trvGather.time)} · <em style="color:var(--accent); font-family:var(--serif); font-style:italic;">${escape(trvGather.desc)}</em>` +
+      (gatherIsStale() ? `<div class="gather-stale">⚠ 這是 <strong>${escape(gatherWhenText())}</strong> 的集合，<strong>不是現在的</strong>。
+        要設定下一次，按下面的「⏰ 設定集合時間」。</div>` : '');
     // 顯示集合地點照片
     if (photoDisplay && trvGather.photo) {
       document.getElementById('gatherPhotoImg').src = trvGather.photo;
@@ -34385,8 +34425,11 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const card = document.getElementById('gatherCard');
     const countdownEl = document.getElementById('gatherCountdown');
     if (diff <= 0) {
-      countdownEl.textContent = '集合時間到';
-      card.classList.add('urgent');
+      // 3 小時內＝現在真的在集合（紅字有用）；超過就換成「已結束」並收掉紅色，不再假裝是現在的事
+      const stale = (-diff) > GATHER_LATE_MS;
+      const txt = stale ? '已結束' : '集合時間到';
+      if (countdownEl.textContent !== txt) { countdownEl.textContent = txt; renderGather(); renderHomeStats(); }
+      card.classList.toggle('urgent', !stale);
       return;
     }
     const h = Math.floor(diff / 3600000);
