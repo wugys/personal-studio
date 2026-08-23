@@ -1585,6 +1585,8 @@
   .brief-item.good .brief-text strong { color: var(--accent); }
 
   /* ===== 點名 ===== */
+  .roll-stale { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; color: var(--ink-tertiary); margin: 6px 0 2px; line-height: 1.6; }
+  .roll-stale.warn { color: var(--danger); font-family: var(--sans); font-size: 12.5px; letter-spacing: 0; }
   .roll-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .roll-count { font-family: var(--serif); font-size: 38px; color: var(--accent); line-height: 1; }
   .roll-count.all { color: var(--ink-primary); }
@@ -9140,7 +9142,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.8 · ο</div>
+    <div>v 15.9 · ο</div>
   </footer>
 </div>
 
@@ -30753,6 +30755,42 @@ ${baseSchema}
     await saveTravelKey(TRAVEL_STORAGE.roster, trvRoster);
     try { renderTrvBrief(); } catch (e) {}   // 名單一改，管家的護照提醒也要跟著變
   }
+  // ⚠ 點名結果不會自己過期：昨晚在飯店點完「全員到齊 ✓」，今早上車打開還是綠的——領隊瞄一眼就少帶人。
+  //   只有「重新設定集合時間」會順手清掉（見 saveGather），沒設集合直接點名的人完全沒保護。
+  //   照老規矩「只提醒、不自動改」：一律顯示上次點名時間，超過 3 小時就用紅字講清楚這不是現在的結果。
+  const ROLL_STALE_MS = 3 * 3600000;
+  function rollTimes() {
+    const r = trvRosterNorm();
+    let newest = 0, oldest = Infinity;
+    r.people.forEach(p => { const n = Number(r.present[p.id]); if (isFinite(n) && n > 1e12) { if (n > newest) newest = n; if (n < oldest) oldest = n; } });
+    return newest ? { newest, oldest } : null;
+  }
+  function rollAgeText(ms) {
+    const h = Math.floor(ms / 3600000);
+    if (h >= 48) return Math.floor(h / 24) + ' 天';
+    if (h >= 1) return h + ' 小時';
+    return Math.max(1, Math.floor(ms / 60000)) + ' 分鐘';
+  }
+  function rollWhenText(ts) {
+    const d = new Date(ts);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    const iso = todayISO(d);
+    const dayTxt = iso === todayISO() ? '今天' : (iso === trvDateOffset(-1) ? '昨天' : iso.slice(5).replace('-', '/'));
+    return dayTxt + ' ' + hm;
+  }
+  // { at, stale, line }：line 是給畫面用的一句話；沒點過名回 null。
+  // ⚠ 過期看的是「最舊的那個 ✓」不是最新的——昨天的 ✓ 還留著、今天只補點一個人，也還是要警告。
+  function rollStatus() {
+    const t = rollTimes();
+    if (!t) return null;
+    const age = Date.now() - t.oldest;
+    const stale = age >= ROLL_STALE_MS;
+    return {
+      at: t.oldest, stale,
+      line: stale ? `⚠ 有 ✓ 是 ${rollAgeText(age)}前（${rollWhenText(t.oldest)}）點的，不是現在的——集合前按「重新點名」`
+                  : `上次點名 ${rollWhenText(t.newest)}`
+    };
+  }
   function renderRollCall() {
     const el = document.getElementById('rollCall');
     if (!el) return;
@@ -30777,11 +30815,13 @@ ${baseSchema}
       return;
     }
     const allHere = here === total;
+    const rs = rollStatus();
     el.innerHTML = `
       <div class="roll-head">
-        <span class="roll-count ${allHere ? 'all' : ''}">${here} / ${total}</span>
-        <span class="roll-miss ${allHere ? 'ok' : ''}">${allHere ? '全員到齊 ✓' : `還缺 ${miss.length} 位`}</span>
+        <span class="roll-count ${allHere && !(rs && rs.stale) ? 'all' : ''}">${here} / ${total}</span>
+        <span class="roll-miss ${allHere && !(rs && rs.stale) ? 'ok' : ''}">${allHere ? '全員到齊 ✓' : `還缺 ${miss.length} 位`}</span>
       </div>
+      ${rs ? `<div class="roll-stale${rs.stale ? ' warn' : ''}">${escape(rs.line)}</div>` : ''}
       <div class="roll-grid">
         ${r.people.map(p => `
           <div class="roll-chip ${r.present[p.id] ? 'here' : ''}" onclick="toggleRoll('${escape(p.id)}')"
@@ -31138,6 +31178,7 @@ ${baseSchema}
     }
     return [
       r.people.length, r.people.filter(p => r.present[p.id]).length,
+      (() => { const rs = rollStatus(); return rs ? (rs.stale ? 'stale:' + rollAgeText(Date.now() - rs.at) : 'fresh') : 'none'; })(),   // 點名結果過了 3 小時要變紅，畫面得跟著重畫
       d ? d.date + ':' + trvDelayOf(d.date) : '-', nn,
       trvGather ? `${trvGather.date} ${trvGather.time} ${trvGather.desc || ''}` : '-',
       g ? (g.stale ? 'stale' : g.urgent ? 'urgent' : 'live') : 'none'
@@ -31219,7 +31260,7 @@ ${baseSchema}
       <button class="fm-btn accent" data-tap onclick="fmGo('roll')">
         <span class="ic">⚑</span><span class="tx">
           <span class="t1">點名</span>
-          <span class="t2">${total ? `${here} / ${total}${here === total ? ' · 全員到齊' : ' · 還缺 ' + (total - here) + ' 位'}` : '還沒有團員名單'}</span>
+          <span class="t2">${total ? `${here} / ${total}${here === total ? ' · 全員到齊' : ' · 還缺 ' + (total - here) + ' 位'}${(rollStatus() || {}).stale ? ' · ⚠ 有 ' + rollAgeText(Date.now() - rollStatus().at) + '前的 ✓' : ''}` : '還沒有團員名單'}</span>
         </span></button>
       <button class="fm-btn" data-tap onclick="fmGo('delay')">
         <span class="ic">⏱</span><span class="tx">
@@ -31259,10 +31300,13 @@ ${baseSchema}
     const here = r.people.filter(p => r.present[p.id]).length;
     const miss = r.people.filter(p => !r.present[p.id]);
     const allHere = here === total;
-    return `<div class="fm-card ${allHere ? '' : 'hot'}">
+    const rs = rollStatus();
+    const stale = !!(rs && rs.stale);
+    return `<div class="fm-card ${allHere && !stale ? '' : 'hot'}">
         <div class="fm-tag">點名 · ROLL CALL</div>
-        <div class="fm-count ${allHere ? '' : 'urgent'}">${here} / ${total}</div>
+        <div class="fm-count ${allHere && !stale ? '' : 'urgent'}">${here} / ${total}</div>
         <div class="fm-sub">${allHere ? '全員到齊 ✓' : `還缺 <strong>${total - here}</strong> 位`}</div>
+        ${rs ? `<div class="fm-sub" style="${stale ? 'color:var(--danger);' : 'color:var(--ink-tertiary);'}">${escape(rs.line)}</div>` : ''}
       </div>
       <div class="fm-roll">${r.people.map(p => `
         <button class="fm-name ${r.present[p.id] ? 'here' : ''}" data-tap onclick="fmToggle('${escape(p.id)}')">
@@ -31835,6 +31879,13 @@ ${baseSchema}
     });
     return dup;
   }
+  // 座位號超過「車上共有幾個位子」的人：座位圖畫不到他，不講就像人間蒸發
+  function rsOverSeats() {
+    const r = trvRosterNorm();
+    if (!(Number(r.busSeats) > 0)) return [];   // 沒設車位數時 busSeatCount() 會自動涵蓋最大座號，不會有人掉出去
+    const n = busSeatCount();
+    return r.people.filter(p => (Number(rsVal(p, 'seat')) || 0) > n);
+  }
   async function setRsField(id, kind, value) {
     const r = trvRosterNorm();
     const p = r.people.find(x => x.id === id);
@@ -31899,6 +31950,10 @@ ${baseSchema}
     const missNote = missing.length ? `<div class="sos-tip" style="margin-bottom:14px;">
         還有 <strong>${missing.length} 位</strong>沒分到${kind === 'room' ? '房間' : '座位'}：${escape(missing.map(p => p.name).join('、'))}
       </div>` : '';
+    const over = kind === 'seat' ? rsOverSeats() : [];
+    const overNote = over.length ? `<div class="sos-tip sos-miss" style="margin-bottom:14px;">
+        <strong>${escape(over.map(p => `${p.name}（${rsVal(p, 'seat')} 號）`).join('、'))} 的座位號超過車上的 ${busSeatCount()} 個位子</strong>，座位圖上畫不出來——改座位，或把下面「車上共有幾個位子」調大。
+      </div>` : '';
 
     let body = '';
     if (kind === 'room') {
@@ -31936,7 +31991,7 @@ ${baseSchema}
         </div>
         <div style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); margin-top:6px;">留空＝照人數自動算（現在算出來是 ${n} 個位子，最多 80）</div>`;
     }
-    el.innerHTML = tabs + warn + missNote + lines + body +
+    el.innerHTML = tabs + warn + overNote + missNote + lines + body +
       `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:14px;">
         <button class="btn btn-sm" data-tap onclick="copyRoomsSeats('${kind}')">📋 複製${kind === 'room' ? '房間分配' : '座位表'}</button>
         ${kind === 'room' ? `<button class="btn btn-sm" data-tap onclick="autoPairRooms()">⚇ 兩人一間自動排</button>` : ''}
@@ -31988,9 +32043,11 @@ ${baseSchema}
         .map(p => `${rsVal(p, 'seat')} 號　${p.name}`);
     }
     const dupNames = Object.keys(rsDupes(kind));
+    const over = kind === 'seat' ? rsOverSeats() : [];
     const txt = [head, '', ...body,
       missing.length ? `\n還沒分到：${missing.map(p => p.name).join('、')}` : '',
-      dupNames.length ? `⚠ ${kind === 'room' ? '房號' : '座位'} ${dupNames.join('、')} 重複` : ''
+      dupNames.length ? `⚠ ${kind === 'room' ? '房號' : '座位'} ${dupNames.join('、')} 重複` : '',
+      over.length ? `⚠ ${over.map(p => `${p.name}（${rsVal(p, 'seat')} 號）`).join('、')} 超過車上 ${busSeatCount()} 個位子` : ''
     ].filter(x => x !== '').join('\n');
     trvCopy(txt, `已複製${kind === 'room' ? '房間分配' : '座位表'}`);
   }
