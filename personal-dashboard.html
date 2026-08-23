@@ -8770,7 +8770,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       <form onsubmit="saveSosContacts(event)">
         <div class="form-group">
           <label class="form-label">目的地國家 · 地區</label>
-          <select class="form-input" id="sosCountry"></select>
+          <select class="form-input" id="sosCountry" onchange="sosCountryHint()"></select>
           <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">選了才知道當地報警與救護車要打幾號</div>
         </div>
         <div class="form-row">
@@ -8806,13 +8806,14 @@ alter publication supabase_realtime add table party_locations;</pre>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">駐外館處</label>
-            <input type="text" class="form-input" id="sosEmbassyName" placeholder="例如：駐成都辦事處">
+            <input type="text" class="form-input" id="sosEmbassyName" placeholder="例如：駐大阪辦事處">
           </div>
           <div class="form-group">
             <label class="form-label">緊急聯絡電話</label>
             <input type="tel" class="form-input" id="sosEmbassyPhone" placeholder="出發前先查好抄下來">
           </div>
         </div>
+        <div id="sosEmbassyHint" style="display:none; font-size:10.5px; color:var(--ink-tertiary); line-height:1.7; margin:-8px 0 14px;"></div>
         <div class="form-group">
           <label class="form-label">飯店名稱</label>
           <input type="text" class="form-input" id="sosHotelName" placeholder="住哪裡（走失的人要講得出來）">
@@ -9142,7 +9143,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.9 · ο</div>
+    <div>v 16.0 · π</div>
   </footer>
 </div>
 
@@ -31384,6 +31385,7 @@ ${baseSchema}
       fmCall('救護車 · ' + co.name, co.amb, '', true),
       (co.fire && co.fire !== co.amb) ? fmCall('火警 · ' + co.name, co.fire, '', false) : '',
       fmCall('外交部急難救助', SOS_MOFA.paid, '海外撥打要付費，但一定通', false),
+      co.code === 'CN' ? fmCall(SOS_SEF.name, SOS_SEF.num, '在大陸出事找海基會（台灣在大陸沒有駐外館處）', false) : '',
       fmCall('領隊' + (c.guideName ? `（${c.guideName}）` : ''), c.guidePhone, '', false),
       fmCall('當地地陪' + (c.localName ? `（${c.localName}）` : ''), c.localPhone, '', false),
       fmCall('保險 24 小時' + (c.insurerName ? `（${c.insurerName}）` : ''), c.insurerPhone, '', false),
@@ -31391,7 +31393,7 @@ ${baseSchema}
       fmCall('飯店' + (c.hotelName ? `（${c.hotelName}）` : ''), c.hotelPhone, c.hotelAddr || '', false)
     ].filter(Boolean);
     const missing = [!c.guidePhone && '領隊', !c.localPhone && '地陪', !c.insurerPhone && '保險 24 小時',
-      !c.embassyPhone && '駐外館處', !c.hotelPhone && '飯店'].filter(Boolean);
+      !c.embassyPhone && co.code !== 'CN' && '駐外館處', !c.hotelPhone && '飯店'].filter(Boolean);
     return `<div class="fm-card"><div class="fm-tag">緊急電話 · ${escape(co.name)}</div>
         <div class="fm-sub" style="margin-top:2px;">點下去直接撥號。要看「該怎麼做」的步驟，離開現場模式到「🆘 狀況」分頁。</div></div>
       <div class="fm-btns">${rows.join('')}</div>
@@ -31412,6 +31414,7 @@ ${baseSchema}
     if (c.localPhone) add(`當地地陪${c.localName ? ' ' + c.localName : ''}`, c.localPhone);
     if (c.insurerPhone) add(`保險 24 小時${c.insurerName ? ' ' + c.insurerName : ''}`, c.insurerPhone);
     if (c.embassyPhone) add(c.embassyName || '駐外館處', c.embassyPhone);
+    else if (co && co.code === 'CN') add(SOS_SEF.name, SOS_SEF.num, `${SOS_SEF.name}  ${SOS_SEF.num}（台灣在大陸沒有駐外館處）`);
     if (co) {
       const extra = co.fire && co.fire !== co.amb ? `　火警 ${co.fire}` : '';
       add(`當地緊急電話（${co.name}）`, `報警 ${co.police}　救護車 ${co.amb}${extra}`,
@@ -31427,7 +31430,7 @@ ${baseSchema}
     if (!c.guidePhone) miss.push('領隊');
     if (!c.localPhone) miss.push('當地地陪');
     if (!c.insurerPhone) miss.push('保險 24 小時');
-    if (!c.embassyPhone) miss.push('駐外館處');
+    if (!c.embassyPhone && !sosIsCN()) miss.push('駐外館處');   // 大陸沒有駐外館處，清單已自動帶海基會，不算缺
     return miss;
   }
 
@@ -31547,6 +31550,11 @@ ${baseSchema}
     free: '800-0885-0885',      // 全球免付費，只能從國外打、僅 22 個國家地區、各國要加不同冠碼
     domestic: '0800-085-095'    // 國內免付費（給台灣的親友打）
   };
+  // 去中國大陸：台灣在那裡**沒有駐外館處**，人身安全事件（重病、重傷、失蹤、證件遺失）找的是海基會。
+  //   2026-08 查證於海基會官網 sef.org.tw「聯絡我們」與海基會兩岸經貿網：緊急服務專線 02-2533-9995，
+  //   海外撥打去掉第一個 0 → +886-2-2533-9995（付費）。
+  const SOS_SEF = { num: '+886-2-2533-9995', name: '海基會緊急服務專線' };
+  const sosIsCN = () => { const co = sosCountry(); return !!(co && co.code === 'CN'); };
   // 目的地猜測：猜錯不會怎樣（使用者自己改），但猜對可以少填一個欄位
   const SOS_GUESS = [
     ['CN', ['中國', '大陸', '九寨', '成都', '四川', '北京', '上海', '西安', '雲南', '桂林', '張家界', '峨眉']],
@@ -31615,8 +31623,10 @@ ${baseSchema}
         ${sosCallBtn('救護車 · AMBULANCE', co.amb, '', true)}
         ${co.fire && co.fire !== co.amb ? sosCallBtn('火警 · FIRE', co.fire, '') : ''}
         ${sosCallBtn('外交部急難救助', SOS_MOFA.paid, '海外撥打要付費，但一定通')}
+        ${co.code === 'CN' ? sosCallBtn(SOS_SEF.name, SOS_SEF.num, '在大陸出事找海基會，不是外交部') : ''}
       </div>
       <div class="sos-note">
+        ${co.code === 'CN' ? `<strong>台灣在大陸沒有駐外館處。</strong>重病、重傷、失蹤、證件遺失等人身安全事件，打 <strong>${SOS_SEF.name} ${SOS_SEF.num}</strong>（台北，海外撥打付費）。<br>` : ''}
         ${co.extra ? `<strong>${escape(co.name)}另有：</strong>${escape(co.extra)}<br>` : ''}
         外交部另有<strong>全球免付費專線 ${SOS_MOFA.free}</strong>，只能從國外打、目前僅 22 個國家地區適用，
         而且<strong>各國要加的冠碼不一樣</strong>（例如日本先撥 001 或 0033 再撥 010-800-0885-0885，美加先撥 011）——
@@ -31635,7 +31645,8 @@ ${baseSchema}
     const police = co ? tel(co.police, `報警 ${co.police}`) : '當地警察';
     const amb = co ? tel(co.amb, `救護車 ${co.amb}`) : '當地救護車';
     const insurer = c.insurerPhone ? `保險公司${c.insurerName ? '（' + escape(c.insurerName) + '）' : ''} ${tel(c.insurerPhone)}` : '保險公司 24 小時專線';
-    const embassy = c.embassyPhone ? `${escape(c.embassyName || '駐外館處')} ${tel(c.embassyPhone)}` : '駐外館處';
+    const embassy = c.embassyPhone ? `${escape(c.embassyName || '駐外館處')} ${tel(c.embassyPhone)}`
+      : (co && co.code === 'CN' ? `${SOS_SEF.name} ${tel(SOS_SEF.num)}（台灣在大陸沒有駐外館處）` : '駐外館處');
     const hotelFilled = !!(c.hotelName || c.hotelAddr);
     const hotel = hotelFilled
       ? `<strong>${escape(c.hotelName || '')}</strong>${c.hotelAddr ? `（${escape(c.hotelAddr)}）` : ''}${c.hotelPhone ? ' ' + tel(c.hotelPhone) : ''}`
@@ -31799,15 +31810,25 @@ ${baseSchema}
       ['駐外館處', c.embassyName, c.embassyPhone],
       ['飯店', c.hotelName, c.hotelPhone, c.hotelAddr]
     ].filter(r => r[1] || r[2] || r[3]);
-    const missing = 5 - rows.length;
-    el.innerHTML = `<div class="brief-head" style="margin:24px 0 12px;">☎ 這趟的電話 <em>${rows.length}/5 已填</em></div>` +
+    if (sosIsCN() && !c.embassyPhone) rows.splice(Math.min(3, rows.length), 0, ['駐外館處', SOS_SEF.name, SOS_SEF.num, '台灣在大陸沒有駐外館處，自動帶海基會（可在「填 / 改電話」自己改）']);
+    // 「已填」看的是有沒有電話（飯店有地址也算）——只填名字沒號碼，出事時還是沒得打。
+    //   現場模式與列印都是這樣算的，這裡不能自己一套（以前這裡填了名字就算，兩邊對不起來）。
+    const missNames = [!c.guidePhone && '領隊', !c.localPhone && '當地地陪', !c.insurerPhone && '保險 24H',
+      !c.embassyPhone && !sosIsCN() && '駐外館處',   // 大陸沒有駐外館處：下面的列表自動帶海基會，不算缺
+      !(c.hotelPhone || c.hotelAddr) && '飯店'].filter(Boolean);
+    const nameOnly = [c.guideName && !c.guidePhone && '領隊', c.localName && !c.localPhone && '當地地陪',
+      c.insurerName && !c.insurerPhone && '保險 24H', c.embassyName && !c.embassyPhone && '駐外館處',
+      c.hotelName && !(c.hotelPhone || c.hotelAddr) && '飯店'].filter(Boolean);
+    const filled = 5 - missNames.length;
+    const missing = missNames.length;
+    el.innerHTML = `<div class="brief-head" style="margin:24px 0 12px;">☎ 這趟的電話 <em>${filled}/5 已填</em></div>` +
       (rows.length ? `<div class="prof-card"><div class="prof-rows">${rows.map(r =>
         `<div class="prof-row"><span class="k">${escape(r[0])}</span><span class="v">${escape(r[1] || '')}${
           r[2] ? ` <a href="${escape(telHref(r[2]))}" data-tap>${escape(r[2])} 📞</a>` : ''}${
           r[3] ? `<br><span style="color:var(--ink-tertiary); font-size:11.5px;">${escape(r[3])}</span>` : ''}</span></div>`).join('')}
       </div></div>` : '') +
       (missing > 0 ? `<div class="sos-tip sos-miss" style="margin-top:${rows.length ? '10px' : '0'};">
-        還有 <strong>${missing} 項</strong>沒填。上面每一張情境卡都會用到這些號碼——<strong>沒填的地方，那時候就只會顯示「打給領隊」四個字，沒有號碼可以點。</strong>
+        還有 <strong>${missing} 項</strong>沒填電話：${escape(missNames.join('、'))}。${nameOnly.length ? `<strong>${escape(nameOnly.join('、'))}只填了名字沒有號碼</strong>，` : ''}上面每一張情境卡都會用到這些號碼——<strong>沒填的地方，那時候就只會顯示「打給領隊」四個字，沒有號碼可以點。</strong>
       </div>` : '') +
       `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:14px;">
         <button class="btn btn-sm" data-tap onclick="openSosContactModal()">⚙ 填 / 改電話</button>
@@ -31819,7 +31840,8 @@ ${baseSchema}
     const line = (k, n, p, a) => (n || p) ? `${k}：${n || ''}${p ? ' ' + p : ''}${a ? '\n  ' + a : ''}` : '';
     const txt = [`【緊急電話】${(ITINERARY && ITINERARY.title) || '本團'}`, '',
       co ? `${co.name}｜報警 ${co.police}｜救護車 ${co.amb}${co.fire !== co.amb ? '｜火警 ' + co.fire : ''}${co.extra ? '｜' + co.extra : ''}` : '',
-      `外交部急難救助：${SOS_MOFA.paid}（海外付費）／${SOS_MOFA.domestic}（國內免付費）`, '',
+      `外交部急難救助：${SOS_MOFA.paid}（海外付費）／${SOS_MOFA.domestic}（國內免付費）`,
+      (co && co.code === 'CN') ? `${SOS_SEF.name}：${SOS_SEF.num}（台灣在大陸沒有駐外館處，人身安全事件找海基會）` : '', '',
       line('領隊', c.guideName, c.guidePhone),
       line('地陪', c.localName, c.localPhone),
       line('保險 24H', c.insurerName, c.insurerPhone),
@@ -31841,7 +31863,17 @@ ${baseSchema}
     put('sosInsurerName', c.insurerName); put('sosInsurerPhone', c.insurerPhone);
     put('sosEmbassyName', c.embassyName); put('sosEmbassyPhone', c.embassyPhone);
     put('sosHotelName', c.hotelName); put('sosHotelAddr', c.hotelAddr); put('sosHotelPhone', c.hotelPhone);
+    sosCountryHint();
     document.getElementById('sosContactModal').classList.add('active');
+  }
+  // 「駐外館處」欄位旁的提示跟著選的國家走：去大陸的人會想填「駐成都辦事處」之類不存在的單位，
+  //   這裡直接講清楚台灣在大陸沒有館處、留空會自動帶海基會（要填別的也可以，填了就用你填的）。
+  function sosCountryHint() {
+    const sel = document.getElementById('sosCountry'), el = document.getElementById('sosEmbassyHint');
+    if (!sel || !el) return;
+    const isCN = sel.value === 'CN';
+    el.style.display = isCN ? '' : 'none';
+    el.innerHTML = isCN ? `<strong>去大陸：台灣在那裡沒有駐外館處。</strong>這兩格留空，App 會自動帶 ${escape(SOS_SEF.name)} ${escape(SOS_SEF.num)}（24 小時，海外撥打付費）。` : '';
   }
   function closeSosContactModal() { document.getElementById('sosContactModal').classList.remove('active'); }
   async function saveSosContacts(e) {
