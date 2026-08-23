@@ -8506,6 +8506,53 @@ alter publication supabase_realtime add table party_locations;</pre>
   </div>
 
   <!-- ============ 新增旅遊 Wizard Modal ============ -->
+  <!-- 自建行程的「加一站／編輯一站」（內建行程不開放——它是寫死的常數，改了存不住） -->
+  <div class="modal-backdrop" id="userSpotModal">
+    <div class="modal">
+      <h2 id="userSpotModalTitle">加一站 <em>DAY 1</em></h2>
+      <form onsubmit="saveUserSpot(event)">
+        <input type="hidden" id="uspDay">
+        <input type="hidden" id="uspIdx">
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">時間</label>
+            <input type="time" class="form-input" id="uspTime">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">類型</label>
+            <select class="form-select" id="uspType">
+              <option value="景點">景點</option>
+              <option value="餐">餐（早/午/晚餐）</option>
+              <option value="住宿">住宿</option>
+              <option value="航班">航班</option>
+              <option value="交通">交通</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">名稱</label>
+          <input type="text" class="form-input" id="uspName" required placeholder="例如：清水寺">
+        </div>
+        <div class="form-group">
+          <label class="form-label">說明（選填）</label>
+          <input type="text" class="form-input" id="uspDesc" placeholder="例如：楓葉季人多，早點到">
+        </div>
+        <div class="form-group">
+          <label class="form-label">GPS 座標（選填，「緯度, 經度」）</label>
+          <input type="text" class="form-input" id="uspGps" placeholder="例如：34.9949, 135.7850">
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:4px;">填了才有「⊕ 導航」按鈕。Google Maps 上點右鍵就能複製座標。</div>
+        </div>
+        <div class="form-actions" style="justify-content:flex-end;">
+          <div class="form-actions-right">
+            <button type="button" class="btn" onclick="closeUserSpotModal()">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="newTripModal">
     <div class="modal" style="max-width: 680px;">
       <h2>新增 <em>旅遊規劃</em></h2>
@@ -9087,7 +9134,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 15.4 · ο</div>
+    <div>v 15.5 · ο</div>
   </footer>
 </div>
 
@@ -32198,13 +32245,19 @@ ${baseSchema}
       const da = dayAlt(d);
       const altBadge = da.max != null && altLevel(da.max) > 0
         ? `<span class="alt-badge lv${altLevel(da.max)}" title="最高點：${escape(da.maxName)}">▲ 最高 ${escape(altText(da.max))}</span>` : '';
+      // 自建行程才有「加一站／✎／✕」——內建行程是 const 常數，改了存不住，不給編輯是誠實
+      const editable = !!ITINERARY._userCreated;
+      const spotEditBtns = (i) => editable
+        ? ` <button class="spot-mini-btn" data-tap onclick="event.stopPropagation(); openUserSpotModal(${d.day}, ${i})">✎</button>` +
+          `<button class="spot-mini-btn" data-tap style="color:var(--danger);" onclick="event.stopPropagation(); deleteUserSpot(${d.day}, ${i})">✕</button>`
+        : '';
       const spotsHtml = d.spots.map((s, i) => {
         const iconMap = { '景點': '◐', '餐': '◉', '住宿': '⌂', '航班': '✈' };
         const icon = iconMap[s.type] || '◇';
         const isCurrentSpot = isToday && isCurrentTimeSlot(s, d.spots[i+1], d.date);
         const shownTime = trvSpotTimeText(d.date, s.time);   // 套過整團順延
         if (s.type === '餐') {
-          return `<div class="spot-meal">${escape(shownTime)} · ${escape(s.name)}${s.desc ? ' — ' + escape(s.desc) : ''}</div>`;
+          return `<div class="spot-meal">${escape(shownTime)} · ${escape(s.name)}${s.desc ? ' — ' + escape(s.desc) : ''}${spotEditBtns(i)}</div>`;
         }
         const hasMedia = s.gps && s.type === '景點';
         const cached = hasMedia ? wikiCache[cleanSpotName(s.name)] : null;
@@ -32226,6 +32279,7 @@ ${baseSchema}
                 <button class="spot-mini-btn" onclick="openSpotModal(${d.day}, ${i})">詳細</button>
                 ${s.gps ? `<button class="spot-mini-btn" onclick="navigateTo(${s.gps[0]}, ${s.gps[1]}, '${escape(String(s.name).replace(/'/g, ''))}')">⊕ 導航</button>` : ''}
                 ${s.desc ? `<button class="spot-mini-btn" onclick="ttsReadSpot(${d.day}, ${i}); event.stopPropagation();">🔊 念給我聽</button>` : ''}
+                ${spotEditBtns(i)}
               </div>
             </div>
           </div>
@@ -32246,6 +32300,7 @@ ${baseSchema}
           <div class="day-card-body">
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:14px; letter-spacing:0.05em;">${escape(d.subtitle)}</div>
             ${spotsHtml}
+            ${editable ? `<div style="margin-top:10px;"><button class="btn btn-sm" data-tap onclick="event.stopPropagation(); openUserSpotModal(${d.day}, null)">+ 這一天加一站</button></div>` : ''}
           </div>
         </div>
       `;
@@ -32253,6 +32308,88 @@ ${baseSchema}
     document.getElementById('timelineList').innerHTML = html;
     // 非同步抓 Wikipedia 縮圖（不阻塞 UI）
     ITINERARY.days.forEach(d => loadWikiThumbsForDay(d.day));
+  }
+
+  // ===== 自建行程的每日行程編輯 =====
+  //
+  // 為什麼要有：精靈建完手動行程時 toast 寫「點開可繼續編輯」，但 v15.4 之前
+  //   全站**根本沒有任何地方可以加行程**——手動建的永遠是空殼，那句話是假的。
+  //   UI 答應的事情要會發生（v11.8 不動產即時試算的同一課）。
+  // ⚠ 只對 `_userCreated` 的行程開放：內建行程（九寨、奧捷）是寫死的 const，
+  //   改了下次載入就被打回原樣，給編輯按鈕反而是騙人。
+  function userSpotDay(dayNo) {
+    return (ITINERARY && Array.isArray(ITINERARY.days)) ? ITINERARY.days.find(x => x.day === dayNo) : null;
+  }
+  // 副標題自動跟著行程走（自建行程沒有編輯副標的地方，空殼時寫「尚未規劃」才誠實）
+  function userDaySubtitle(d) {
+    const names = d.spots.filter(s => s.type === '景點' || s.type === '住宿').slice(0, 3).map(s => s.name);
+    return names.length ? names.join(' · ') : '尚未規劃';
+  }
+  function openUserSpotModal(dayNo, idx) {
+    const d = userSpotDay(dayNo);
+    if (!d || !ITINERARY._userCreated) return;
+    const isEdit = idx != null && d.spots[idx];
+    document.getElementById('userSpotModalTitle').innerHTML =
+      (isEdit ? '編輯這一站 ' : '加一站 ') + `<em>DAY ${dayNo} · ${escape(d.date)}</em>`;
+    document.getElementById('uspDay').value = String(dayNo);
+    document.getElementById('uspIdx').value = isEdit ? String(idx) : '';
+    const s = isEdit ? d.spots[idx] : null;
+    document.getElementById('uspTime').value = (s && s.time) || '';
+    document.getElementById('uspType').value = (s && s.type) || '景點';
+    document.getElementById('uspName').value = (s && s.name) || '';
+    document.getElementById('uspDesc').value = (s && s.desc) || '';
+    document.getElementById('uspGps').value = (s && Array.isArray(s.gps)) ? s.gps.join(', ') : '';
+    document.getElementById('userSpotModal').classList.add('active');
+  }
+  function closeUserSpotModal() { document.getElementById('userSpotModal').classList.remove('active'); }
+  async function saveUserSpot(e) {
+    e.preventDefault();
+    const dayNo = Number(document.getElementById('uspDay').value);
+    const d = userSpotDay(dayNo);
+    if (!d) return;
+    const idxRaw = document.getElementById('uspIdx').value;
+    const gpsRaw = document.getElementById('uspGps').value.trim();
+    let gps = null;
+    if (gpsRaw) {
+      const parts = gpsRaw.split(/[,，\s]+/).map(Number).filter(n => isFinite(n));
+      if (parts.length === 2 && Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) gps = parts;
+      else {
+        // 填了但格式不對 → 講清楚並留著視窗，不要默默丟掉（丟掉的話「⊕ 導航」不會出現，使用者也不知道為什麼）
+        alert('GPS 座標看不懂：「' + gpsRaw + '」\n\n格式是「緯度, 經度」兩個數字，例如 34.9949, 135.7850。\n不需要導航的話把這格清空就好。');
+        return;
+      }
+    }
+    const spot = {
+      time: document.getElementById('uspTime').value || '',
+      type: document.getElementById('uspType').value,
+      name: document.getElementById('uspName').value.trim(),
+      desc: document.getElementById('uspDesc').value.trim()
+    };
+    if (gps) spot.gps = gps;
+    if (!spot.name) return;
+    if (idxRaw !== '' && d.spots[Number(idxRaw)]) d.spots[Number(idxRaw)] = { ...d.spots[Number(idxRaw)], ...spot, ...(gps ? {} : { gps: undefined }) };
+    else d.spots.push(spot);
+    // 照時間排（沒填時間的排最後）——排好使用者才看得出一天的動線
+    d.spots.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+    d.subtitle = userDaySubtitle(d);
+    await saveCustomTrips();
+    renderTimeline();
+    try { renderTrvNowNext(); } catch (err) {}
+    try { renderHomeStats(); } catch (err) {}
+    closeUserSpotModal();
+    showToast(idxRaw !== '' ? '已更新這一站' : '已加一站');
+  }
+  async function deleteUserSpot(dayNo, idx) {
+    const d = userSpotDay(dayNo);
+    if (!d || !d.spots[idx]) return;
+    if (!confirm(`確定刪除「${d.spots[idx].name}」？`)) return;
+    d.spots.splice(idx, 1);
+    d.subtitle = userDaySubtitle(d);
+    await saveCustomTrips();
+    renderTimeline();
+    try { renderTrvNowNext(); } catch (err) {}
+    try { renderHomeStats(); } catch (err) {}
+    showToast('已刪除');
   }
 
   // dateStr 有給的話會套上「整團順延」，否則就照原時間（舊呼叫點照樣可用）
@@ -34562,10 +34699,17 @@ ${daysBrief}${butlerPartyBlock()}
     if (!ITINERARY._userCreated) { showToast('內建旅遊無法刪除'); return; }
     if (!confirm(`確定刪除「${ITINERARY.title}」？這趟旅遊的所有清單、花費、購物紀錄都會一併刪除，無法復原。`)) return;
     const id = ITINERARY.id;
-    // 刪除該 trip 所有 storage
-    const suffixes = ['checklist','expenses','shopping','butler','gather','budget'];
-    for (const s of suffixes) {
-      await writeKey(`travel_${id}_${s}`, '');
+    // 刪除該 trip 所有 storage。
+    // ⚠ 以前是手寫的 6 個字尾（checklist/expenses/shopping/butler/gather/budget）——
+    //   v12.6 之後多了 roster／delays／sos／fx／field 五種，沒有人回頭補，
+    //   實測刪掉行程後點名名單、順延、緊急電話設定全部殘留在 storage 裡。
+    //   手寫的清單一定會過期（v11.1／v15.0／v15.1 的教訓，第四次），
+    //   改成掃前綴：這一趟的 key 全部長 `travel_<id>_` 開頭，一網打盡，以後加新的也不會漏。
+    const prefix = `travel_${id}_`;
+    const doomed = Object.keys(localStorage).filter(k => k.startsWith(prefix));
+    for (const k of doomed) {
+      await writeKey(k, '');          // window.storage 那份也要清（writeKey 兩邊都寫）
+      try { localStorage.removeItem(k); } catch (e) {}   // 不留空字串佔位
     }
     // 從 ITINERARIES 移除
     delete ITINERARIES[id];
