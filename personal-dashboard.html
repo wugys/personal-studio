@@ -7935,7 +7935,10 @@
     </div>
 
     <div id="trvPanel-info" class="travel-panel">
-      <div class="info-grid">
+      <!-- 下面這五張卡是九寨溝 2026 專用（旅行社電話、中國 eSIM、9 月氣溫、人民幣）。
+           其他行程（奧捷、自建）改由 renderInfoTab() 依目的地生成到 #infoGeneric，不再給人看別團的資料。 -->
+      <div id="infoGeneric" class="info-grid" style="display:none;"></div>
+      <div id="infoJiuzhai" class="info-grid">
         <div class="info-card">
           <h3><span class="glyph">⛨</span>旅責保險</h3>
           <ul>
@@ -9155,7 +9158,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.1 · π</div>
+    <div>v 16.2 · π</div>
   </footer>
 </div>
 
@@ -29217,6 +29220,60 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     { id: 'chk_bottle', text: '保溫瓶', section: '其他', note: '高原多喝水', done: false, builtin: true },
     { id: 'chk_bag', text: '輕量後背包', section: '其他', note: '景區行走用', done: false, builtin: true }
   ];
+  // ⚠ 上面那份是**九寨溝專用**的（台胞證、NX657、人民幣、高山症藥、7~18°C）。
+  //   以前不管哪一趟（奧捷、自建的日本行程）都拿它當預設——打開行前清單看到「台胞證」「支付寶」「電子機票（NX657）」全是別團的東西。
+  //   九寨溝照舊用那份（已經驗過、也不想讓現有使用者的清單變動）；其他行程依目的地（🆘 狀況選的國家）、這趟的幣別、第一班機號生成。
+  //   「手寫的清單一定會過期」——所以這裡是從既有資料生成，不是再手寫第二份。
+  function defaultChecklistFor() {
+    if (!ITINERARY || ITINERARY.id === 'jiuzhai_2026') return DEFAULT_CHECKLIST.map(x => ({ ...x, done: false }));
+    return genericChecklist();
+  }
+  function genericChecklist() {
+    let code = '';
+    try { code = (trvSos && typeof trvSos === 'object' && trvSos.country !== undefined) ? (trvSos.country || '') : sosGuessCountry(); } catch (e) { code = ''; }
+    const isCN = code === 'CN';
+    let ccyName = '';
+    try { const f = (trvFx && typeof trvFx === 'object') ? trvFx : {}; const cc = f.ccy || SOS_CCY_OF[code] || ''; const info = cc ? ccyInfo(cc) : null; ccyName = info ? info.name : ''; } catch (e) { ccyName = ''; }
+    let flight = '';
+    try { flight = (ITINERARY && Array.isArray(ITINERARY.flights) && ITINERARY.flights[0] && ITINERARY.flights[0].code) || ''; } catch (e) { flight = ''; }
+    const mk = (id, text, section, note) => ({ id: 'chk_' + id, text, section, note: note || '', done: false, builtin: true });
+    const out = [];
+    // 證件
+    if (isCN) { out.push(mk('tw', '台胞證', '證件', '在有效期內即可')); out.push(mk('pp', '護照', '證件', '轉機／備用，也要帶')); }
+    else out.push(mk('pp', '護照（效期 6 個月以上）', '證件', ''));
+    out.push(mk('id', '身分證', '證件', '備查用'));
+    out.push(mk('ins', '保險證明列印', '證件', '保險公司 24H 電話填到「🆘 狀況」'));
+    out.push(mk('eticket', '電子機票' + (flight ? '（' + flight + '）' : ''), '證件', '截圖保存離線'));
+    // 衣物
+    out.push(mk('shoes', '好走的鞋', '衣物', '每天走很多路'));
+    out.push(mk('jacket', '外套', '衣物', '依出發前的天氣預報增減'));
+    out.push(mk('hat', '太陽眼鏡 + 帽子', '衣物', ''));
+    out.push(mk('umbrella', '輕便雨具', '衣物', '出發前看「行程」分頁的天氣徽章'));
+    // 3C
+    out.push(mk('phone', '手機 + 充電線', '3C 電器', ''));
+    out.push(mk('powerbank', '行動電源（< 20000mAh）', '3C 電器', '航空規定'));
+    out.push(mk('adapter', '轉接頭', '3C 電器', isCN ? '中國規格：兩平腳/三腳' : '出發前查目的地插座規格'));
+    out.push(mk('esim', '上網方案已開通', '3C 電器', isCN ? 'eSIM 要含翻牆、或台灣門號開漫遊' : '台灣門號漫遊或當地 eSIM'));
+    out.push(mk('camera', '相機 + 備用記憶卡 + 電池', '3C 電器', ''));
+    // 盥洗
+    out.push(mk('toiletry', '盥洗包（牙刷牙膏毛巾）', '盥洗', '有些飯店不提供'));
+    out.push(mk('sunscreen', '防曬', '盥洗', ''));
+    out.push(mk('lipbalm', '護唇膏 / 乳液', '盥洗', ''));
+    out.push(mk('mask', '口罩', '盥洗', ''));
+    // 藥品
+    out.push(mk('med_cold', '感冒藥', '藥品', ''));
+    out.push(mk('med_stomach', '腸胃藥 · 止瀉藥', '藥品', '飲食差異'));
+    out.push(mk('med_motion', '暈車藥', '藥品', '長途拉車'));
+    out.push(mk('med_pain', '止痛藥', '藥品', ''));
+    out.push(mk('med_personal', '個人慢性病藥物', '藥品', '充足分量＋處方影本'));
+    // 其他
+    out.push(mk('cash', (ccyName ? ccyName + '現金' : '當地現金'), '其他', '小額採買'));
+    if (isCN) out.push(mk('alipay', '支付寶 / 微信支付', '其他', '綁定信用卡'));
+    out.push(mk('creditcard', '信用卡 1~2 張', '其他', '免海外手續費為佳'));
+    out.push(mk('bottle', '水壺', '其他', ''));
+    out.push(mk('bag', '輕量後背包', '其他', '景區行走用'));
+    return out;
+  }
 
   // ===== State =====
   let trvActiveTab = 'timeline';
@@ -30035,54 +30092,44 @@ ${baseSchema}
     }
   }
 
+  // parse 完一定驗形狀（v15.6 的全站規矩）。旅遊這 12 個 per-trip key 當時**漏掉了**：
+  //   v16.2 毒化測試把 travel_<trip>_* 全寫壞 → `trvChecklist.filter is not a function` 在 renderChecklist 炸掉，
+  //   loadTravel 從那裡中斷，後面的預算／購物／集合／狀況全部沒畫 → 整個旅遊模組一片空白。
+  //   壞一個 key 只能讓那一塊歸零，不能拖垮整趟。
+  function trvJsonArr(raw, dflt) {
+    if (!raw) return dflt;
+    try { const o = JSON.parse(raw); return Array.isArray(o) ? o.filter(x => x && typeof x === 'object') : dflt; } catch (e) { return dflt; }
+  }
+  function trvJsonObj(raw, dflt) {
+    if (!raw) return dflt;
+    try { const o = JSON.parse(raw); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : dflt; } catch (e) { return dflt; }
+  }
   async function loadTravel() {
     // 確保 activeTripId 有值（默認九寨溝為舊版相容）
     if (!activeTripId) activeTripId = ITINERARY?.id || 'jiuzhai_2026';
     if (ITINERARIES[activeTripId]) ITINERARY = ITINERARIES[activeTripId];
     await migrateLegacyTravelKeys();
 
-    try {
-      const c = await readKey(TRAVEL_STORAGE.checklist);
-      trvChecklist = c ? JSON.parse(c) : DEFAULT_CHECKLIST.slice();
-    } catch (e) { trvChecklist = DEFAULT_CHECKLIST.slice(); }
-    try {
-      const e = await readKey(TRAVEL_STORAGE.expenses);
-      trvExpenses = e ? JSON.parse(e) : [];
-    } catch (e) { trvExpenses = []; }
-    try {
-      const s = await readKey(TRAVEL_STORAGE.shopping);
-      trvShopping = s ? JSON.parse(s) : [];
-    } catch (e) { trvShopping = []; }
-    try {
-      const b = await readKey(TRAVEL_STORAGE.butler);
-      trvButlerHistory = b ? JSON.parse(b) : [];
-    } catch (e) { trvButlerHistory = []; }
-    try {
-      const g = await readKey(TRAVEL_STORAGE.gather);
-      trvGather = g ? JSON.parse(g) : null;
-    } catch (e) { trvGather = null; }
-    try {
-      const rs = await readKey(TRAVEL_STORAGE.roster);
-      trvRoster = rs ? JSON.parse(rs) : { people: [], present: {} };
-    } catch (e) { trvRoster = { people: [], present: {} }; }
-    try {
-      const dl = await readKey(TRAVEL_STORAGE.delays);
-      trvDelays = dl ? JSON.parse(dl) : {};
-    } catch (e) { trvDelays = {}; }
-    try {
-      const so = await readKey(TRAVEL_STORAGE.sos);
-      trvSos = so ? JSON.parse(so) : null;
-    } catch (e) { trvSos = null; }
+    // 清單先讀原始值；「沒存過 → 這趟的預設清單」要等目的地（sos）與幣別（fx）載入之後才算，
+    //   不然拿到的是上一趟的國家（從九寨溝切到奧捷，清單會生出台胞證）——見下方 defaultChecklistFor 那行。
+    const rawChecklist = await readKey(TRAVEL_STORAGE.checklist);
+    trvExpenses = trvJsonArr(await readKey(TRAVEL_STORAGE.expenses), []);
+    trvShopping = trvJsonArr(await readKey(TRAVEL_STORAGE.shopping), []);
+    trvButlerHistory = trvJsonArr(await readKey(TRAVEL_STORAGE.butler), []);
+    {
+      // 集合：要有 date 與 time 兩個字串才算一筆，不然首頁小卡會寫「undefined undefined」
+      const go = trvJsonObj(await readKey(TRAVEL_STORAGE.gather), null);
+      trvGather = (go && typeof go.date === 'string' && typeof go.time === 'string') ? go : null;
+    }
+    trvRoster = trvJsonObj(await readKey(TRAVEL_STORAGE.roster), { people: [], present: {} });   // 內層形狀由 trvRosterNorm 補
+    trvDelays = trvJsonObj(await readKey(TRAVEL_STORAGE.delays), {});
+    trvSos = trvJsonObj(await readKey(TRAVEL_STORAGE.sos), null);
     sosNorm();
-    try {
-      const fxr = await readKey(TRAVEL_STORAGE.fx);
-      trvFx = fxr ? JSON.parse(fxr) : null;
-    } catch (e) { trvFx = null; }
+    trvFx = trvJsonObj(await readKey(TRAVEL_STORAGE.fx), null);
     fxNorm();
-    try {
-      const st = await readKey(TRAVEL_STORAGE.settings);
-      if (st) trvSettings = { ...trvSettings, ...JSON.parse(st) };
-    } catch (e) {}
+    // 九寨溝用原本那份清單，其他行程依目的地／幣別／第一班機生成（defaultChecklistFor）——現在 sos 與 fx 都是這趟的了
+    trvChecklist = trvJsonArr(rawChecklist, null) || defaultChecklistFor();
+    trvSettings = { ...trvSettings, ...trvJsonObj(await readKey(TRAVEL_STORAGE.settings), {}) };
     try {
       const bt = await readKey(TRAVEL_STORAGE.budgetTotal);
       trvBudgetTotal = bt ? (Number(bt) || 0) : 0;
@@ -30096,9 +30143,8 @@ ${baseSchema}
       if (ak) document.getElementById('butlerApiKey').value = ak;
     } catch (e) {}
     try {
-      const mc = await readKey(TRAVEL_STORAGE.multiConfig);
-      if (mc) {
-        const parsed = JSON.parse(mc);
+      const parsed = trvJsonObj(await readKey(TRAVEL_STORAGE.multiConfig), null);
+      if (parsed) {
         // 移除舊版 firebaseConfig 欄位（如果存在）
         delete parsed.firebaseConfig;
         trvMultiConfig = { ...trvMultiConfig, ...parsed };
@@ -30118,6 +30164,7 @@ ${baseSchema}
     renderGather();
     renderRollCall();
     renderSos();
+    renderInfoTab();
     renderTrvNowNext();
     renderTrvBrief();
     // 🔴 首頁那六張小卡原本不在這裡畫：renderHomeStats() 只有切到「首頁」分頁時才跑，
@@ -30169,6 +30216,7 @@ ${baseSchema}
     if (tab === 'party') renderPartyTab();
     if (tab === 'chat') renderChatTab();
     if (tab === 'sos') renderSos();   // 團員檔案剛改過的話，卡片裡的人數要跟著更新
+    if (tab === 'info') renderInfoTab();   // 目的地／匯率改過的話，保險 eSIM 分頁的內容要跟著變
     renderBreadcrumb();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -34127,7 +34175,16 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function renderChecklist() {
     try { renderTrvBrief(); } catch (e) {}   // 打勾一改，「還有 N 項沒打勾」也要跟著變
     try { renderHomeStats(); } catch (e) {}  // 首頁那張「行前清單 N / M」也一樣
+    if (!Array.isArray(trvChecklist)) trvChecklist = [];
     const sections = CHECK_SECTIONS;
+    // 空的清單要自己解釋自己——以前整頁空白，看起來像壞掉
+    if (!trvChecklist.length) {
+      document.getElementById('checklistContent').innerHTML = `<div class="prof-empty" style="padding:22px 18px;">
+        <div style="font-family:var(--serif); font-size:16px; color:var(--ink-secondary); margin-bottom:6px;">清單是空的</div>
+        按上面的「重置為預設」會依這趟的目的地帶出一份打包清單（證件、衣物、3C、盥洗、藥品），再按「+ 新增項目」加自己的。
+      </div>`;
+      return;
+    }
     const html = sections.map((sec, secIdx) => {
       const items = trvChecklist.filter(i => checkSectionOf(i) === sec);
       if (items.length === 0) return '';
@@ -34191,7 +34248,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   }
   async function resetChecklist() {
     if (!confirm('重置清單為預設項目？你新增的自訂項目也會刪除。')) return;
-    trvChecklist = DEFAULT_CHECKLIST.map(x => ({ ...x, done: false }));
+    trvChecklist = defaultChecklistFor();
     await saveTravelKey(TRAVEL_STORAGE.checklist, trvChecklist);
     renderChecklist();
     showToast('已重置為預設');
@@ -34961,6 +35018,73 @@ ${daysBrief}${butlerPartyBlock()}
     const text = `⛬ 揪團團購\n商品：${item}${price ? `\n單價：NT$${price}` : ''}\n\n有興趣的請回覆我數量～`;
     window.open('https://line.me/R/share?text=' + encodeURIComponent(text), '_blank');
   }
+  // ===== 保險 eSIM 分頁 =====
+  // HTML 裡那五張卡是九寨溝專用的（泰華旅遊電話、中國 eSIM、9 月 7~18°C、人民幣、支付寶）。
+  // 以前不管哪一趟都顯示它——奧捷行程打開看到「中國 eSIM 推薦」「RMB 1000~2000」，自建的日本行程也是。
+  // 其他行程改成從既有資料生成：目的地（🆘 狀況選的國家）→ 緊急電話／上網限制／幣別；行程 → 旅行社、海拔；
+  // 這裡不寫任何查不到的數字（保額、價格），查不到的一律指回使用者自己填的地方。
+  function renderInfoTab() {
+    const gen = document.getElementById('infoGeneric'), jz = document.getElementById('infoJiuzhai');
+    if (!gen || !jz) return;
+    const isJz = !!(ITINERARY && ITINERARY.id === 'jiuzhai_2026');
+    jz.style.display = isJz ? '' : 'none';
+    gen.style.display = isJz ? 'none' : '';
+    if (isJz) return;
+    let co = null, code = '';
+    try { co = sosCountry(); code = co ? co.code : ''; } catch (e) {}
+    const isCN = code === 'CN';
+    let f = {}; try { f = fxNorm(); } catch (e) {}
+    const cc = f.ccy || SOS_CCY_OF[code] || '';
+    const ci = cc ? ccyInfo(cc) : null;
+    let maxAlt = null;
+    try {
+      (ITINERARY.days || []).forEach(d => { const a = dayAlt(d); if (a.max != null && (maxAlt == null || a.max > maxAlt)) maxAlt = a.max; });
+    } catch (e) { maxAlt = null; }
+    const card = (glyph, title, items, actions) => `<div class="info-card">
+        <h3><span class="glyph">${glyph}</span>${title}</h3>
+        <ul>${items.filter(Boolean).map(x => `<li>${x}</li>`).join('')}</ul>
+        ${actions ? `<div style="margin-top:14px; display:flex; gap:6px; flex-wrap:wrap;">${actions}</div>` : ''}
+      </div>`;
+    const tabBtn = (tab, label) => `<button class="btn btn-sm" data-tap onclick="setTravelTab('${tab}')">${label}</button>`;
+    const html = [
+      card('⛨', '旅責保險', [
+        ITINERARY.agency ? `旅行社：<strong>${escape(ITINERARY.agency)}</strong>` : '',
+        '旅行社的旅責險額度與承保公司<strong>看行程表或合約</strong>；建議自行加保<strong>海外突發疾病醫療險</strong>（團體旅責險通常只保意外）。',
+        '保險公司 <strong>24 小時專線</strong>填到「🆘 狀況」分頁——出事的當下直接點就撥出去，不用翻保單。'
+      ], tabBtn('sos', '🆘 填保險電話')),
+      card('🆘', '緊急電話', co ? [
+        `${escape(co.name)}：報警 <strong>${escape(co.police)}</strong>　救護車 <strong>${escape(co.amb)}</strong>${co.fire && co.fire !== co.amb ? `　火警 <strong>${escape(co.fire)}</strong>` : ''}${co.extra ? `　${escape(co.extra)}` : ''}`,
+        `外交部急難救助 <strong>${SOS_MOFA.paid}</strong>（海外撥打付費）`,
+        isCN ? `台灣在大陸沒有駐外館處，人身安全事件打 <strong>${SOS_SEF.name} ${SOS_SEF.num}</strong>` : '',
+        '領隊、地陪、飯店的電話與「遇到了怎麼辦」的步驟，都在「🆘 狀況」分頁。'
+      ] : ['還沒選目的地——到「🆘 狀況」選一下，這裡就會列出當地的報警與救護車號碼。'], tabBtn('sos', '🆘 狀況分頁')),
+      card('◉', '上網與通訊', isCN ? [
+        '<strong>LINE、Google（搜尋／地圖／Gmail／相簿）、Facebook、Instagram、YouTube 在中國大陸都連不上。</strong>飯店 Wi-Fi 也一樣。',
+        '<strong>最簡單可靠：台灣門號直接開國際漫遊上網。</strong>漫遊流量繞回台灣電信的網路，不受當地限制。',
+        '當地買的 SIM、一般的中國 eSIM 走當地網路，上面那些會被擋——除非方案寫明含翻牆／走香港路由。',
+        '當地正常能用的：<strong>微信、支付寶、高德地圖、百度地圖</strong>。',
+        '<strong>這個 App 本身</strong>加到主畫面之後<strong>沒網路也打得開</strong>；會失效的是維基縮圖、AI 管家、Google 導航（導航改選高德）。'
+      ] : [
+        '<strong>台灣門號開國際漫遊</strong>最省事；要省錢就買當地或跨國 eSIM（Airalo、Holafly 等），LINE／Google 都正常能用。',
+        '出發前在電信公司 App 開通日租型方案，或在機場前就把 eSIM 裝好、確認能開通。',
+        '<strong>這個 App 本身</strong>加到主畫面之後<strong>沒網路也打得開</strong>（行程、點名、集合倒數、花費都能用）；會失效的是維基縮圖、AI 管家與導航。',
+        '「同團」功能要有網路才會同步——<strong>點名本來就存在你自己的手機裡</strong>，斷線照樣點。'
+      ]),
+      card('¥', '付款', [
+        ci ? `當地貨幣：<strong>${escape(ci.name)} ${escape(ci.code)}</strong>${f.ccy && f.rate > 0 ? `（這趟設定 1 ${escape(f.ccy)} = ${f.rate} 台幣）` : ''}` : '還沒設定這趟的幣別。',
+        '到「預算 → 💱 匯率」存一次匯率，之後<strong>記花費、記購物直接填當地價錢</strong>，App 自動換算台幣。',
+        isCN ? '主要支付：<strong>支付寶 / 微信支付</strong>（綁定信用卡）；備用少量人民幣現金（小攤、香火錢）。'
+             : '信用卡為主（免海外手續費的最好），<strong>少量當地現金</strong>備用（小攤、小費、廁所）。'
+      ], tabBtn('budget', '💱 設定匯率')),
+      card('☀', '氣候與體力', [
+        '每一天的天氣看「行程」分頁的<strong>天氣徽章</strong>（出發前 16 天起有預報），管家會在前一晚提醒帶傘或加衣。',
+        maxAlt != null && altLevel(maxAlt) > 0
+          ? `這趟最高到<strong>${escape(altText(maxAlt))}</strong>：高海拔<strong>慢慢走、多喝水、少喝酒</strong>，高山症藥問醫生；防曬與太陽眼鏡要帶。`
+          : '行前清單的衣物與藥品項目已依目的地帶好，出發前一週照著打勾。'
+      ], tabBtn('timeline', '✦ 看行程天氣') + tabBtn('checklist', '☑ 行前清單'))
+    ].join('');
+    gen.innerHTML = html;
+  }
   function copyEmergency() {
     const text = '九寨之旅緊急聯絡\n泰華旅遊 TEL: 06-2148181\n福林旅行社 FAX: 06-2136125\n旅責險 250萬 / 醫療險 20萬';
     navigator.clipboard?.writeText(text);
@@ -35004,12 +35128,14 @@ ${daysBrief}${butlerPartyBlock()}
         }
         const curNow = `清單 ${trvChecklist.length} 項 · 花費 ${trvExpenses.length} 筆 · 購物 ${trvShopping.length} 件`;
         if (!importAsk('travel', d, summary, curNow, false)) return;
-        if (d.checklist) trvChecklist = d.checklist;
-        if (d.expenses) trvExpenses = d.expenses;
-        if (d.shopping) trvShopping = d.shopping;
-        if (d.butler) trvButlerHistory = d.butler;
-        if (d.gather !== undefined) trvGather = d.gather;
-        if (d.settings) trvSettings = { ...trvSettings, ...d.settings };
+        // 形狀不對的欄位直接跳過（不然存進去之後每次開都要靠 loadTravel 的防護救）
+        const isArr = Array.isArray, isObj = o => o && typeof o === 'object' && !Array.isArray(o);
+        if (isArr(d.checklist)) trvChecklist = d.checklist;
+        if (isArr(d.expenses)) trvExpenses = d.expenses;
+        if (isArr(d.shopping)) trvShopping = d.shopping;
+        if (isArr(d.butler)) trvButlerHistory = d.butler;
+        if (d.gather === null || isObj(d.gather)) trvGather = d.gather;
+        if (isObj(d.settings)) trvSettings = { ...trvSettings, ...d.settings };
         if (d.budgetTotal) trvBudgetTotal = d.budgetTotal;
         if (d.lineGroup) trvLineGroup = d.lineGroup;
         await saveTravelKey(TRAVEL_STORAGE.checklist, trvChecklist);
