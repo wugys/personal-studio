@@ -9158,7 +9158,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.2 · π</div>
+    <div>v 16.3 · π</div>
   </footer>
 </div>
 
@@ -9649,7 +9649,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     setSyncStatus('syncing', '◌ 同步中...');
     try {
       const g = await readKey(STORAGE.groups);
-      groups = g ? JSON.parse(g) : DEFAULT_GROUPS.slice();
+      { const _g = g ? JSON.parse(g) : null; groups = Array.isArray(_g) ? _g : DEFAULT_GROUPS.slice(); }   // 群組被寫壞就回預設三組，不要讓 renderDashboard 對著 {} 跑
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
@@ -9679,7 +9679,9 @@ alter publication supabase_realtime add table party_locations;</pre>
             + names.slice(0, 3).join('、') + (names.length > 3 ? ' 等' : '')), 1200);
         }
       } else {
-        modules = JSON.parse(m);
+        // 版本號對、但內容被寫壞（只有 modules 這一個 key 壞、版本 key 沒壞）→ 走跟版本不符同一條路重建，不要讓 .find 炸掉
+        const _m = JSON.parse(m);
+        modules = Array.isArray(_m) ? _m : mergeDefaultModules('').modules;
         // 預設模組少了就補回來（storage 被動過、備份還原不完整時會發生）。
         // ⚠ 原本只補 m_apis，而且是用 DEFAULT_MODULES[0] 抓——只要哪天重排這個陣列的順序，
         //   補進去的就會是別的模組。改成用 id 找，而且 20 個都檢查。
@@ -9970,8 +9972,18 @@ alter publication supabase_realtime add table party_locations;</pre>
     if (isNaN(d.getTime())) return '';
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
+  // 全站聚合層（首頁提醒、健檢、價格更新、配息…約 45 個呼叫點）共用的讀取。
+  // parse 完驗形狀（v16.3）：fallback 給陣列就只收陣列、給純物件就只收純物件、給 null 就原樣回傳由呼叫端驗——
+  //   不然 tw_holdings_v1 被寫成 {} 時，每個呼叫端都要自己記得 Array.isArray，漏一個就炸一個。
   async function readJson(key, fallback) {
-    try { const v = await readKey(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+    try {
+      const v = await readKey(key);
+      if (!v) return fallback;
+      const o = JSON.parse(v);
+      if (Array.isArray(fallback)) return Array.isArray(o) ? o : fallback;
+      if (fallback && typeof fallback === 'object') return (o && typeof o === 'object' && !Array.isArray(o)) ? o : fallback;
+      return o;
+    } catch (e) { return fallback; }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -33731,7 +33743,9 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   async function loadTwNewsAnalysis() {
     try {
       const n = await readKey(TW_STORAGE.news);
-      twNewsState = n ? JSON.parse(n) : { lastFetch: '', perStock: {} };
+      const _n = n ? JSON.parse(n) : null;
+      twNewsState = (_n && typeof _n === 'object' && !Array.isArray(_n)) ? _n : { lastFetch: '', perStock: {} };
+      if (!twNewsState.perStock || typeof twNewsState.perStock !== 'object') twNewsState.perStock = {};
     } catch (e) { twNewsState = { lastFetch: '', perStock: {} }; }
   }
   async function saveTwNewsState() { await writeKey(TW_STORAGE.news, JSON.stringify(twNewsState)); }
