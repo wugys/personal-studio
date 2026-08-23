@@ -9010,6 +9010,7 @@ alter publication supabase_realtime add table party_locations;</pre>
           </div>
         </div>
         <div id="expPreview" style="font-size:12.5px; color:var(--ink-secondary); line-height:1.8; margin:-4px 0 16px;"></div>
+        <div id="expShopNote" style="display:none; border:1px solid rgba(212,165,116,0.5); border-left-width:3px; border-radius:4px; padding:9px 12px; margin:-6px 0 16px; font-size:12px; color:var(--ink-secondary); line-height:1.75;"></div>
         <div class="form-group">
           <label class="form-label">說明</label>
           <input type="text" class="form-input" id="expNote" placeholder="例如：成都火鍋晚餐">
@@ -9078,14 +9079,25 @@ alter publication supabase_realtime add table party_locations;</pre>
         </div>
         <div class="form-row">
           <div class="form-group" style="margin:0;">
-            <label class="form-label">金額 (NT$)</label>
-            <input type="number" step="any" class="form-input" id="shopAmount" required placeholder="1200">
+            <label class="form-label">幣別</label>
+            <select class="form-select" id="shopCcy" onchange="onShopCcyChange()"></select>
+          </div>
+          <div class="form-group" style="margin:0;" id="shopRateWrap">
+            <label class="form-label">匯率（1 外幣 = ? 台幣）</label>
+            <input type="number" step="any" class="form-input" id="shopRate" placeholder="4.4" oninput="updateShopPreview()">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" id="shopAmountLabel">單價 (NT$)</label>
+            <input type="number" step="any" class="form-input" id="shopAmount" required placeholder="1200" oninput="updateShopPreview()">
           </div>
           <div class="form-group" style="margin:0;">
             <label class="form-label">數量</label>
-            <input type="number" class="form-input" id="shopQty" value="1" min="1">
+            <input type="number" class="form-input" id="shopQty" value="1" min="1" oninput="updateShopPreview()">
           </div>
         </div>
+        <div id="shopPreview" style="font-size:12.5px; color:var(--ink-secondary); line-height:1.8; margin:-4px 0 16px;"></div>
         <div class="form-group">
           <label class="form-label">店家 / 地點</label>
           <input type="text" class="form-input" id="shopWhere" placeholder="例如：寬窄巷子">
@@ -9143,7 +9155,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.0 · π</div>
+    <div>v 16.1 · π</div>
   </footer>
 </div>
 
@@ -29584,7 +29596,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         ${x.photo ? `<img src="${x.photo}" style="width:22mm; height:22mm; object-fit:cover; border:1px solid #ddd; flex-shrink:0;">` : `<div style="width:22mm; height:22mm; border:1px solid #ddd; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#bbb !important; font-size:18pt;">⛬</div>`}
         <div style="flex:1; min-width:0;">
           <div style="font-family:'Fraunces', serif; font-size:11.5pt; font-weight:500;">${escape(x.name)}${x.qty > 1 ? ' × ' + x.qty : ''}</div>
-          <div style="font-size:10pt; color:#d4a574 !important; margin:1mm 0;">NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}</div>
+          <div style="font-size:10pt; color:#d4a574 !important; margin:1mm 0;">NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}${x.oc ? `<span style="color:#888 !important; font-size:8.5pt; margin-left:2mm;">${escape(shopFxText(x))}</span>` : ''}</div>
           ${x.where ? `<div style="font-size:9.5pt; color:#666 !important;">📍 ${escape(x.where)}</div>` : ''}
           ${x.note ? `<div style="font-size:9.5pt; color:#888 !important;">${escape(x.note)}</div>` : ''}
         </div>
@@ -32308,14 +32320,32 @@ ${baseSchema}
 
   // ---- 花費表單（外幣 ＋ 分帳）----
   let expShareSel = [];
+  // 幣別切換時匯率欄怎麼處理（花費／購物共用）：
+  //   ⚠ 換了幣別，原本那格匯率是「上一個幣別的」，**絕對不能沿用**——
+  //     新增時預設人民幣、匯率自動帶 4.4，使用者改成日圓，4.4 留在格子裡 → ¥1,500 被算成 NT$6,600（應該是 315）。
+  //     v16.1 做購物外幣時測試抓到的，回頭看花費那邊從 v11.x 起就一直是這樣（以前只有 `!rateInput.value` 才帶）。
+  //   規則：切到這趟設定的幣別 → 帶設定的匯率；其他幣別 → 留空讓人自己填（預覽會紅字提醒、存檔會擋）；
+  //         同一個視窗裡切回去 → 記得你剛才填的（memo），不用重打。
+  //   第一次呼叫（剛開視窗、dataset.forCcy 還沒設）不動已經填好的值——編輯舊資料要顯示它當時的匯率，不是今天的。
+  function fxRateOnCcyChange(rateInput, cur, memo) {
+    const f = fxNorm();
+    const prev = rateInput.dataset.forCcy;
+    const dflt = (cur === f.ccy && f.rate > 0) ? f.rate : '';
+    if (prev !== undefined && prev !== cur) {
+      if (prev) memo[prev] = rateInput.value;
+      rateInput.value = (memo[cur] != null && memo[cur] !== '') ? memo[cur] : dflt;
+    } else if (cur && !rateInput.value) {
+      rateInput.value = dflt;
+    }
+    rateInput.dataset.forCcy = cur;
+  }
+  let expRateMemo = {};
   function onExpCcyChange() {
     const cur = document.getElementById('expCcy').value;
-    const f = fxNorm();
     const rateInput = document.getElementById('expRate');
     document.getElementById('expRateWrap').style.display = cur ? '' : 'none';
     document.getElementById('expAmountLabel').textContent = cur ? `金額（${ccySym(cur)}）` : '金額 (NT$)';
-    // 換幣別時帶入這趟設定的匯率；不是設定的那個幣別就留空讓使用者自己填
-    if (cur && !rateInput.value) rateInput.value = (cur === f.ccy && f.rate > 0) ? f.rate : '';
+    fxRateOnCcyChange(rateInput, cur, expRateMemo);
     updateExpPreview();
   }
   function updateExpPreview() {
@@ -34255,6 +34285,9 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     document.getElementById('expDeleteBtn').style.display = isEdit ? '' : 'none';
     const today = todayISO();
     const f = fxNorm();
+    // 每次開視窗都從乾淨狀態開始：匯率欄「屬於哪個幣別」與切換記憶都清掉（不然上一筆的匯率會漏到這一筆）
+    delete document.getElementById('expRate').dataset.forCcy;
+    expRateMemo = {};
     // 幣別下拉：台幣永遠在最上面；這趟設定的幣別排第二
     const ccySel = document.getElementById('expCcy');
     ccySel.innerHTML = `<option value="">台幣 NT$</option>` +
@@ -34273,7 +34306,16 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       document.getElementById('expRate').value = e.oc ? (e.fx || '') : '';
       payerSel.value = expPayer(e);
       expShareSel = expShareIds(e).slice();
+      // 從購物清單連動過來的那筆：這裡改金額，下次存購物會被蓋回去（shopSyncExpense）——先講，不要讓人改了白改
+      const sn = document.getElementById('expShopNote');
+      if (sn) {
+        const src = e.fromShop ? (Array.isArray(trvShopping) ? trvShopping : []).find(x => x.id === e.fromShop) : null;
+        sn.style.display = e.fromShop ? '' : 'none';
+        sn.innerHTML = e.fromShop ? `這筆是從<strong>購物清單</strong>${src ? '「' + escape(src.name || '') + '」' : ''}連動過來的。金額、件數、幣別請到「購物」分頁改${src ? '' : '（那筆購物紀錄已經找不到了）'}——在這裡改，下次存購物時會被蓋回去。分類、日期、誰付的、分給誰可以在這裡改。` : '';
+      }
     } else {
+      const sn = document.getElementById('expShopNote');
+      if (sn) sn.style.display = 'none';
       document.getElementById('expCategory').value = '餐飲';
       document.getElementById('expAmount').value = '';
       document.getElementById('expNote').value = '';
@@ -34353,7 +34395,8 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
           : `<div class="shop-photo-placeholder">⛬</div>`}
         <div class="shop-body">
           <div class="shop-name">${escape(x.name)}${x.qty > 1 ? ` × ${x.qty}` : ''}</div>
-          <div class="shop-amount">NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}</div>
+          <div class="shop-amount">NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}${
+            x.oc ? `<span class="exp-fx">${escape(shopFxText(x))}</span>` : ''}</div>
           <div class="shop-meta">${escape(x.where || '')}${x.note ? ' · ' + escape(x.note) : ''}</div>
         </div>
         <div class="shop-actions">
@@ -34369,10 +34412,21 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const isEdit = !!id;
     document.getElementById('shopEditId').value = id || '';
     document.getElementById('shopDeleteBtn').style.display = isEdit ? '' : 'none';
+    // 幣別下拉跟「記花費」一樣：台幣永遠在最上面，設過匯率就預設用當地幣別。
+    //   大陸的標價全是人民幣——以前這裡只能填台幣，使用者得自己心算，填錯整個預算就差 4 倍。
+    const f = fxNorm();
+    delete document.getElementById('shopRate').dataset.forCcy;
+    shopRateMemo = {};
+    const ccySel = document.getElementById('shopCcy');
+    ccySel.innerHTML = `<option value="">台幣 NT$</option>` +
+      TRIP_CCYS.map(c => `<option value="${escape(c.code)}">${escape(c.name)} ${escape(c.code)}</option>`).join('');
     if (isEdit) {
       const x = trvShopping.find(s => s.id === id);
       document.getElementById('shopName').value = x.name;
-      document.getElementById('shopAmount').value = x.amount;
+      ccySel.value = x.oc || '';
+      // ⚠ 編輯外幣那筆要顯示原幣單價，不是換算後的台幣——不然按一次儲存就被乘兩次（跟花費那邊同一個教訓）
+      document.getElementById('shopAmount').value = x.oc ? (x.oa != null ? x.oa : '') : x.amount;
+      document.getElementById('shopRate').value = x.oc ? (x.fx || '') : '';
       document.getElementById('shopQty').value = x.qty || 1;
       document.getElementById('shopWhere').value = x.where || '';
       document.getElementById('shopNote').value = x.note || '';
@@ -34383,14 +34437,44 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     } else {
       ['shopName','shopAmount','shopWhere','shopNote','shopPhotoData'].forEach(i => document.getElementById(i).value = '');
       document.getElementById('shopQty').value = 1;
+      ccySel.value = f.ccy && f.rate > 0 ? f.ccy : '';
+      document.getElementById('shopRate').value = '';
       // 新增時預設勾起來：記購物的人多半就是花了這筆錢
       document.getElementById('shopAlsoExpense').checked = true;
       document.getElementById('shopPhotoPreview').style.display = 'none';
     }
     document.getElementById('shopPhotoInput').value = '';
+    onShopCcyChange();
     document.getElementById('shopModal').classList.add('active');
   }
   function closeShopModal() { document.getElementById('shopModal').classList.remove('active'); }
+  // 購物的幣別／匯率／預覽——邏輯跟花費那邊一樣，只是欄位 id 不同。
+  let shopRateMemo = {};
+  function onShopCcyChange() {
+    const cur = document.getElementById('shopCcy').value;
+    const rateInput = document.getElementById('shopRate');
+    document.getElementById('shopRateWrap').style.display = cur ? '' : 'none';
+    document.getElementById('shopAmountLabel').textContent = cur ? `單價（${ccySym(cur)}）` : '單價 (NT$)';
+    document.getElementById('shopAmount').placeholder = cur ? '280' : '1200';
+    fxRateOnCcyChange(rateInput, cur, shopRateMemo);   // 換幣別不沿用上一個幣別的匯率（見 fxRateOnCcyChange）
+    updateShopPreview();
+  }
+  function updateShopPreview() {
+    const el = document.getElementById('shopPreview');
+    if (!el) return;
+    const cur = document.getElementById('shopCcy').value;
+    const amt = Number(document.getElementById('shopAmount').value);
+    const rate = Number(document.getElementById('shopRate').value);
+    const qty = Number(document.getElementById('shopQty').value) || 1;
+    const money = n => 'NT$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+    if (cur) {
+      if (!(rate > 0)) { el.innerHTML = '<span style="color:var(--danger);">還沒填匯率，換算不出台幣</span>'; return; }
+      if (!(amt > 0)) { el.innerHTML = ''; return; }
+      el.innerHTML = `${escape(ccySym(cur))}${amt.toLocaleString()}${qty > 1 ? ' × ' + qty + ' 件' : ''} × ${rate} ＝ <strong style="color:var(--accent);">${money(amt * qty * rate)}</strong>`;
+      return;
+    }
+    el.innerHTML = (amt > 0 && qty > 1) ? `NT$${amt.toLocaleString()} × ${qty} 件 ＝ <strong style="color:var(--accent);">${money(amt * qty)}</strong>` : '';
+  }
   function onShopPhotoSelected(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -34419,6 +34503,12 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   // CAUTION 不能直接把購物總額加到「已用」——花費本來就有「購物」分類，
   //   記在那邊的人會被算兩次。所以做成一筆一筆連動（存 expId），並且把「還沒連動的」講出來。
   function shopSum(x) { return Number(x && x.amount || 0) * (Number(x && x.qty) || 1); }
+  // 「CN¥200 × 3 × 4.4」——原幣單價 × 件數 × 匯率；只有用外幣記的才有
+  function shopFxText(x) {
+    if (!x || !x.oc) return '';
+    const q = Number(x.qty) || 1;
+    return ccySym(x.oc) + Number(x.oa || 0).toLocaleString() + (q > 1 ? ' × ' + q : '') + ' × ' + x.fx;
+  }
   function shopExpOf(x) {
     if (!x || !x.expId) return null;
     return (Array.isArray(trvExpenses) ? trvExpenses : []).find(e => e.id === x.expId) || null;
@@ -34434,16 +34524,20 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function shopSyncExpense(x) {
     const amt = shopSum(x);
     const cur = shopExpOf(x);
+    // 用外幣記的購物，連動過去的花費也帶原幣（花費明細那行才會寫「CN¥400 × 4.4」，跟手記的一樣）
+    const q = Number(x.qty) || 1;
+    const oc = x.oc || '', oa = oc && x.oa != null ? Math.round(Number(x.oa) * q * 100) / 100 : null, fx = oc ? (x.fx || null) : null;
     if (cur) {
       cur.category = '購物';
       cur.amount = amt;
+      cur.oc = oc; cur.oa = oa; cur.fx = fx;
       cur.note = shopExpNote(x);
       return;
     }
     const id = 'exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     trvExpenses.push({
       id, createdAt: Date.now(), category: '購物', amount: amt,
-      oc: '', oa: null, fx: null, payer: 'me', share: [],
+      oc, oa, fx, payer: 'me', share: [],
       note: shopExpNote(x), date: todayISO(x.createdAt ? new Date(x.createdAt) : undefined), fromShop: x.id
     });
     x.expId = id;
@@ -34578,9 +34672,19 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   async function saveShopItem(e) {
     e.preventDefault();
     const id = document.getElementById('shopEditId').value;
+    const cur = document.getElementById('shopCcy').value;
+    const raw = Number(document.getElementById('shopAmount').value);
+    const rate = Number(document.getElementById('shopRate').value);
+    // ⚠ 外幣沒填匯率就擋下來，不要偷偷當 1:1（跟花費那邊同一條規矩）
+    if (cur && !(rate > 0)) { showToast(`填了 ${cur} 就要填匯率，不然換算不出台幣`); return; }
     const data = {
       name: document.getElementById('shopName').value.trim(),
-      amount: Number(document.getElementById('shopAmount').value),
+      // amount 永遠是台幣「單價」（首頁小卡、預算連動、列印、匯出全用 amount × qty，語意不能改）；
+      //   外幣只多存 oc／oa（原幣單價）／fx 三個欄位給顯示用，舊資料沒有也完全正常。
+      amount: cur ? Math.round(raw * rate * 100) / 100 : raw,
+      oc: cur || '',
+      oa: cur ? raw : null,
+      fx: cur ? rate : null,
       qty: Number(document.getElementById('shopQty').value) || 1,
       where: document.getElementById('shopWhere').value.trim(),
       note: document.getElementById('shopNote').value.trim(),
@@ -34627,9 +34731,11 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function exportShoppingList() {
     if (trvShopping.length === 0) { showToast('沒有可匯出的購物紀錄'); return; }
     const total = trvShopping.reduce((s, x) => s + Number(x.amount || 0) * (Number(x.qty)||1), 0);
-    let txt = `九寨溝購物清單 · ${new Date().toLocaleDateString()}\n${'='.repeat(40)}\n`;
+    // 標題跟檔名用這趟的名字——以前寫死「九寨溝」，自建行程匯出來也叫九寨溝
+    const tripName = (ITINERARY && ITINERARY.title) || '本團';
+    let txt = `${tripName} 購物清單 · ${new Date().toLocaleDateString()}\n${'='.repeat(40)}\n`;
     trvShopping.forEach((x, i) => {
-      txt += `\n${i+1}. ${x.name}${x.qty > 1 ? ` × ${x.qty}` : ''}\n   NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}`;
+      txt += `\n${i+1}. ${x.name}${x.qty > 1 ? ` × ${x.qty}` : ''}\n   NT$${(Number(x.amount) * (Number(x.qty)||1)).toLocaleString()}${x.oc ? `（${shopFxText(x)}）` : ''}`;
       if (x.where) txt += `\n   店家：${x.where}`;
       if (x.note) txt += `\n   備註：${x.note}`;
       txt += '\n';
@@ -34638,7 +34744,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const blob = new Blob([txt], { type: 'text/plain; charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `九寨溝購物清單_${todayISO()}.txt`;
+    a.href = url; a.download = `${tripName.replace(/[\/:*?"<>|]/g, ' ')}_購物清單_${todayISO()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
