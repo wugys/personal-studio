@@ -5057,10 +5057,11 @@
         <div class="form-group">
           <label class="form-label">目前累積怎麼算</label>
           <select class="form-select" id="goalSource" onchange="onGoalSourceChange()">
-            <option value="total">全部資產（台股＋美股＋加密＋高股息ETF＋市值型ETF 自動加總）</option>
+            <option value="total">全部資產（所有投資模組自動加總）</option>
             <option value="modules">只算我勾選的模組</option>
             <option value="manual">手動輸入金額</option>
           </select>
+          <div id="goalSourceHint" style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:6px; line-height:1.6;"></div>
         </div>
         <div class="form-group" id="goalModulesRow" style="display:none;">
           <label class="form-label">要算進來的模組</label>
@@ -5073,7 +5074,10 @@
         <div class="form-row">
           <div class="form-group" style="margin:0;">
             <label class="form-label">額外加計 (NT$，選填)</label>
-            <input type="number" step="any" class="form-input" id="goalExtra" placeholder="銀行存款、保單等沒進系統的">
+            <input type="number" step="any" class="form-input" id="goalExtra" placeholder="銀行活存、保單等沒建在模組裡的">
+            <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px; line-height:1.6;">
+              只填<strong>沒有建在上面那些模組裡</strong>的錢。已經在模組裡的（股票、債券、不動產…）<strong>再填一次會被算兩次</strong>。
+            </div>
           </div>
           <div class="form-group" style="margin:0;">
             <label class="form-label">每月投入 (NT$)</label>
@@ -9083,7 +9087,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 14.9 · ξ</div>
+    <div>v 15.0 · ο</div>
   </footer>
 </div>
 
@@ -19118,16 +19122,30 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     } catch (e) { goalAssetRows = []; }
   }
   function goalTotalAssets() { return goalAssetRows.reduce((s, r) => s + (Number(r.value) || 0), 0); }
-  function goalCurrentAmount(g) {
-    let base = 0;
-    if (g.source === 'manual') base = Number(g.manualAmount) || 0;
+  function goalCurrentAmount(g) { return goalAmountParts(g).total; }
+  // 把「目前累積」拆成兩塊：模組自動算的 ＋ 你自己補的。
+  //
+  // ⚠ 為什麼要拆開：下拉選單以前寫死「全部資產（台股＋美股＋加密＋高股息ETF＋市值型ETF）」，
+  //   那是 v6.9 的模組清單，之後又多了債券／外幣存款／基金／貴金屬／出租與商業不動產**六個**，
+  //   而 `goalTotalAssets()` 其實是**全部 11 個都算**。於是有不動產的人讀了那行字，
+  //   以為房子沒被算進去，就把淨值填進「額外加計」——**同一筆錢被算兩次**，
+  //   實測目前累積變成 9,960,300（正確是 5,660,300），進度條與「幾年後達成」全部跟著錯，
+  //   而畫面上完全看不出來。現在卡片會把算式攤開來寫，看一眼就知道有沒有重複。
+  function goalAmountParts(g) {
+    let base = 0, label = '';
+    if (g.source === 'manual') { base = Number(g.manualAmount) || 0; label = '手動輸入'; }
     else if (g.source === 'modules') {
       const keys = Array.isArray(g.modules) ? g.modules : [];
       base = goalAssetRows.filter(r => keys.includes(r.key)).reduce((s, r) => s + (Number(r.value) || 0), 0);
-    } else {
-      base = goalTotalAssets();
-    }
-    return base + (Number(g.extra) || 0);
+      label = '勾選的模組';
+    } else { base = goalTotalAssets(); label = '模組自動加總'; }
+    const extra = Number(g.extra) || 0;
+    return { base, extra, label, total: base + extra };
+  }
+  // 「全部資產」到底包含哪些模組——**從 CF_SOURCES 生出來，不要手寫**。
+  // 手寫的清單一定會過期：v6.9 寫的那份到 v14.9 已經漏了六個模組（v11.1 的教訓）。
+  function goalTotalSourceText() {
+    return (typeof CF_SOURCES !== 'undefined' ? CF_SOURCES : []).map(s => s.name).join('＋');
   }
   function goalSourceLabel(g) {
     if (g.source === 'manual') return '手動輸入';
@@ -19347,6 +19365,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
   // ===== 目標卡 =====
   function goalCardHtml(g) {
     const c = goalCompute(g);
+    const parts = goalAmountParts(g);
     const t = GOAL_TYPES[g.type] || GOAL_TYPES.other;
     const cls = c.done ? 'profit' : (c.aheadBy != null && c.aheadBy < 0) ? 'loss' : 'flat';
     const statusLabel = { active: '進行中', paused: '已暫停', done: '已達成' }[g.status] || g.status;
@@ -19400,6 +19419,11 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
             <span>${goalMoney(c.current)}</span>
             <span>目標 ${goalMoney(c.target)}</span>
           </div>
+          ${parts.extra ? `
+          <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px; line-height:1.6;">
+            ${goalMoney(c.current)} ＝ ${escape(parts.label)} ${goalMoney(parts.base)} ＋ 額外加計 ${goalMoney(parts.extra)}<br>
+            <span style="color:var(--accent-warm);">額外加計只該放「沒有建在模組裡」的錢——已經在模組裡的再填一次會被算兩次</span>
+          </div>` : ''}
         </div>
         <div style="display:flex; flex-direction:column; gap:6px; padding:10px 12px; background:rgba(212,165,116,0.06); border-left:2px solid var(--accent); border-radius:3px; font-size:12px; line-height:1.6;">
           <div>${etaText}${paceText ? ' · ' + paceText : ''}</div>
@@ -19489,12 +19513,36 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     if (goalModulesPick.includes(key)) goalModulesPick = goalModulesPick.filter(k => k !== key);
     else goalModulesPick.push(key);
     renderGoalModuleChips();
+    renderGoalSourceHint();
   }
   function onGoalSourceChange() {
     const v = document.getElementById('goalSource').value;
     document.getElementById('goalModulesRow').style.display = v === 'modules' ? '' : 'none';
     document.getElementById('goalManualRow').style.display = v === 'manual' ? '' : 'none';
     renderGoalModuleChips();
+    renderGoalSourceHint();
+  }
+  // 在「他要填額外加計的那一刻」就把現在算出來的金額與有值的模組講出來——
+  // 那是他唯一會發現「房子其實已經被算進去了」的時機。
+  function renderGoalSourceHint() {
+    const el = document.getElementById('goalSourceHint');
+    if (!el) return;
+    const v = (document.getElementById('goalSource') || {}).value || 'total';
+    if (v === 'manual') { el.innerHTML = '這個模式完全不看模組，金額由你自己填。'; return; }
+    const keys = v === 'modules' ? goalModulesPick : null;
+    const rows = (goalAssetRows || []).filter(r => (!keys || keys.includes(r.key)) && Number(r.value) > 0);
+    const sum = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
+    if (v === 'total') {
+      el.innerHTML = `包含這些模組：${escape(goalTotalSourceText())}<br>` +
+        (rows.length
+          ? `<span style="color:var(--accent-warm);">現在有值的：${rows.map(r => escape(r.name) + ' ' + goalMoney(r.value)).join('、')}　合計 <strong>${goalMoney(sum)}</strong></span><br>` +
+            `這些<strong>已經算進去了</strong>，不要再填一次到下面的「額外加計」。`
+          : '目前這些模組都還沒有資料。');
+      return;
+    }
+    el.innerHTML = rows.length
+      ? `<span style="color:var(--accent-warm);">勾選的模組現在合計 <strong>${goalMoney(sum)}</strong>（${rows.map(r => escape(r.name)).join('、')}）</span>`
+      : '還沒勾到有資料的模組，目前會算成 NT$0。';
   }
   function fillGoalMonthlyFromDca() {
     let sum = 0;
