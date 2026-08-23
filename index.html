@@ -9158,7 +9158,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.3 · π</div>
+    <div>v 16.4 · π</div>
   </footer>
 </div>
 
@@ -31057,12 +31057,21 @@ ${baseSchema}
     //   使用者後來把目的地改回「（還沒選）」是他的決定，不該被蓋掉（v12.9 的教訓）。
     //   不知道目的地時退回「護照＋六個月」這個比較保守的預設。
     try { code = sosNorm().country || ''; } catch (e) { code = ''; }
-    if (code === 'CN') return {
-      name: '台胞證', sixMonth: false,
-      hint: '去大陸看的是<strong>台胞證</strong>（台灣居民來往大陸通行證），護照不能單獨用。' +
-            '台胞證<strong>只要在有效期內</strong>就好，沒有「回國後還要六個月」那條規定。' +
-            '這一團經澳門轉機，<strong>護照也要帶著</strong>。'
-    };
+    if (code === 'CN') {
+      // 「經澳門轉機」是九寨溝這團的事實，不是每一個大陸團都這樣——看這趟的航班有沒有經港澳，沒有就只說「備用也要帶」
+      let via = '';
+      try {
+        const legs = (ITINERARY && Array.isArray(ITINERARY.flights)) ? ITINERARY.flights : [];
+        const hit = legs.map(f => String((f && (f.from || '')) + ' ' + (f && (f.to || '')))).join(' ');
+        via = /澳門/.test(hit) ? '澳門' : /香港/.test(hit) ? '香港' : '';
+      } catch (e) { via = ''; }
+      return {
+        name: '台胞證', sixMonth: false,
+        hint: '去大陸看的是<strong>台胞證</strong>（台灣居民來往大陸通行證），護照不能單獨用。' +
+              '台胞證<strong>只要在有效期內</strong>就好，沒有「回國後還要六個月」那條規定。' +
+              (via ? `這一團經${via}轉機，<strong>護照也要帶著</strong>。` : '<strong>護照也帶著</strong>（轉機、備用都用得到）。')
+      };
+    }
     return { name: '護照', sixMonth: true, hint: '' };
   }
 
@@ -33112,7 +33121,11 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     saveTravelKey(TRAVEL_STORAGE.settings, trvSettings);
   }
   function previewTts() {
-    const sample = '你好，這是語音導覽試聽。我們現在在九寨溝，正前方就是著名的五彩池。';
+    // 試聽句子跟著這趟走：拿第一個有介紹的景點（沒有就只講目的地），不要每一趟都念「九寨溝五彩池」
+    let sampleSpot = '';
+    try { for (const d of (ITINERARY && ITINERARY.days) || []) { const sp = (d.spots || []).find(x => x && x.type === '景點' && x.name); if (sp) { sampleSpot = sp.name; break; } } } catch (e) {}
+    const sampleDest = (ITINERARY && (ITINERARY.destination || ITINERARY.title)) ? String(ITINERARY.destination || ITINERARY.title).split(/[·,，、]/)[0].trim() : '目的地';
+    const sample = `你好，這是語音導覽試聽。我們現在在${sampleDest}${sampleSpot ? '，正前方就是' + sampleSpot : ''}。`;
     ttsRead(sample);
   }
 
@@ -34842,18 +34855,45 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     ]
   };
 
+  // 沒有專屬建議題的行程（自建的）：從這趟的資料生成，不要退回九寨溝那組
+  //   （以前 fallback 是 jiuzhai_2026——自建的日本行程會看到「成都物價」「高山症準備」「峨眉山智選假日酒店」）。
+  function butlerGenericSuggestions() {
+    const dest = (ITINERARY && (ITINERARY.destination || ITINERARY.title)) || '目的地';
+    const short = String(dest).split(/[·,，、]/)[0].trim() || dest;
+    let hotel = '';
+    try { for (const d of ITINERARY.days || []) { const h = (d.spots || []).find(x => x && x.type === '住宿' && x.name); if (h) { hotel = h.name; break; } } } catch (e) {}
+    const first = ITINERARY && Array.isArray(ITINERARY.days) && ITINERARY.days[0] ? ITINERARY.days[0].date : '';
+    const month = first ? Number(first.slice(5, 7)) : 0;
+    return [
+      { label: `${short}物價`, q: `${dest}當地的物價大概什麼水準？小吃、計程車、礦泉水各約多少錢（當地幣別與台幣）？` },
+      { label: '行李打包', q: `這趟去${dest}${month ? '，' + month + ' 月出發' : ''}，行李怎麼打包最聰明？要注意什麼天氣與穿著？` },
+      hotel ? { label: '飯店設施', q: `${hotel}通常提供什麼設施？需要自己準備什麼？` } : { label: '當地禮節', q: `在${dest}有什麼文化禮節或小費習慣要注意？` },
+      { label: '長輩照顧', q: '我帶長輩同行，行程中哪幾天最辛苦？我該怎麼幫他們安排休息？' },
+      { label: '伴手禮推薦', q: `${dest}有什麼好買的伴手禮？大概價格？` },
+      { label: '突發應對', q: `在${dest}如果有人走失、證件遺失或需要就醫，第一步該做什麼？` }
+    ];
+  }
   function renderButlerSuggestions() {
     const el = document.getElementById('butlerSuggestions');
     if (!el) return;
-    const list = BUTLER_SUGGESTIONS[activeTripId] || BUTLER_SUGGESTIONS['jiuzhai_2026'];
+    const list = BUTLER_SUGGESTIONS[activeTripId] || butlerGenericSuggestions();
     el.innerHTML = list.map(s =>
       `<div class="butler-suggestion" onclick="askButler('${s.q.replace(/'/g, '&#39;')}')">${escape(s.label)}</div>`
     ).join('');
+    // 輸入框的範例與歡迎詞也跟著這趟走（以前寫死「九寨之旅」「翹腳牛肉」，哪一趟都一樣）
+    const input = document.getElementById('butlerInput');
+    if (input && list[0]) input.placeholder = '例如：' + list[0].q.slice(0, 28) + (list[0].q.length > 28 ? '…' : '');
+    renderButlerChat();
+  }
+  function butlerWelcomeHtml() {
+    const t = (ITINERARY && ITINERARY.title) || '這趟旅程';
+    return `<div class="butler-msg bot">您好 ✦ 我是您這趟「${escape(t)}」的管家。<br><br>請隨意問我關於行程、物價、飯店設施、文化禮節、長輩照顧的任何問題。也可以點上方建議快速開始。</div>`;
   }
 
   function renderButlerChat() {
     const chat = document.getElementById('butlerChat');
-    if (trvButlerHistory.length === 0) return; // 保留預設歡迎訊息
+    if (!chat) return;
+    if (!Array.isArray(trvButlerHistory) || trvButlerHistory.length === 0) { chat.innerHTML = butlerWelcomeHtml(); return; }   // 歡迎詞用這趟的名字
     chat.innerHTML = trvButlerHistory.map(m => `<div class="butler-msg ${m.role}">${escape(m.content)}</div>`).join('');
     chat.scrollTop = chat.scrollHeight;
   }
