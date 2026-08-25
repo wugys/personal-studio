@@ -10856,6 +10856,20 @@ alter publication supabase_realtime add table party_locations;</pre>
       }
     } catch (e) {}
 
+    // 8b) 這個位置一筆資料都沒有 → 先講「資料是按網址分開存的」，不要讓人以為東西不見了 (v16.13)
+    //     ⚠ 真的是新使用者也會看到這一則，所以話要兩邊都成立：說明怎麼存 + 給搬家入口 + 明講「第一次用就正常」。
+    //     只要有任何一筆資料就不再出現，不會變成長駐噪音。
+    try {
+      if (!hasAnyAppData()) {
+        push('info', '📦',
+          `這個位置（<strong>${escape(storageOriginLabel())}</strong>）還沒有任何資料。${storageScopeNote()}
+           <button data-tap onclick="event.stopPropagation(); openBackupModal();"
+                   style="margin-left:6px; background:var(--accent); border:none; color:var(--bg-base); border-radius:3px; padding:4px 11px; font-size:11.5px; font-weight:600; cursor:pointer;">💾 備份 / 還原</button>
+           <br><span style="color:var(--ink-tertiary);">第一次用的話這是正常的，直接開始記錄就好。</span>`,
+          null, 'backup');
+      }
+    } catch (e) {}
+
     await loadAlertSnooze();
     const now = Date.now();
     const kept = A.filter(a => !(alertSnooze[a.id] > now));
@@ -12806,7 +12820,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
   function renderHoldings() {
     const grid = document.getElementById('holdingsGrid');
     if (twHoldings.length === 0) {
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">γ</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p></div>';
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">γ</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p>' + emptyStateOriginHint() + '</div>';
       return;
     }
     const sortBy = document.getElementById('twSortBy')?.value || 'value';
@@ -15455,7 +15469,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
   function renderUsHoldings() {
     const grid = document.getElementById('usHoldingsGrid');
     if (usHoldings.length === 0) {
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">★</span><h3>尚無持股</h3><p>點右上「+ 新增持股」開始記錄，<br>或點 <strong style="color:var(--accent);">「📈 看盤查股」</strong> 直接看任何美股的 K 線走勢圖與分析（免持股、免設定）。</p><button class="btn btn-primary" style="margin-top:16px;" onclick="openUsAnalysisSearch()">📈 立即看盤查股</button></div>';
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">★</span><h3>尚無持股</h3><p>點右上「+ 新增持股」開始記錄，<br>或點 <strong style="color:var(--accent);">「📈 看盤查股」</strong> 直接看任何美股的 K 線走勢圖與分析（免持股、免設定）。</p><button class="btn btn-primary" style="margin-top:16px;" onclick="openUsAnalysisSearch()">📈 立即看盤查股</button>' + emptyStateOriginHint() + '</div>';
       return;
     }
     const sortBy = document.getElementById('usSortBy')?.value || 'value';
@@ -27489,6 +27503,41 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const g = BACKUP_GROUPS.find(x => x.key !== 'secrets' && x.test(k));
     return g ? g.key : 'other';
   }
+  // ===== 「資料是按網址分開存的」這件事，畫面必須自己講 (v16.13) =====
+  // 實際踩到的狀況：同一份 App 開在 Vercel / GitHub Pages / localhost:8000 / file:// 是**四個不同的抽屜**，
+  // 各存各的 localStorage。使用者換一個入口打開，看到的是空的，第一個念頭是「我的持股不見了」。
+  // 而當時畫面上唯一的說明是「目前沒有任何資料可備份。**先去各模組輸入一些資料吧**」——
+  // 那句話會直接把人推去重新輸入，等於**叫他覆蓋掉自己還好好存著的資料**。
+  // 空狀態要自己解釋自己（CLAUDE.md 的老規矩），這裡把「你現在在哪個抽屜」講出來。
+  function storageOriginLabel() {
+    try {
+      const p = location.protocol, h = location.hostname, port = location.port;
+      if (p === 'file:') return '電腦上的檔案（file://）';
+      if (h === 'localhost' || h === '127.0.0.1') return `本機測試（${h}${port ? ':' + port : ''}）`;
+      return h + (port ? ':' + port : '');
+    } catch (e) { return '（讀不到目前位置）'; }
+  }
+  // ⚠ 包成函式而不是 const：這段被宣告在檔案後半，前面的呼叫點讀 const 會撞到 TDZ（v15.1 踩過）
+  function storageScopeNote() {
+    return '資料是<strong>按網址分開存</strong>的——換一個網址（或換瀏覽器、開無痕視窗）就看不到原本那一份，'
+         + '<strong>不是資料不見了</strong>。要把它搬過來，就在有資料那一邊「全站備份 / 還原」按匯出，再回這裡匯入。';
+  }
+  function hasAnyAppData() {
+    try { return Object.keys(backupCollect()).length > 0; } catch (e) { return false; }
+  }
+  // 模組空狀態底下那一行「你可能開錯抽屜了」。
+  // ⚠ 只在**整個 App 一筆資料都沒有**時才出現——只要別的模組有資料，那就純粹是這個模組還沒記錄，
+  //   這時候還講「你的資料可能在別的網址」就是誤報（會亂叫的提醒比沒提醒更糟，v12.1b）。
+  function emptyStateOriginHint() {
+    try {
+      if (hasAnyAppData()) return '';
+      return `<p style="margin:14px auto 0; max-width:520px; padding:9px 13px; background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; text-align:left; font-size:11.5px; line-height:1.75; color:var(--ink-secondary);">
+        這個位置（<strong>${escape(storageOriginLabel())}</strong>）<strong>整個 App 都沒有資料</strong>。${storageScopeNote()}
+        <button type="button" onclick="event.stopPropagation(); openBackupModal();" style="margin-left:4px; background:var(--accent); border:none; color:var(--bg-base); border-radius:3px; padding:3px 10px; font-size:11px; font-weight:600; cursor:pointer;">💾 備份 / 還原</button>
+      </p>`;
+    } catch (e) { return ''; }
+  }
+
   // 掃出目前所有屬於本 App 的資料
   function backupCollect() {
     const out = {};
@@ -27577,13 +27626,25 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const rows = BACKUP_GROUPS.concat([{ key: 'other', name: '其他' }])
       .filter(g => st[g.key])
       .map(g => backupRowHtml(g.name, st[g.key])).join('');
-    box.innerHTML = rows
+    // 永遠先講「你現在在哪個抽屜」——沒有這一行，空的畫面就沒辦法自己解釋自己
+    const where = `<div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding:0 0 8px; margin-bottom:6px; border-bottom:1px solid var(--line-strong);">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">目前位置</span>
+        <span style="font-family:var(--mono); font-size:11.5px; color:var(--accent);">${escape(storageOriginLabel())}</span>
+        <span style="font-size:11px; color:var(--ink-tertiary);">這裡的資料跟其他網址／裝置<strong>各存各的</strong></span>
+      </div>`;
+    box.innerHTML = where + (rows
       ? rows + `<div style="display:flex; gap:8px; padding-top:8px; margin-top:4px; border-top:1px solid var(--line-strong); font-family:var(--mono); font-size:11.5px;">
           <span style="flex:1; color:var(--ink-primary);">合計</span>
           <span style="color:var(--accent);">${Object.keys(data).length} 個項目</span>
           <span style="color:var(--ink-secondary);">${backupSize(totalBytes)}</span>
         </div>`
-      : '<div style="color:var(--ink-tertiary); font-size:12.5px; padding:8px 0;">目前沒有任何資料可備份。先去各模組輸入一些資料吧。</div>';
+      // ⚠ 這裡以前寫「先去各模組輸入一些資料吧」——會把「資料在別的網址」的人推去重新輸入，
+      //   等於叫他覆蓋掉自己還存著的東西。要先講真正最可能的原因。
+      : `<div style="font-size:12.5px; padding:8px 0; color:var(--ink-secondary); line-height:1.75;">
+          <strong style="color:var(--accent-warm);">這個位置一筆資料都沒有。</strong><br>
+          ${storageScopeNote()}<br>
+          <span style="color:var(--ink-tertiary);">如果你本來就是第一次用，那就正常——直接去各模組開始記錄即可。</span>
+        </div>`);
   }
 
   function exportFullBackup() {
