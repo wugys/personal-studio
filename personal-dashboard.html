@@ -3654,7 +3654,7 @@
       <span id="usSyncBadge" style="font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--ink-tertiary); margin-left:auto;">☁ 未啟用</span>
       <button class="btn btn-sm" id="usSyncBtn" onclick="syncUsNow()" title="立即推 + 拉雲端同步">☁ 雲端同步</button>
       <button class="btn btn-sm" onclick="openUsSyncModal()" title="跨裝置同步設定">⚙</button>
-      <button class="btn btn-sm btn-primary" id="usQuoteBtn" onclick="refreshUsQuotes()" title="用 Finnhub 抓即時報價，更新所有持股現價">⚡ 即時報價</button>
+      <button class="btn btn-sm btn-primary" id="usQuoteBtn" onclick="refreshUsQuotes()" title="抓即時報價更新所有持股現價。優先走免金鑰的來源（現金流頁「⚙ 即時報價」設定），抓不到的才用 Finnhub 金鑰">⚡ 即時報價</button>
       <button class="btn btn-sm" onclick="openFinnhubKeyModal()" title="設定 Finnhub 免費 API 金鑰">🔑 金鑰</button>
       <button class="btn btn-sm" onclick="openUsBatchPriceModal()">⟳ 手動更新股價</button>
       <button class="btn btn-sm" onclick="exportUsStockData()" title="備份所有美股資料">↓ 匯出</button>
@@ -12855,6 +12855,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
           <div style="text-align:right;">
             <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${fmtSign(pnl)}</div>
+            ${dayChangeBadge(h)}
           </div>
         </div>
         <div class="hc-prices">
@@ -13674,39 +13675,84 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   }
 
   // === 一鍵抓所有持股即時報價 → 更新現價 ===
+  // ⚠ v16.9：這裡以前**開頭就擋**「請先設定 Finnhub 金鑰」——但美股現在可以走 Worker（Yahoo，免金鑰）拿到，
+  //   那句話會變成假話，而且是最糟的一種：它把使用者擋在門外去辦一把根本不需要的鑰匙。
+  //   （這跟「一鍵更新全部現價」是同一段邏輯的第二個消費者，v16.9 第一輪只改了那一個。）
+  //   改成：先問 Worker → 剩下拿不到的才需要金鑰 → 沒金鑰也只影響那幾檔，不影響已經拿到的。
   async function refreshUsQuotes() {
-    if (!finnhubKey) await loadFinnhubKey();
-    if (!finnhubKey) { showToast('請先設定 Finnhub 金鑰'); openFinnhubKeyModal(); return; }
     if (usHoldings.length === 0) { showToast('尚無持股'); return; }
     const btn = document.getElementById('usQuoteBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⚡ 更新中…'; }
-    let ok = 0, fail = 0, aborted = false;
-    for (const h of usHoldings) {
-      try {
-        const q = await finnhubQuote(h.symbol);
-        if (q && typeof q.c === 'number' && q.c > 0) {
-          h.currentPrice = q.c;
-          h.dayChange = q.d; h.dayChangePct = q.dp;
-          h.prevClose = q.pc; h.dayHigh = q.h; h.dayLow = q.l; h.dayOpen = q.o;
+    let ok = 0, fail = 0, aborted = false, liveOk = 0;
+    try {
+      liveQuoteNote = '';
+      let live = { tw: {}, us: {} };
+      try { live = await fetchLiveQuotes([], usHoldings.map(h => h.symbol)); } catch (e) {}
+
+      const rest = [];
+      for (const h of usHoldings) {
+        const q = live.us[String(h.symbol || '').toUpperCase()];
+        if (q && Number(q.price) > 0) {
+          h.currentPrice = Number(q.price);
+          if (q.change !== null && q.change !== undefined) h.dayChange = Number(q.change);
+          if (q.pct !== null && q.pct !== undefined) h.dayChangePct = Number(q.pct);
+          if (Number(q.prev) > 0) h.prevClose = Number(q.prev);
+          if (Number(q.high) > 0) h.dayHigh = Number(q.high);
+          if (Number(q.low) > 0) h.dayLow = Number(q.low);
+          if (Number(q.open) > 0) h.dayOpen = Number(q.open);
+          h.priceLive = true;
+          h.priceAsOf = String(q.time || '');
+          h.priceAsOfDate = quoteDateISO(q);
           h.priceUpdatedAt = Date.now();
           h.updatedAt = Date.now();
-          ok++;
-        } else { fail++; }
-      } catch (e) {
-        fail++;
-        console.warn('quote fail', h.symbol, e);
-        if (/401|金鑰|429/.test(String(e.message))) { showToast('☒ ' + e.message); aborted = true; break; }
+          ok++; liveOk++;
+        } else rest.push(h);
       }
-      await new Promise(r => setTimeout(r, 120)); // 保守節流，遠低於 60/min
+
+      if (rest.length && !finnhubKey) await loadFinnhubKey();
+      if (rest.length && !finnhubKey) {
+        // 只有「真的還缺」時才提金鑰，而且要講清楚缺幾檔、以及另一條免金鑰的路
+        fail += rest.length;
+        showToast(liveOk
+          ? `⚡ ${liveOk} 檔免金鑰更新完成 · 另 ${rest.length} 檔要 Finnhub 金鑰`
+          : '這些代號免金鑰的來源抓不到——設 Finnhub 金鑰，或按現金流頁的「⚙ 即時報價」設定免金鑰來源');
+        if (!liveOk) openFinnhubKeyModal();
+      } else {
+        for (const h of rest) {
+          try {
+            const q = await finnhubQuote(h.symbol);
+            if (q && typeof q.c === 'number' && q.c > 0) {
+              h.currentPrice = q.c;
+              h.dayChange = q.d; h.dayChangePct = q.dp;
+              h.prevClose = q.pc; h.dayHigh = q.h; h.dayLow = q.l; h.dayOpen = q.o;
+              h.priceLive = true;
+              h.priceAsOfDate = todayISO();
+              h.priceUpdatedAt = Date.now();
+              h.updatedAt = Date.now();
+              ok++;
+            } else { fail++; }
+          } catch (e) {
+            fail++;
+            console.warn('quote fail', h.symbol, e);
+            if (/401|金鑰|429/.test(String(e.message))) { showToast('☒ ' + e.message); aborted = true; break; }
+          }
+          await new Promise(r => setTimeout(r, 120)); // 保守節流，遠低於 60/min
+        }
+      }
+
+      await saveUsHoldings();
+      renderUsHoldings();
+      renderUsStockStats();
+      if (usSyncConfig.enabled && typeof pushUsHoldingToSupabase === 'function') {
+        usHoldings.forEach(h => { try { pushUsHoldingToSupabase(h); } catch (e) {} });
+      }
+      // 上面已經為「缺金鑰」講過話了，不要再蓋掉
+      if (!aborted && !(rest.length && !finnhubKey)) {
+        showToast(`⚡ 報價更新 · 成功 ${ok}${fail ? ` / 失敗 ${fail}` : ''}${liveOk ? `（${liveOk} 檔免金鑰）` : ''}`);
+      }
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ 即時報價'; }
     }
-    await saveUsHoldings();
-    renderUsHoldings();
-    renderUsStockStats();
-    if (usSyncConfig.enabled && typeof pushUsHoldingToSupabase === 'function') {
-      usHoldings.forEach(h => { try { pushUsHoldingToSupabase(h); } catch (e) {} });
-    }
-    if (btn) { btn.disabled = false; btn.textContent = '⚡ 即時報價'; }
-    if (!aborted) showToast(`⚡ 報價更新 · 成功 ${ok}${fail ? ` / 失敗 ${fail}` : ''}`);
   }
 
   // === Gemini API（免費金鑰，瀏覽器直連 · CORS 實測允許）===
@@ -15454,7 +15500,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
           <div style="text-align:right;">
             <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${usMoneySign(pnl)}</div>
-            ${h.dayChangePct != null ? `<div class="${h.dayChangePct > 0 ? 'profit' : h.dayChangePct < 0 ? 'loss' : 'flat'}" style="font-family:var(--mono); font-size:10px; margin-top:3px;">今日 ${h.dayChangePct >= 0 ? '+' : ''}${Number(h.dayChangePct).toFixed(2)}%</div>` : ''}
+            ${dayChangeBadge(h)}
           </div>
         </div>
         <div class="hc-prices">
@@ -17035,6 +17081,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
           <div style="text-align:right;">
             <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${hdEtfMoneySign(pnl)}</div>
+            ${dayChangeBadge(h)}
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin:10px 0; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12px;">
@@ -17895,6 +17942,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
           <div style="text-align:right;">
             <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${mkEtfMoneySignC(pnl, h)}</div>
+            ${dayChangeBadge(h)}
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin:10px 0; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12px; flex-wrap:wrap;">
@@ -20487,6 +20535,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
           <div style="text-align:right;">
             <div class="hc-pnl-pct ${cls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div>
             <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-top:4px;">${bondMoneySignC(pnl, h)}</div>
+            ${dayChangeBadge(h)}
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin:10px 0; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; font-size:12px; flex-wrap:wrap;">
@@ -25505,6 +25554,33 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return out;
   }
 
+  // 這筆報價是「哪一天」的。證交所 MIS 給 d='20260825'、Yahoo 給 ISO 時間。
+  // 為什麼要記：卡片上寫「今日 +1.05%」，如果那筆其實是上週五的，就是在說謊。
+  function quoteDateISO(q) {
+    const d = String((q && q.date) || '');
+    if (/^\d{8}$/.test(d)) return d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8);
+    const t = String((q && q.time) || '');
+    if (/^\d{4}-\d{2}-\d{2}T/.test(t)) { const dt = new Date(t); if (!isNaN(dt.getTime())) return todayISO(dt.getTime()); }
+    return '';
+  }
+
+  // 持股卡右上角的「今日漲跌」徽章。台股原本沒有這個資料（收盤價算不出當日漲跌），
+  // v16.9 有了即時報價才拿得到 → 台股／高股息 ETF／市值型 ETF／債券／美股五張卡共用這一份。
+  // ⚠ 不准說謊：這筆報價不是今天的，就要寫出它是哪一天的，不能一律寫「今日」。
+  //   （美股卡原本就是無條件寫「今日」，隔了三天沒更新也照樣寫——一起修掉。）
+  function dayChangeBadge(h) {
+    const pct = h && h.dayChangePct;
+    if (pct === null || pct === undefined) return '';
+    const n = Number(pct);
+    if (!isFinite(n)) return '';
+    const cls = n > 0 ? 'profit' : n < 0 ? 'loss' : 'flat';
+    // 優先用報價自己帶的日期；沒有（舊資料）才退回「這筆是什麼時候抓的」
+    const d = String(h.priceAsOfDate || '') || (h.priceUpdatedAt ? todayISO(h.priceUpdatedAt) : '');
+    if (!d) return '';
+    const label = d === todayISO() ? '今日' : (d.slice(5).replace('-', '/') + ' 收盤');
+    return `<div class="${cls}" style="font-family:var(--mono); font-size:10px; margin-top:3px;">${label} ${n >= 0 ? '+' : ''}${n.toFixed(2)}%</div>`;
+  }
+
   // 把代碼翻成使用者看得懂、而且知道下一步要做什麼的話
   function liveQuoteNoteText(n) {
     if (!n) return '';
@@ -25693,6 +25769,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         if (q.pct !== null && q.pct !== undefined) job.h.dayChangePct = Number(q.pct);
         job.h.priceLive = true;
         job.h.priceAsOf = String(q.time || '');
+        job.h.priceAsOfDate = quoteDateISO(q);   // 卡片要靠它判斷該寫「今日」還是「8/22 收盤」
       };
 
       // 2) 台股：即時拿不到的，退回證交所收盤價（併發 5）
@@ -25737,6 +25814,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
                 setPx(job, Number(q.c));
                 job.h.dayChange = q.d; job.h.dayChangePct = q.dp; job.h.prevClose = q.pc;
                 job.h.priceLive = true;    // Finnhub /quote 本來就是即時報價，只是換一個來源拿到而已
+                job.h.priceAsOfDate = todayISO();   // Finnhub 沒給日期，它回的就是當下的
                 log.us.ok++;
               } else log.us.fail++;
             } catch (e) {
