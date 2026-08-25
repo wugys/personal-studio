@@ -12331,14 +12331,29 @@ ${userQuery}`;
     }
   })();
 
+  // 內建那 152 檔擺前面（它有產業分類，資訊比較完整），再補上全代號表的其餘 2,000 多檔。
+  // ⚠ 全代號表要先載進來才有（`twWarmUniverse()` 開 App 時預熱；沒設 Worker 就只有內建的）。
   function searchTwStocks(q) {
     q = q.trim().toLowerCase();
     if (!q) return [];
-    return TW_STOCKS.filter(s =>
+    const builtin = TW_STOCKS.filter(s =>
       s.symbol.toLowerCase().includes(q) ||
       s.name.toLowerCase().includes(q) ||
       (s.industry && s.industry.toLowerCase().includes(q))
-    ).slice(0, 12);
+    );
+    const seen = new Set(builtin.map(s => s.symbol));
+    const rest = twUniverseSearch(q).filter(s => !seen.has(s.symbol));
+    return builtin.concat(rest).slice(0, 15);
+  }
+  // 第一次打字時代號表可能還沒載完 → 載完再重畫一次，不要讓使用者以為「查無此股」
+  async function augmentTwSearchRemote(q, boxId, renderFn) {
+    const before = (twUniverseMem && twUniverseMem.list) ? twUniverseMem.list.length : 0;
+    await twLoadUniverse().catch(() => {});
+    const after = (twUniverseMem && twUniverseMem.list) ? twUniverseMem.list.length : 0;
+    if (after === before) return;                       // 沒有新資料就不要無謂重畫
+    const box = document.getElementById(boxId);
+    if (!box || box.style.display === 'none') return;   // 使用者已經關掉下拉了
+    try { renderFn(q); } catch (e) {}
   }
 
   let twHoldings = [];
@@ -12681,7 +12696,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     grid.innerHTML = syms.map(sym => {
       const b = alogAll[sym];
       const p = b.plan || {};
-      const name = b.name || (TW_STOCKS.find(s => s.symbol === sym) || {}).name || '';
+      const name = b.name || (twFindStock(sym) || {}).name || '';
       const own = held[sym];
       const px = own ? Number(own.currentPrice) : Number(b.lastPrice);
       const stale = !own && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
@@ -12911,10 +12926,26 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     renderHoldings();
   }
 
+  // 依代號找一檔台股：先看內建那 152 檔（有產業分類），再看全代號表的 2,389 檔。
+  // ⚠ 沒有這個的話，**搜尋列表查得到、點下去卻沒反應**——`pickHoldingStock` 原本只找
+  //   `TW_STOCKS`，找不到就 `return`，使用者按了半天完全沒有任何回饋（v16.15）。
+  function twFindStock(symbol) {
+    const sym = String(symbol || '').trim().toUpperCase();
+    if (!sym) return null;
+    const b = TW_STOCKS.find(x => String(x.symbol).toUpperCase() === sym);
+    if (b) return b;
+    const list = (twUniverseMem && Array.isArray(twUniverseMem.list)) ? twUniverseMem.list : [];
+    const r = list.find(x => String(x[0]).toUpperCase() === sym);
+    if (!r) return null;
+    return { symbol: r[0], name: r[1], market: r[2] === 'otc' ? 'TPEx' : 'TWSE', industry: '' };
+  }
+
   // === 股票搜尋下拉 ===
   function onHoldingSearch(q) {
     const box = document.getElementById('holdingSearchResults');
     const results = searchTwStocks(q);
+    // 代號表還沒載完時，先畫已有的，載完再重畫一次（不然使用者會以為查無此股）
+    augmentTwSearchRemote(q, 'holdingSearchResults', onHoldingSearch);
     if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
     box.style.display = 'block';
     box.innerHTML = results.map(s => `
@@ -12926,11 +12957,11 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     `).join('');
   }
   function pickHoldingStock(symbol) {
-    const s = TW_STOCKS.find(x => x.symbol === symbol);
+    const s = twFindStock(symbol);
     if (!s) return;
     document.getElementById('holdingSymbol').value = s.symbol;
     document.getElementById('holdingName').value = s.name;
-    document.getElementById('holdingMarket').value = s.market;
+    document.getElementById('holdingMarket').value = s.market || marketSelectValue(s, 'tw');
     document.getElementById('holdingIndustry').value = s.industry || '';
     document.getElementById('holdingSearchBox').value = `${s.symbol} · ${s.name}`;
     document.getElementById('holdingSearchResults').style.display = 'none';
@@ -12944,6 +12975,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
     ).map(h => ({ symbol: h.symbol, name: h.name, market: marketSelectValue(h, 'tw'), industry: '我的持股' }));
     const builtIn = searchTwStocks(q);
+    augmentTwSearchRemote(q, 'txnSearchResults', onTxnSearch);
     // 已持有的排前面
     const seen = new Set(local.map(x => x.symbol));
     const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
@@ -12960,7 +12992,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
   function pickTxnStock(symbol) {
     // 先看是否在持股
     const h = twHoldings.find(x => x.symbol === symbol);
-    const s = h || TW_STOCKS.find(x => x.symbol === symbol);
+    const s = h || twFindStock(symbol);
     if (!s) return;
     document.getElementById('txnSymbol').value = s.symbol;
     document.getElementById('txnSymbolName').value = s.name;
@@ -15576,24 +15608,36 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     `).join('');
   }
   // 內建清單找不到時，用 Finnhub 全市場即時搜尋補上（需金鑰）
+  // v16.15：先走 Worker 查全市場 18,409 檔（**免金鑰**），查不到才退回 Finnhub（要金鑰）。
+  // 以前只有 Finnhub 這條路，沒設金鑰就完全查不到內建 42 檔以外的任何美股。
   async function augmentUsSearchRemote(q, boxId, inputId, pickFnName, localList) {
     q = (q || '').trim();
     if (q.length < 2) return;
-    if (!finnhubKey) await loadFinnhubKey();
-    if (!finnhubKey) return;
     const seq = ++usSearchSeq;
-    let data;
-    try { data = await finnhubSearch(q); } catch (e) { return; }
+    let remote = [];
+
+    // ① Worker（免金鑰）
+    try { remote = await usUniverseSearchRemote(q); } catch (e) { remote = []; }
+
+    // ② Worker 沒設定／沒結果 → 退回 Finnhub
+    if (!remote.length) {
+      if (!finnhubKey) await loadFinnhubKey();
+      if (!finnhubKey) return;
+      let data;
+      try { data = await finnhubSearch(q); } catch (e) { return; }
+      if (seq !== usSearchSeq) return;
+      remote = (data.result || [])
+        .filter(r => r.symbol && /^[A-Z][A-Z.]{0,6}$/.test(r.symbol) && !r.symbol.includes(':'))
+        .map(r => ({ symbol: r.symbol, name: r.description || r.symbol, market: 'US', industry: 'Finnhub 搜尋' }));
+    }
+
     if (seq !== usSearchSeq) return; // 有更新的查詢，放棄這次舊結果
     const input = document.getElementById(inputId);
     if (!input || input.value.trim().toLowerCase() !== q.toLowerCase()) return; // 使用者已改字
     const seen = new Set(localList.map(x => x.symbol));
-    const remote = (data.result || [])
-      .filter(r => r.symbol && /^[A-Z][A-Z.]{0,6}$/.test(r.symbol) && !r.symbol.includes(':') && !seen.has(r.symbol))
-      .map(r => ({ symbol: r.symbol, name: r.description || r.symbol, market: 'US', industry: 'Finnhub 搜尋' }))
-      .slice(0, 10);
+    remote = remote.filter(r => !seen.has(r.symbol)).slice(0, 12);
     if (remote.length === 0) return;
-    renderUsSearchBox(boxId, [...localList, ...remote].slice(0, 16), pickFnName);
+    renderUsSearchBox(boxId, [...localList, ...remote].slice(0, 18), pickFnName);
   }
 
   function onUsHoldingSearch(q) {
@@ -25642,6 +25686,85 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (n === 'offline') return '連不到即時報價 Worker，這次改用收盤價。請確認 Worker 已在 Cloudflare Deploy、網址正確。';
     if (n.indexOf('twupstream:') === 0) return '證交所盤中報價暫時抓不到（' + n.slice(11) + '），這次改用收盤價。';
     return '即時報價暫時不可用，這次改用收盤價。';
+  }
+
+  // ===== 全市場代號表（v16.15）=====
+  // 在這之前，查股只認得**內建寫死的清單**：台股 152 檔、美股 42 檔。
+  // 所以上櫃股（實測 5483 中美晶）、冷門美股一律查不到——不是「沒這檔股票」，是清單裡沒有。
+  // 現在走 Worker：台股 2,389 檔（上市 1,378 ＋ 上櫃 1,011）壓縮後才 ~51KB，整包存起來本機搜尋；
+  // 美股 18,409 檔原始 3.45MB 太大存不下 → 打字時去 Worker 查，只拿回符合的那幾筆。
+  // ⚠ 沒設定 Worker 時一切照舊（還是那 152/42 檔），不會壞掉、也不會假裝查得到。
+  const TW_UNIVERSE_KEY = 'tw_universe_v1';
+  const UNIVERSE_TTL_MS = 24 * 3600 * 1000;   // 代號表一天變不了多少
+  let twUniverseMem = null;
+
+  async function twLoadUniverse() {
+    if (twUniverseMem && Date.now() - twUniverseMem.ts < UNIVERSE_TTL_MS) return twUniverseMem.list;
+    let cached = null;
+    try { cached = await readJson(TW_UNIVERSE_KEY, null); } catch (e) { cached = null; }
+    if (cached && Array.isArray(cached.list) && cached.list.length && Date.now() - cached.ts < UNIVERSE_TTL_MS) {
+      twUniverseMem = cached;
+      return cached.list;
+    }
+    const base = await quoteWorkerBase();
+    if (!base) return (cached && Array.isArray(cached.list)) ? cached.list : [];
+    try {
+      const resp = await fetch(base + '/symbols?mkt=tw', { cache: 'no-store' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const j = await resp.json();
+      const list = (j && Array.isArray(j.list)) ? j.list.filter(r => Array.isArray(r) && r[0] && r[1]) : [];
+      if (!list.length) throw new Error('代號表是空的');
+      twUniverseMem = { ts: Date.now(), list };
+      // ⚠ 只有真的抓到才寫進去。空的存下去，之後一整天都查不到（失敗的抓取不要快取）
+      await writeKey(TW_UNIVERSE_KEY, JSON.stringify(twUniverseMem));
+      return list;
+    } catch (e) {
+      // 抓不到就先用過期的舊表（過期的代號表也比「什麼都查不到」有用）
+      if (cached && Array.isArray(cached.list) && cached.list.length) { twUniverseMem = cached; return cached.list; }
+      return [];
+    }
+  }
+  // 開 App 時默默預熱，使用者第一次打字就有全部股票可以查
+  function twWarmUniverse() { twLoadUniverse().catch(() => {}); }
+
+  // 從已載入的全代號表裡找（同步，給 searchTwStocks 用）
+  function twUniverseSearch(q) {
+    const list = (twUniverseMem && Array.isArray(twUniverseMem.list)) ? twUniverseMem.list : [];
+    if (!list.length || !q) return [];
+    const s = String(q).toLowerCase();
+    const starts = [], contains = [];
+    for (const r of list) {
+      const sym = String(r[0] || '').toLowerCase();
+      const name = String(r[1] || '');
+      if (sym.indexOf(s) === 0) starts.push(r);
+      else if (sym.indexOf(s) !== -1 || name.toLowerCase().indexOf(s) !== -1) contains.push(r);
+      if (starts.length >= 40) break;
+    }
+    return starts.concat(contains).map(r => ({
+      symbol: r[0], name: r[1],
+      market: r[2] === 'otc' ? 'TPEx' : 'TWSE',
+      industry: r[2] === 'otc' ? '上櫃' : '上市',
+    }));
+  }
+
+  // 美股：去 Worker 查 18,409 檔。回 [] 代表沒設 Worker 或查不到，呼叫端要能接受。
+  async function usUniverseSearchRemote(q) {
+    const base = await quoteWorkerBase();
+    if (!base || !q || String(q).trim().length < 1) return [];
+    try {
+      const url = new URL(base + '/search');
+      url.searchParams.set('mkt', 'us');
+      url.searchParams.set('q', String(q).trim());
+      url.searchParams.set('limit', '15');
+      const resp = await fetch(url.toString(), { cache: 'no-store' });
+      if (!resp.ok) return [];
+      const j = await resp.json();
+      const hits = (j && Array.isArray(j.hits)) ? j.hits : [];
+      return hits.filter(h => h && h.symbol).map(h => ({
+        symbol: String(h.symbol), name: String(h.name || h.symbol),
+        market: 'US', industry: h.sector ? String(h.sector) : '全市場搜尋',
+      }));
+    } catch (e) { return []; }
   }
 
   // ===== 即時報價來源設定 Modal =====
@@ -37502,7 +37625,7 @@ ${daysBrief}${butlerPartyBlock()}
 
   initPWA();
   loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam())
-           .then(() => { renderInstallHint(); return maybeAutoRefreshPrices(); });
+           .then(() => { renderInstallHint(); twWarmUniverse(); return maybeAutoRefreshPrices(); });
 </script>
 
 </body>
