@@ -12848,7 +12848,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
             <div class="hc-symbol">${escape(h.symbol)}</div>
             <div class="hc-name">${escape(h.name)}</div>
             <div class="hc-meta">
-              <span>${escape(h.market || 'TWSE')}</span>
+              ${boardLabel(h) ? `<span>${escape(boardLabel(h))}</span>` : ''}
               ${h.industry ? `<span>${escape(h.industry)}</span>` : ''}
             </div>
           </div>
@@ -13703,6 +13703,8 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
           h.priceLive = true;
           h.priceAsOf = String(q.time || '');
           h.priceAsOfDate = quoteDateISO(q);
+          const board = String(q.exchange || q.market || '').trim();
+          if (board) h.mktBoard = board;
           h.priceUpdatedAt = Date.now();
           h.updatedAt = Date.now();
           ok++; liveOk++;
@@ -15493,7 +15495,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
             <div class="hc-symbol">${escape(h.symbol)}</div>
             <div class="hc-name">${escape(h.name)}</div>
             <div class="hc-meta">
-              <span>${escape(h.market || 'NASDAQ')}</span>
+              ${boardLabel(h) ? `<span>${escape(boardLabel(h))}</span>` : ''}
               ${h.industry ? `<span>${escape(h.industry)}</span>` : ''}
             </div>
           </div>
@@ -25564,6 +25566,20 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return '';
   }
 
+  // 持股卡上的「在哪個交易所」標籤。
+  // ⚠ 這裡以前是 `h.market || 'TWSE'`（美股卡是 `|| 'NASDAQ'`）——**猜不到就硬掰一個**。
+  //   內建的 TW_STOCKS 一檔上櫃股都沒有，所以自己輸入的上櫃股（5483 中美晶等）
+  //   一律被寫成「TWSE」，那是錯的；美股同理，紐交所的股票會被說成那斯達克。
+  //   v16.9 起即時報價會告訴我們真正的市場（MIS 的 ex=tse|otc、Yahoo 的 exchange），
+  //   存成 mktBoard 優先採用；都沒有就**什麼都不顯示**，不要硬掰。
+  function boardLabel(h) {
+    const b = String((h && h.mktBoard) || '').trim();
+    if (b === 'tse') return 'TWSE 上市';
+    if (b === 'otc') return 'TPEX 上櫃';
+    if (b) return b;                                   // 美股：Yahoo 給的交易所名（NasdaqGS／NYSE…）
+    return String((h && h.market) || '').trim();       // 退回使用者/內建清單填的，沒有就空的
+  }
+
   // 持股卡右上角的「今日漲跌」徽章。台股原本沒有這個資料（收盤價算不出當日漲跌），
   // v16.9 有了即時報價才拿得到 → 台股／高股息 ETF／市值型 ETF／債券／美股五張卡共用這一份。
   // ⚠ 不准說謊：這筆報價不是今天的，就要寫出它是哪一天的，不能一律寫「今日」。
@@ -25770,6 +25786,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         job.h.priceLive = true;
         job.h.priceAsOf = String(q.time || '');
         job.h.priceAsOfDate = quoteDateISO(q);   // 卡片要靠它判斷該寫「今日」還是「8/22 收盤」
+        // 上市還是上櫃／哪一個美國交易所——來源說了算，比卡片寫死的 'TWSE'／'NASDAQ' 準
+        const board = String(q.market || q.exchange || '').trim();
+        if (board) job.h.mktBoard = board;
       };
 
       // 2) 台股：即時拿不到的，退回證交所收盤價（併發 5）
