@@ -3357,6 +3357,68 @@
     </div>
   </div>
 
+  <!-- ============ 累積歷史資料 Modal（IndexedDB）============ -->
+  <div class="modal-backdrop" id="barsModal">
+    <div class="modal" style="max-width: 680px;">
+      <h2>📥 累積<em>歷史資料</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.7; margin-bottom:14px;">
+        把每一檔的<strong>近一年日 K</strong> 抓下來存在這台電腦。存過的股票，<strong>掃描就不用再連網</strong>——
+        從「一檔一次請求」變成純計算，<strong>秒級完成</strong>。
+      </div>
+
+      <div id="barsStatsBox" style="margin-bottom:14px;"></div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">市場</label>
+          <select class="form-select" id="barsMarket" style="width:auto;" onchange="renderBarsPanel()">
+            <option value="us">美股（依市值排序）</option>
+            <option value="tw">台股（上市＋上櫃全部）</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;" id="barsTopWrap">
+          <label class="form-label">累積範圍</label>
+          <select class="form-select" id="barsTop" style="width:auto;" onchange="renderBarsPanel()">
+            <option value="300">前 300 大（約 3.7 MB）</option>
+            <option value="1000" selected>前 1000 大（約 12 MB）</option>
+            <option value="2000">前 2000 大（約 25 MB）</option>
+            <option value="4000">前 4000 大（約 49 MB）</option>
+            <option value="6000">前 6000 大（約 74 MB）</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">這次跑幾檔</label>
+          <select class="form-select" id="barsBatch" style="width:auto;">
+            <option value="100">100 檔（約 1 分鐘）</option>
+            <option value="300" selected>300 檔（約 3 分鐘）</option>
+            <option value="600">600 檔（約 6 分鐘）</option>
+            <option value="1200">1200 檔（約 12 分鐘）</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button class="btn btn-primary" id="barsRunBtn" type="button" onclick="barsStartRun()">▶ 開始 / 繼續累積</button>
+        <button class="btn btn-sm" id="barsStopBtn" type="button" onclick="barsStop()" style="display:none;">■ 停止</button>
+        <button class="btn btn-sm" type="button" onclick="barsResetList()">↻ 重建工作清單</button>
+        <span style="flex:1;"></span>
+        <button class="btn btn-sm" type="button" onclick="barsWipe()" style="border-color:var(--danger); color:var(--danger);">🗑 清空本機資料</button>
+      </div>
+
+      <div id="barsProgressBox" style="margin-bottom:14px;"></div>
+
+      <div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; padding:10px 14px; font-size:11.5px; color:var(--ink-secondary); line-height:1.7;">
+        <strong>可以隨時關掉。</strong>進度會記住，下次按「繼續累積」接著跑。<br>
+        資料存在<strong>這個瀏覽器</strong>（跟持股一樣是按網址分開存的）。清掉瀏覽器資料就要重抓，但那只是快取，<strong>不影響你的持股與交易紀錄</strong>。<br>
+        <strong>四天內抓過的會自動跳過</strong>，所以每天再按一次只會補新的，很快。
+      </div>
+
+      <div class="form-actions" style="justify-content:flex-end; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeBarsModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 即時報價來源設定 Modal（Cloudflare Worker URL）============ -->
   <div class="modal-backdrop" id="quoteSourceModal">
     <div class="modal" style="max-width: 640px;">
@@ -7528,7 +7590,8 @@
           <option value="5">5 項</option>
           <option value="all">全部符合</option>
         </select>
-        <button class="btn btn-primary" id="usScanRunBtn" type="button" onclick="runUsScan()" style="margin-left:auto;">▶ 開始掃描</button>
+        <button class="btn btn-sm" type="button" onclick="openBarsModal()" style="margin-left:auto;" title="把日 K 存到本機，掃描就不用每檔連網">📥 累積資料</button>
+        <button class="btn btn-primary" id="usScanRunBtn" type="button" onclick="runUsScan()">▶ 開始掃描</button>
       </div>
       <div id="usScanScopeHint" style="font-size:11px; color:var(--ink-tertiary); line-height:1.7; margin:-6px 0 12px;"></div>
 
@@ -9992,6 +10055,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '🩺', label: '資料健檢（找出會讓數字算錯的地方）', action: 'openHealthCheck()' });
     items.push({ icon: '📋', label: '我的下單計畫（看誰踩到停損／停利）', action: 'openPlanWatch()' });
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
+    items.push({ icon: '📥', label: '累積歷史資料（掃描就不用每檔連網）', action: 'openBarsModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
 
     const html = items.map(it => {
@@ -25767,6 +25831,339 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     } catch (e) { return []; }
   }
 
+  // ===== 本地歷史 K 棒資料庫（v16.16）=====
+  // 為什麼要有這個：掃描是「一檔一檔抓歷史價」，18,410 檔 ÷ FinMind 免費 300 次/小時 ＝ **61 小時**，
+  // 所以以前只能掃市值前 400 大。改成**先把資料累積到本機**，掃描就變成純計算——已經累積的都能掃，而且是秒級。
+  // ⚠ 一定要用 IndexedDB 不能用 localStorage：實測一年 252 根壓縮後**每檔 12.6KB**，
+  //   1,000 檔就 12.3MB，而 localStorage 上限只有約 5MB（只放得下約 400 檔，等於沒解決問題）。
+  const BARS_DB = 'studio_bars_v1';
+  const BARS_STORE = 'bars';
+  let barsDbPromise = null;
+  function barsOpen() {
+    if (barsDbPromise) return barsDbPromise;
+    barsDbPromise = new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(BARS_DB, 1); }
+      catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(BARS_STORE)) db.createObjectStore(BARS_STORE, { keyPath: 'key' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('IndexedDB 打不開'));
+      req.onblocked = () => reject(new Error('IndexedDB 被其他分頁鎖住'));
+    });
+    // 失敗的 promise 不要留著，不然之後永遠都是失敗
+    barsDbPromise.catch(() => { barsDbPromise = null; });
+    return barsDbPromise;
+  }
+  // ⚠ 這裡踩過一次：原本寫 `resolve(out.result !== undefined ? out.result : out)`，
+  //   而 `get` 查不到時 `req.result` 就是 `undefined` → 於是**回傳了 IDBRequest 物件本身**，
+  //   那是 truthy，害呼叫端以為「查到了」（實測 `barsGet('us','EMPTY')` 回 truthy）。
+  //   正確做法：在 onsuccess 把 result 收下來，交易完成才 resolve 那個值。
+  function barsTx(mode, fn) {
+    return barsOpen().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(BARS_STORE, mode);
+      const st = tx.objectStore(BARS_STORE);
+      let req = null;
+      try { req = fn(st); } catch (e) { reject(e); return; }
+      let value;
+      if (req && typeof req === 'object' && 'result' in req) {
+        req.onsuccess = () => { value = req.result; };
+      }
+      tx.oncomplete = () => resolve(value);
+      tx.onerror = () => reject(tx.error || new Error('IndexedDB 交易失敗'));
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB 交易中止'));
+    }));
+  }
+  const barsKeyOf = (mkt, sym) => String(mkt) + ':' + String(sym || '').trim().toUpperCase();
+  async function barsGet(mkt, sym) {
+    try { return await barsTx('readonly', st => st.get(barsKeyOf(mkt, sym))); } catch (e) { return null; }
+  }
+  async function barsPut(mkt, sym, rows) {
+    if (!Array.isArray(rows) || !rows.length) return false;   // 空的不要存（失敗的抓取不要快取）
+    const rec = { key: barsKeyOf(mkt, sym), mkt, sym: String(sym).toUpperCase(), rows,
+                  n: rows.length, from: rows[0][0], to: rows[rows.length - 1][0], updated: Date.now() };
+    try { await barsTx('readwrite', st => st.put(rec)); return true; } catch (e) { return false; }
+  }
+  async function barsAllKeys() {
+    try { return (await barsTx('readonly', st => st.getAllKeys())) || []; } catch (e) { return []; }
+  }
+  async function barsClearAll() {
+    try { await barsTx('readwrite', st => st.clear()); return true; } catch (e) { return false; }
+  }
+  // 只讀 metadata 不讀 rows 會比較快，但 getAll 一次拿全部在幾千筆時還可以接受
+  async function barsStats() {
+    const out = { total: 0, us: 0, tw: 0, bytes: 0, oldest: '', newest: '', quotaMB: 0, usedMB: 0 };
+    try {
+      const all = (await barsTx('readonly', st => st.getAll())) || [];
+      all.forEach(r => {
+        if (!r || !Array.isArray(r.rows)) return;
+        out.total++;
+        if (r.mkt === 'us') out.us++; else if (r.mkt === 'tw') out.tw++;
+        out.bytes += JSON.stringify(r.rows).length;
+        const d = r.updated ? todayISO(r.updated) : '';
+        if (d && (!out.oldest || d < out.oldest)) out.oldest = d;
+        if (d && (!out.newest || d > out.newest)) out.newest = d;
+      });
+    } catch (e) {}
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const est = await navigator.storage.estimate();
+        out.quotaMB = Math.round((est.quota || 0) / 1048576);
+        out.usedMB = Math.round((est.usage || 0) / 1048576);
+      }
+    } catch (e) {}
+    return out;
+  }
+  // 存的是 [日期,開,高,低,收,量]；掃描器要的是 {time,open,high,low,close,volume}
+  function barsToOhlc(rows) {
+    if (!Array.isArray(rows)) return [];
+    return rows.filter(r => Array.isArray(r) && r.length >= 5 && Number(r[4]) > 0)
+      .map(r => ({ time: r[0], open: +r[1] || +r[4], high: +r[2] || +r[4], low: +r[3] || +r[4], close: +r[4], volume: +r[5] || 0 }));
+  }
+  // 資料多舊算「還能用」：交易日不是天天有，週末＋連假抓 4 天
+  const BARS_FRESH_DAYS = 4;
+  function barsIsFresh(rec) {
+    if (!rec || !rec.updated) return false;
+    return (Date.now() - rec.updated) < BARS_FRESH_DAYS * 864e5;
+  }
+
+  // ===== 累積器：一次跑一批，可停可續 =====
+  const BARS_PROGRESS_KEY = 'studio_bars_progress_v1';
+  let barsRunning = false;
+  let barsStopFlag = false;
+
+  async function barsLoadProgress() {
+    const p = await readJson(BARS_PROGRESS_KEY, null);
+    if (!p || typeof p !== 'object' || Array.isArray(p) || !Array.isArray(p.list)) return null;
+    return p;
+  }
+  async function barsSaveProgress(p) { await writeKey(BARS_PROGRESS_KEY, JSON.stringify(p)); }
+
+  // 工作清單：美股走 Worker 的市值排序、台股走全代號表
+  async function barsBuildWorklist(mkt, topN) {
+    if (mkt === 'tw') {
+      const list = await twLoadUniverse();
+      return list.map(r => r[0]);
+    }
+    const base = await quoteWorkerBase();
+    if (!base) throw new Error('還沒設定 Worker——按現金流頁的「⚙ 即時報價」設定一次就好');
+    const url = new URL(base + '/symbols');
+    url.searchParams.set('mkt', 'us');
+    url.searchParams.set('top', String(Math.min(6000, Math.max(50, topN || 1000))));
+    const resp = await fetch(url.toString(), { cache: 'no-store' });
+    if (!resp.ok) throw new Error('抓不到美股清單（HTTP ' + resp.status + '）');
+    const j = await resp.json();
+    const list = (j && Array.isArray(j.list)) ? j.list.filter(r => Array.isArray(r) && r[0]).map(r => String(r[0])) : [];
+    if (!list.length) throw new Error('美股清單是空的');
+    return list;
+  }
+
+  // 跑一批。maxItems 是這一次最多處理幾檔（不是總數）——使用者可以隨時停，下次接著跑。
+  async function barsRunBatch(maxItems, onTick) {
+    if (barsRunning) return { already: true };
+    const p = await barsLoadProgress();
+    if (!p) throw new Error('還沒建立工作清單');
+    const base = await quoteWorkerBase();
+    if (!base) throw new Error('還沒設定 Worker');
+    barsRunning = true; barsStopFlag = false;
+    let done = 0, skipped = 0, failed = 0;
+    if (!Array.isArray(p.failed)) p.failed = [];
+    try {
+      // ⚠ 失敗也要算進這一批的額度。原本只算 `done + skipped`，於是**每失敗一檔就多往前吃一檔**，
+      //   `p.idx` 走得比實際處理量快，那些抓不到的（已下市、Yahoo 沒有、代號含斜線…）
+      //   **被游標跳過之後就再也不會被重試**，而且畫面上完全看不出來（實測 40 檔那批 idx 跑到 42）。
+      while (p.idx < p.list.length && (done + skipped + failed) < maxItems && !barsStopFlag) {
+        // 一次 20 檔（Worker 的上限）
+        const chunk = [];
+        while (chunk.length < 20 && p.idx < p.list.length && (done + skipped + failed + chunk.length) < maxItems) {
+          const sym = p.list[p.idx++];
+          const cur = await barsGet(p.mkt, sym);
+          if (barsIsFresh(cur)) { skipped++; continue; }   // 最近抓過就跳過，不浪費請求
+          chunk.push(sym);
+        }
+        if (!chunk.length) { if (onTick) onTick({ ...p, done, skipped, failed }); continue; }
+        const url = new URL(base + '/bars');
+        url.searchParams.set(p.mkt === 'tw' ? 'tw' : 'us', chunk.join(','));
+        url.searchParams.set('range', p.range || '1y');
+        let body = null;
+        try {
+          const resp = await fetch(url.toString(), { cache: 'no-store' });
+          body = await resp.json();
+        } catch (e) { body = null; }
+        if (!body || !body.bars) {
+          // 整批失敗 → 把游標退回去，下次重跑這一批（不要當成「已處理」跳過）
+          p.idx -= chunk.length;
+          failed += chunk.length;
+          p.lastError = '連不到 Worker 或上游擋住，稍後再試';
+          break;
+        }
+        for (const sym of chunk) {
+          const rows = body.bars[sym];
+          if (Array.isArray(rows) && rows.length) {
+            await barsPut(p.mkt, sym, rows);
+            done++;
+            const at = p.failed.indexOf(sym);
+            if (at !== -1) p.failed.splice(at, 1);          // 之前失敗、這次成功了 → 從名單移除
+          } else {
+            failed++;
+            // 記下來（上限 500，避免無限膨脹），使用者才有機會重試，而不是默默消失
+            if (p.failed.indexOf(sym) === -1 && p.failed.length < 500) p.failed.push(sym);
+          }
+        }
+        p.updatedAt = Date.now();
+        await barsSaveProgress(p);
+        if (onTick) onTick({ ...p, done, skipped, failed });
+        await new Promise(r => setTimeout(r, 250));   // 對 Yahoo 客氣一點
+      }
+      p.updatedAt = Date.now();
+      await barsSaveProgress(p);
+    } finally {
+      barsRunning = false;
+    }
+    return { done, skipped, failed, idx: p.idx, total: p.list.length, stopped: barsStopFlag };
+  }
+
+  // ===== 累積歷史資料 Modal =====
+  async function openBarsModal() {
+    document.getElementById('barsModal').classList.add('active');
+    await renderBarsPanel();
+  }
+  function closeBarsModal() { document.getElementById('barsModal').classList.remove('active'); }
+  function barsStop() { barsStopFlag = true; showToast('停止中…跑完這一批就停'); }
+
+  async function renderBarsPanel() {
+    const st = await barsStats();
+    const p = await barsLoadProgress();
+    const mkt = document.getElementById('barsMarket') ? document.getElementById('barsMarket').value : 'us';
+    const topWrap = document.getElementById('barsTopWrap');
+    if (topWrap) topWrap.style.display = mkt === 'tw' ? 'none' : '';   // 台股就是全部 2,389 檔，沒有「前 N 大」
+
+    const box = document.getElementById('barsStatsBox');
+    if (box) {
+      const mb = (st.bytes / 1048576).toFixed(1);
+      box.innerHTML = `
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:11px 14px;">
+          <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:7px;">本機已累積</div>
+          <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:baseline;">
+            <span><span style="font-family:var(--serif); font-size:22px; color:var(--accent);">${st.total}</span> <span style="font-size:11.5px; color:var(--ink-tertiary);">檔</span></span>
+            <span style="font-size:12px; color:var(--ink-secondary);">美股 ${st.us}　台股 ${st.tw}</span>
+            <span style="font-size:12px; color:var(--ink-secondary);">佔用 <strong>${mb} MB</strong></span>
+            ${st.quotaMB ? `<span style="font-size:11px; color:var(--ink-tertiary);">瀏覽器配額 ${st.usedMB} / ${st.quotaMB} MB</span>` : ''}
+          </div>
+          ${st.total ? `<div style="font-size:11px; color:var(--ink-tertiary); margin-top:6px;">最舊一筆更新於 ${escape(st.oldest)}　·　最新 ${escape(st.newest)}</div>`
+            : '<div style="font-size:11.5px; color:var(--accent-warm); margin-top:6px;">還沒有任何資料。選好範圍後按「開始累積」。</div>'}
+        </div>`;
+    }
+
+    const pb = document.getElementById('barsProgressBox');
+    if (pb) {
+      if (!p) { pb.innerHTML = '<div style="font-size:11.5px; color:var(--ink-tertiary);">還沒建立工作清單。按「開始累積」會自動建立。</div>'; }
+      else {
+        const pct = p.list.length ? Math.min(100, p.idx / p.list.length * 100) : 0;
+        pb.innerHTML = `
+          <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:5px;">
+            ${escape(p.mkt === 'tw' ? '台股' : '美股')} 工作清單 ${p.idx} / ${p.list.length}（${pct.toFixed(1)}%）
+          </div>
+          <div style="height:7px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px; overflow:hidden;">
+            <div style="height:100%; width:${pct.toFixed(1)}%; background:var(--accent);"></div>
+          </div>
+          ${p.lastError ? `<div style="font-size:11.5px; color:var(--danger); margin-top:6px;">上次中斷：${escape(p.lastError)}</div>` : ''}
+          ${p.idx >= p.list.length ? '<div style="font-size:11.5px; color:var(--accent); margin-top:6px;">✓ 這份清單跑完了。要更新成最新資料，按「重建工作清單」再跑一次。</div>' : ''}
+          ${(Array.isArray(p.failed) && p.failed.length) ? `<div style="font-size:11.5px; color:var(--accent-warm); margin-top:7px; line-height:1.7;">
+              有 <strong>${p.failed.length}</strong> 檔抓不到（多半是已下市、或 Yahoo 沒有這個代號）：
+              <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${escape(p.failed.slice(0, 12).join('、'))}${p.failed.length > 12 ? '…' : ''}</span>
+              <button class="btn btn-sm" type="button" onclick="barsRetryFailed()" style="margin-left:6px;">↻ 重試這 ${p.failed.length} 檔</button>
+            </div>` : ''}`;
+      }
+    }
+  }
+
+  async function barsResetList() {
+    const mkt = document.getElementById('barsMarket').value;
+    const topN = Number(document.getElementById('barsTop').value) || 1000;
+    const btn = document.getElementById('barsRunBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '◌ 建立清單中…'; }
+    try {
+      const list = await barsBuildWorklist(mkt, topN);
+      await barsSaveProgress({ mkt, range: '1y', topN, list, idx: 0, startedAt: Date.now(), updatedAt: Date.now(), lastError: '' });
+      showToast(`✓ 工作清單建好了 · ${list.length} 檔`);
+    } catch (e) {
+      showToast('☒ ' + (e && e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '▶ 開始 / 繼續累積'; }
+      await renderBarsPanel();
+    }
+  }
+
+  async function barsStartRun() {
+    if (barsRunning) { showToast('正在跑了'); return; }
+    const mkt = document.getElementById('barsMarket').value;
+    const topN = Number(document.getElementById('barsTop').value) || 1000;
+    const batch = Number(document.getElementById('barsBatch').value) || 300;
+    let p = await barsLoadProgress();
+    // 沒有清單、或使用者換了市場/範圍 → 重建
+    if (!p || p.mkt !== mkt || (mkt === 'us' && p.topN !== topN)) { await barsResetList(); p = await barsLoadProgress(); }
+    if (!p) return;
+    if (p.idx >= p.list.length) { showToast('這份清單已經跑完了，要更新請按「重建工作清單」'); return; }
+
+    const runBtn = document.getElementById('barsRunBtn');
+    const stopBtn = document.getElementById('barsStopBtn');
+    if (runBtn) { runBtn.disabled = true; }
+    if (stopBtn) stopBtn.style.display = '';
+    const t0 = Date.now();
+    try {
+      const res = await barsRunBatch(batch, (tick) => {
+        if (runBtn) runBtn.textContent = `◌ ${tick.idx} / ${tick.list.length}（成功 ${tick.done}）`;
+        renderBarsPanel().catch(() => {});
+      });
+      const secs = Math.round((Date.now() - t0) / 1000);
+      showToast(`${res.stopped ? '已停止' : '完成'} · 新增 ${res.done} 檔${res.skipped ? ` · 跳過 ${res.skipped}（最近抓過）` : ''}${res.failed ? ` · 失敗 ${res.failed}` : ''} · ${secs} 秒`);
+    } catch (e) {
+      showToast('☒ ' + (e && e.message || e));
+    } finally {
+      if (runBtn) { runBtn.disabled = false; runBtn.textContent = '▶ 開始 / 繼續累積'; }
+      if (stopBtn) stopBtn.style.display = 'none';
+      await renderBarsPanel();
+    }
+  }
+
+  // 只重跑失敗的那幾檔。做法：把工作清單暫時換成失敗名單、游標歸零，跑完再換回來。
+  async function barsRetryFailed() {
+    if (barsRunning) { showToast('正在跑了'); return; }
+    const p = await barsLoadProgress();
+    if (!p || !Array.isArray(p.failed) || !p.failed.length) { showToast('沒有失敗的項目'); return; }
+    const keep = { list: p.list, idx: p.idx };
+    const retry = p.failed.slice();
+    await barsSaveProgress({ ...p, list: retry, idx: 0, failed: [] });
+    const btn = document.getElementById('barsRunBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '◌ 重試中…'; }
+    try {
+      const res = await barsRunBatch(retry.length, null);
+      const after = await barsLoadProgress();
+      // 換回原本的清單與進度；這次還是失敗的留在 failed 裡
+      await barsSaveProgress({ ...after, list: keep.list, idx: keep.idx });
+      showToast(`重試完成 · 救回 ${res.done} 檔${res.failed ? ` · 仍有 ${res.failed} 檔抓不到` : ''}`);
+    } catch (e) {
+      await barsSaveProgress({ ...p, list: keep.list, idx: keep.idx });
+      showToast('☒ ' + (e && e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '▶ 開始 / 繼續累積'; }
+      await renderBarsPanel();
+    }
+  }
+
+  async function barsWipe() {
+    const st = await barsStats();
+    if (!st.total) { showToast('本來就是空的'); return; }
+    if (!confirm(`要清掉本機已累積的 ${st.total} 檔歷史資料嗎？\n\n這只是掃描用的快取，不會影響你的持股與交易紀錄。\n清掉之後掃描會變回「每檔都要連網」。`)) return;
+    await barsClearAll();
+    await writeKey(BARS_PROGRESS_KEY, '');
+    showToast('已清空');
+    await renderBarsPanel();
+  }
+
   // ===== 即時報價來源設定 Modal =====
   async function openQuoteSourceModal() {
     let own = '';
@@ -28062,7 +28459,21 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return rows.map(x => ({ time: x.date, open: +x.open, high: +x.max, low: +x.min, close: +x.close, volume: +x.Trading_Volume || 0 }))
                .filter(b => b.close > 0);
   }
-  const scanFetch = (market, sym) => market === 'tw' ? fetchTwOhlc(sym) : fetchUsOhlc(sym);
+  // ⚠ 掃描的成本全部在這一行：以前每一檔都要連一次網（18,410 檔 ÷ 300 次/小時 ＝ 61 小時）。
+  //   v16.16 起**先讀本機累積的 K 棒**——已經累積過的就是純計算，秒級；沒有的才照舊連網。
+  //   `barsScanHits` / `barsScanMiss` 讓掃描結果講得出「這次有幾檔是本機資料」。
+  let barsScanHits = 0, barsScanMiss = 0;
+  async function scanFetch(market, sym) {
+    try {
+      const rec = await barsGet(market === 'tw' ? 'tw' : 'us', sym);
+      if (rec && Array.isArray(rec.rows) && rec.rows.length >= 60) {
+        const bars = barsToOhlc(rec.rows);
+        if (bars.length >= 60) { barsScanHits++; return bars; }
+      }
+    } catch (e) {}
+    barsScanMiss++;
+    return market === 'tw' ? fetchTwOhlc(sym) : fetchUsOhlc(sym);
+  }
   const scanCur = () => usScanMarket === 'tw' ? 'NT$' : '$';
   // 台股清單有重複（2308/3661/6669… 出現兩次），一律去重
   function twScanList() {
