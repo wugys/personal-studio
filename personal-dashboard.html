@@ -12928,7 +12928,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     // 結合內建 + 已持有股票
     const local = twHoldings.filter(h =>
       !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || h.name.toLowerCase().includes(q.toLowerCase())
-    ).map(h => ({ symbol: h.symbol, name: h.name, market: h.market || 'TWSE', industry: '我的持股' }));
+    ).map(h => ({ symbol: h.symbol, name: h.name, market: marketSelectValue(h, 'tw'), industry: '我的持股' }));
     const builtIn = searchTwStocks(q);
     // 已持有的排前面
     const seen = new Set(local.map(x => x.symbol));
@@ -12973,7 +12973,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       document.getElementById('holdingAvgCost').value = h.avgCost;
       document.getElementById('holdingCurrentPrice').value = h.currentPrice || '';
       document.getElementById('holdingBuyDate').value = h.buyDate || '';
-      document.getElementById('holdingMarket').value = h.market || 'TWSE';
+      document.getElementById('holdingMarket').value = marketSelectValue(h, 'tw');
       document.getElementById('holdingIndustry').value = h.industry || '';
       document.getElementById('holdingNotes').value = h.notes || '';
       document.getElementById('holdingSearchBox').value = `${h.symbol} · ${h.name}`;
@@ -15601,7 +15601,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
   function onUsTxnSearch(q) {
     const local = usHoldings.filter(h =>
       !q || h.symbol.toLowerCase().includes(q.toLowerCase()) || (h.name || '').toLowerCase().includes(q.toLowerCase())
-    ).map(h => ({ symbol: h.symbol, name: h.name, market: h.market || 'NASDAQ', industry: '我的持股' }));
+    ).map(h => ({ symbol: h.symbol, name: h.name, market: marketSelectValue(h, 'us'), industry: '我的持股' }));
     const builtIn = searchUsStocks(q);
     const seen = new Set(local.map(x => x.symbol));
     const combined = [...local, ...builtIn.filter(x => !seen.has(x.symbol))].slice(0, 12);
@@ -15634,7 +15634,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       document.getElementById('usHoldingAvgCost').value = h.avgCost;
       document.getElementById('usHoldingCurrentPrice').value = h.currentPrice || '';
       document.getElementById('usHoldingBuyDate').value = h.buyDate || '';
-      document.getElementById('usHoldingMarket').value = h.market || 'NASDAQ';
+      document.getElementById('usHoldingMarket').value = marketSelectValue(h, 'us');
       document.getElementById('usHoldingIndustry').value = h.industry || '';
       document.getElementById('usHoldingNotes').value = h.notes || '';
       document.getElementById('usHoldingSearchBox').value = `${h.symbol} · ${h.name}`;
@@ -25578,6 +25578,28 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (b === 'otc') return 'TPEX 上櫃';
     if (b) return b;                                   // 美股：Yahoo 給的交易所名（NasdaqGS／NYSE…）
     return String((h && h.market) || '').trim();       // 退回使用者/內建清單填的，沒有就空的
+  }
+
+  // 編輯表單的「市場」下拉要預選哪一個。
+  // ⚠ 這不只是顯示——**存檔時會把選到的值寫回 h.market**（holdingMarket → 第 13000 行）。
+  //   所以預選錯的話，使用者只是進來改個股數，市場就被悄悄改成錯的、而且永久存下來。
+  //   實測就是這樣：上櫃的 5483 沒填過 market → 預選「上市 TWSE」→ 一存檔就變成上市。
+  //   規則：使用者自己填過的最大；沒填過就用報價來源說的（MIS tse/otc、Yahoo 交易所名）。
+  function marketSelectValue(h, kind) {
+    const m = String((h && h.market) || '').trim();
+    if (m) return m;
+    const b = String((h && h.mktBoard) || '').trim();
+    if (kind === 'tw') {
+      if (b === 'otc') return 'TPEx';
+      if (b === 'tse') return 'TWSE';
+      return 'TWSE';                       // 真的沒線索時的下拉預設（使用者看得到也改得掉）
+    }
+    const u = b.toUpperCase();
+    if (u.indexOf('NASDAQ') === 0) return 'NASDAQ';
+    if (u.indexOf('NYSE AMERICAN') === 0 || u.indexOf('NYSEAMERICAN') === 0 || u === 'AMEX') return 'AMEX';
+    if (u.indexOf('NYSE') === 0) return 'NYSE';
+    if (u) return 'OTC';
+    return 'NASDAQ';
   }
 
   // 持股卡右上角的「今日漲跌」徽章。台股原本沒有這個資料（收盤價算不出當日漲跌），
