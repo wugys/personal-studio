@@ -12418,7 +12418,7 @@ ${userQuery}`;
     if (!box) return;
     const hasUniverse = !!(twUniverseMem && Array.isArray(twUniverseMem.list) && twUniverseMem.list.length);
     if (hasUniverse) { box.style.display = 'none'; box.innerHTML = ''; return; }   // 查得夠全了，不用囉嗦
-    const note = await workerVerNote(WORKER_VER_NEEDED.symbols);
+    const note = await workerVerNote(WORKER_ROUTE_NEEDED.symbols);
     if (!note) { box.style.display = 'none'; box.innerHTML = ''; return; }
     // 使用者可能已經改字了，再確認一次還是查不到才顯示
     const still = searchTwStocks(q);
@@ -13023,7 +13023,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     const list = (twUniverseMem && Array.isArray(twUniverseMem.list)) ? twUniverseMem.list : [];
     const r = list.find(x => String(x[0]).toUpperCase() === sym);
     if (!r) return null;
-    return { symbol: r[0], name: r[1], market: r[2] === 'otc' ? 'TPEx' : 'TWSE', industry: '' };
+    return { symbol: r[0], name: r[1], market: r[2] === 'otc' ? 'TPEx' : r[2] === 'emg' ? '興櫃' : 'TWSE', industry: '' };
   }
 
   // === 股票搜尋下拉 ===
@@ -25722,6 +25722,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const b = String((h && h.mktBoard) || '').trim();
     if (b === 'tse') return 'TWSE 上市';
     if (b === 'otc') return 'TPEX 上櫃';
+    if (b === 'emg') return '興櫃';
     if (b) return b;                                   // 美股：Yahoo 給的交易所名（NasdaqGS／NYSE…）
     return String((h && h.market) || '').trim();       // 退回使用者/內建清單填的，沒有就空的
   }
@@ -25737,6 +25738,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const b = String((h && h.mktBoard) || '').trim();
     if (kind === 'tw') {
       if (b === 'otc') return 'TPEx';
+      if (b === 'emg') return '興櫃';
       if (b === 'tse') return 'TWSE';
       return 'TWSE';                       // 真的沒線索時的下拉預設（使用者看得到也改得掉）
     }
@@ -25791,28 +25793,46 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // 有查股沒日 K（ver 3 之前）。舊版看到不認得的路徑會**掉進新聞那條**回 `{"error":"missing ?q="}`，
   // 於是前端只看到「失敗」→ 默默退回內建 152 檔，**完全不告訴使用者為什麼查不到 5483**。
   // 這跟這一輪一直在修的毛病是同一條：失敗要講得出真正的原因與下一步。
-  const WORKER_VER_NEEDED = { quote: 2, symbols: 3, bars: 3 };
-  let workerVerCache = { ver: null, at: 0 };
-  async function quoteWorkerVer(force) {
-    if (!force && workerVerCache.ver !== null && Date.now() - workerVerCache.at < 300000) return workerVerCache.ver;
+  // ⚠⚠ **版號會騙人，能力清單不會**。第一版我是比對 `ver >= need`，結果實測踩到：
+  //   v16.14（新聞退回鏈）就已經把 `QUOTE_VER` 設成 3，之後 v16.15 加 `/symbols`、
+  //   v16.16 加 `/bars` **都沒有再升版號** → 使用者的舊 Worker 回報「ver 3」看起來很新，
+  //   實際上那兩條路徑根本不存在，而我的檢查會說「夠新」**不警告**——正是它想防的那件事。
+  //   → 改成問 Worker「你支援哪些路徑」（`routes`），有沒有那個功能它自己說了算。
+  const WORKER_ROUTE_NEEDED = { quote: 'quote', symbols: 'symbols', bars: 'bars', search: 'search' };
+  let workerCapCache = { caps: null, at: 0 };
+  async function quoteWorkerCaps(force) {
+    if (!force && workerCapCache.caps && Date.now() - workerCapCache.at < 300000) return workerCapCache.caps;
     const base = await quoteWorkerBase();
-    if (!base) { workerVerCache = { ver: 0, at: Date.now() }; return 0; }   // 0 ＝ 根本沒設定
-    let ver = -1;   // -1 ＝ 連得到但認不出版本（舊版）
-    try {
-      const resp = await fetch(base + '/quote?ping=1', { cache: 'no-store' });
-      const body = await resp.json().catch(() => null);
-      if (resp.ok && body && Number(body.ver) > 0) ver = Number(body.ver);
-    } catch (e) { ver = -2; }   // -2 ＝ 連不到
-    workerVerCache = { ver, at: Date.now() };
-    return ver;
+    let caps;
+    if (!base) caps = { state: 'none', ver: 0, routes: [] };
+    else {
+      try {
+        const resp = await fetch(base + '/quote?ping=1', { cache: 'no-store' });
+        const body = await resp.json().catch(() => null);
+        if (resp.ok && body && Number(body.ver) > 0) {
+          // 舊版沒有 routes 欄位 → 依版號推回去它「當時有什麼」，不要假設它什麼都有
+          const routes = Array.isArray(body.routes) ? body.routes.map(String)
+            : (Number(body.ver) >= 2 ? ['news', 'quote'] : ['news']);
+          caps = { state: 'ok', ver: Number(body.ver), routes };
+        } else if (body && body.error === 'missing ?q=') {
+          caps = { state: 'legacy', ver: 0, routes: ['news'] };   // 只有新聞的最初版
+        } else {
+          caps = { state: 'bad', ver: 0, routes: [] };
+        }
+      } catch (e) { caps = { state: 'offline', ver: 0, routes: [] }; }
+    }
+    workerCapCache = { caps, at: Date.now() };
+    return caps;
   }
-  // 給畫面用的一句話。need 是這個功能需要的版本。
-  async function workerVerNote(need) {
-    const ver = await quoteWorkerVer();
-    if (ver >= need) return '';
-    if (ver === 0) return '還沒設定 Worker——按現金流頁的「⚙ 即時報價」照教學做一次（免費），這個功能就會開啟。';
-    if (ver === -2) return '連不到 Worker，請確認它在 Cloudflare 上還活著。';
-    return `你的 Worker 是舊版（${ver === -1 ? '只有新聞功能' : 'ver ' + ver}），這個功能需要 ver ${need}。`
+  // 給畫面用的一句話。route 是這個功能需要的路徑名稱；夠新就回空字串（一句都不講）。
+  async function workerVerNote(route) {
+    const c = await quoteWorkerCaps();
+    if (c.routes.indexOf(route) !== -1) return '';
+    if (c.state === 'none') return '還沒設定 Worker——按現金流頁的「⚙ 即時報價」照教學做一次（免費），這個功能就會開啟。';
+    if (c.state === 'offline') return '連不到 Worker，請確認它在 Cloudflare 上還活著。';
+    if (c.state === 'bad') return 'Worker 有回應但格式不對，請確認貼上的是完整的 worker/news-rss.js。';
+    const has = c.routes.length ? c.routes.join('、') : '只有新聞';
+    return `你的 Worker 是舊版（目前只有：${has}），這個功能需要 ${route}。`
          + '請到 Cloudflare → Edit code → 全刪 → 重貼 worker/news-rss.js → Deploy。**網址不用改。**';
   }
 
@@ -25860,8 +25880,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     return starts.concat(contains).map(r => ({
       symbol: r[0], name: r[1],
-      market: r[2] === 'otc' ? 'TPEx' : 'TWSE',
-      industry: r[2] === 'otc' ? '上櫃' : '上市',
+      market: r[2] === 'otc' ? 'TPEx' : r[2] === 'emg' ? '興櫃' : 'TWSE',
+      industry: r[2] === 'otc' ? '上櫃' : r[2] === 'emg' ? '興櫃' : '上市',
     }));
   }
 
@@ -26010,7 +26030,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const j = await resp.json().catch(() => null);
     // 舊版 Worker 不認得 /symbols → 掉進它自己的新聞分支回 400 `missing ?q=`。
     // 這時候講「HTTP 400」使用者只會去亂改網址，要直接講「是舊版、去重貼程式碼」。
-    if (j && j.error === 'missing ?q=') throw new Error(await workerVerNote(WORKER_VER_NEEDED.bars));
+    if (j && j.error === 'missing ?q=') throw new Error(await workerVerNote(WORKER_ROUTE_NEEDED.bars));
     if (!resp.ok) throw new Error('抓不到美股清單（HTTP ' + resp.status + (j && j.error ? '：' + j.error : '') + '）');
     const list = (j && Array.isArray(j.list)) ? j.list.filter(r => Array.isArray(r) && r[0]).map(r => String(r[0])) : [];
     if (!list.length) throw new Error('美股清單是空的');
@@ -26098,7 +26118,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (topWrap) topWrap.style.display = mkt === 'tw' ? 'none' : '';   // 台股就是全部 2,389 檔，沒有「前 N 大」
 
     // Worker 版本不夠就先講清楚，不要讓使用者按了半天才看到怪錯誤
-    const verNote = await workerVerNote(WORKER_VER_NEEDED.bars);
+    const verNote = await workerVerNote(WORKER_ROUTE_NEEDED.bars);
     const warnBox = document.getElementById('barsVerWarn');
     if (warnBox) {
       warnBox.innerHTML = verNote
