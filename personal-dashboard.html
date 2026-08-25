@@ -3366,6 +3366,7 @@
         從「一檔一次請求」變成純計算，<strong>秒級完成</strong>。
       </div>
 
+      <div id="barsVerWarn"></div>
       <div id="barsStatsBox" style="margin-bottom:14px;"></div>
 
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
@@ -12409,6 +12410,27 @@ ${userQuery}`;
     const rest = twUniverseSearch(q).filter(s => !seen.has(s.symbol));
     return builtin.concat(rest).slice(0, 15);
   }
+  // 台股查無結果時的說明。分三種情況講，而且**只在真的查不到時才出現**：
+  //   · 全代號表已載入（2,389 檔都查過了）→ 就是真的沒這一檔，照實說
+  //   · Worker 版本不夠／沒設定 → 講真正的原因與下一步
+  async function twSearchVerHint(q, boxId) {
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    const hasUniverse = !!(twUniverseMem && Array.isArray(twUniverseMem.list) && twUniverseMem.list.length);
+    if (hasUniverse) { box.style.display = 'none'; box.innerHTML = ''; return; }   // 查得夠全了，不用囉嗦
+    const note = await workerVerNote(WORKER_VER_NEEDED.symbols);
+    if (!note) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    // 使用者可能已經改字了，再確認一次還是查不到才顯示
+    const still = searchTwStocks(q);
+    if (still.length) return;
+    box.style.display = 'block';
+    box.innerHTML = `<div style="padding:10px 13px; font-size:11.5px; color:var(--ink-secondary); line-height:1.75;">
+        查不到「<strong>${escape(q)}</strong>」。<br>
+        <span style="color:var(--accent-warm);">目前只查得到內建的 152 檔（<strong>不含任何上櫃股</strong>）。</span><br>
+        ${note}
+      </div>`;
+  }
+
   // 第一次打字時代號表可能還沒載完 → 載完再重畫一次，不要讓使用者以為「查無此股」
   async function augmentTwSearchRemote(q, boxId, renderFn) {
     const before = (twUniverseMem && twUniverseMem.list) ? twUniverseMem.list.length : 0;
@@ -13010,7 +13032,9 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     const results = searchTwStocks(q);
     // 代號表還沒載完時，先畫已有的，載完再重畫一次（不然使用者會以為查無此股）
     augmentTwSearchRemote(q, 'holdingSearchResults', onHoldingSearch);
-    if (results.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    // ⚠ 查不到時**不要只是把下拉收掉**——使用者會以為「沒這檔股票」，但真正的原因可能是
+    //   Worker 還是舊版（只有內建 152 檔可查，一檔上櫃都沒有）。這時要講出來。
+    if (results.length === 0) { twSearchVerHint(q, 'holdingSearchResults'); return; }
     box.style.display = 'block';
     box.innerHTML = results.map(s => `
       <div class="stock-search-item" onmousedown="event.preventDefault(); pickHoldingStock('${escape(s.symbol)}')">
@@ -25762,6 +25786,36 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   const UNIVERSE_TTL_MS = 24 * 3600 * 1000;   // 代號表一天變不了多少
   let twUniverseMem = null;
 
+  // ===== Worker 版本檢查（v16.17）=====
+  // 使用者的 Worker 可能停在任何一個舊版：只有新聞（ver 無）／有報價沒查股（ver 2）／
+  // 有查股沒日 K（ver 3 之前）。舊版看到不認得的路徑會**掉進新聞那條**回 `{"error":"missing ?q="}`，
+  // 於是前端只看到「失敗」→ 默默退回內建 152 檔，**完全不告訴使用者為什麼查不到 5483**。
+  // 這跟這一輪一直在修的毛病是同一條：失敗要講得出真正的原因與下一步。
+  const WORKER_VER_NEEDED = { quote: 2, symbols: 3, bars: 3 };
+  let workerVerCache = { ver: null, at: 0 };
+  async function quoteWorkerVer(force) {
+    if (!force && workerVerCache.ver !== null && Date.now() - workerVerCache.at < 300000) return workerVerCache.ver;
+    const base = await quoteWorkerBase();
+    if (!base) { workerVerCache = { ver: 0, at: Date.now() }; return 0; }   // 0 ＝ 根本沒設定
+    let ver = -1;   // -1 ＝ 連得到但認不出版本（舊版）
+    try {
+      const resp = await fetch(base + '/quote?ping=1', { cache: 'no-store' });
+      const body = await resp.json().catch(() => null);
+      if (resp.ok && body && Number(body.ver) > 0) ver = Number(body.ver);
+    } catch (e) { ver = -2; }   // -2 ＝ 連不到
+    workerVerCache = { ver, at: Date.now() };
+    return ver;
+  }
+  // 給畫面用的一句話。need 是這個功能需要的版本。
+  async function workerVerNote(need) {
+    const ver = await quoteWorkerVer();
+    if (ver >= need) return '';
+    if (ver === 0) return '還沒設定 Worker——按現金流頁的「⚙ 即時報價」照教學做一次（免費），這個功能就會開啟。';
+    if (ver === -2) return '連不到 Worker，請確認它在 Cloudflare 上還活著。';
+    return `你的 Worker 是舊版（${ver === -1 ? '只有新聞功能' : 'ver ' + ver}），這個功能需要 ver ${need}。`
+         + '請到 Cloudflare → Edit code → 全刪 → 重貼 worker/news-rss.js → Deploy。**網址不用改。**';
+  }
+
   async function twLoadUniverse() {
     if (twUniverseMem && Date.now() - twUniverseMem.ts < UNIVERSE_TTL_MS) return twUniverseMem.list;
     let cached = null;
@@ -25953,8 +26007,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     url.searchParams.set('mkt', 'us');
     url.searchParams.set('top', String(Math.min(6000, Math.max(50, topN || 1000))));
     const resp = await fetch(url.toString(), { cache: 'no-store' });
-    if (!resp.ok) throw new Error('抓不到美股清單（HTTP ' + resp.status + '）');
-    const j = await resp.json();
+    const j = await resp.json().catch(() => null);
+    // 舊版 Worker 不認得 /symbols → 掉進它自己的新聞分支回 400 `missing ?q=`。
+    // 這時候講「HTTP 400」使用者只會去亂改網址，要直接講「是舊版、去重貼程式碼」。
+    if (j && j.error === 'missing ?q=') throw new Error(await workerVerNote(WORKER_VER_NEEDED.bars));
+    if (!resp.ok) throw new Error('抓不到美股清單（HTTP ' + resp.status + (j && j.error ? '：' + j.error : '') + '）');
     const list = (j && Array.isArray(j.list)) ? j.list.filter(r => Array.isArray(r) && r[0]).map(r => String(r[0])) : [];
     if (!list.length) throw new Error('美股清單是空的');
     return list;
@@ -26039,6 +26096,18 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const mkt = document.getElementById('barsMarket') ? document.getElementById('barsMarket').value : 'us';
     const topWrap = document.getElementById('barsTopWrap');
     if (topWrap) topWrap.style.display = mkt === 'tw' ? 'none' : '';   // 台股就是全部 2,389 檔，沒有「前 N 大」
+
+    // Worker 版本不夠就先講清楚，不要讓使用者按了半天才看到怪錯誤
+    const verNote = await workerVerNote(WORKER_VER_NEEDED.bars);
+    const warnBox = document.getElementById('barsVerWarn');
+    if (warnBox) {
+      warnBox.innerHTML = verNote
+        ? `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--danger); border-radius:4px; padding:10px 14px; margin-bottom:12px; font-size:12px; color:var(--ink-secondary); line-height:1.75;">
+             <strong style="color:var(--danger);">這個功能還不能用。</strong><br>${verNote}
+           </div>` : '';
+    }
+    const runBtn0 = document.getElementById('barsRunBtn');
+    if (runBtn0) runBtn0.disabled = !!verNote;
 
     const box = document.getElementById('barsStatsBox');
     if (box) {
