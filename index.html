@@ -3357,6 +3357,61 @@
     </div>
   </div>
 
+  <!-- ============ 即時報價來源設定 Modal（Cloudflare Worker URL）============ -->
+  <div class="modal-backdrop" id="quoteSourceModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>⚙ 設定<em>盤中即時報價</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">
+        沒設定的話，台股拿到的是<strong>最近一次收盤價</strong>——盤中看到的是昨天的數字。<br>
+        設定後：台股走<strong>證交所 MIS 官方盤中報價</strong>（免金鑰、<strong>沒有查詢次數上限</strong>、上市上櫃都有），
+        美股走 <strong>Yahoo</strong>（免金鑰，連 Finnhub 金鑰都可以不用設）。
+      </div>
+
+      <div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; padding:10px 14px; margin-bottom:14px; font-size:11.5px; color:var(--ink-secondary); line-height:1.7;">
+        為什麼要多一道手續？證交所和 Yahoo 都<strong>沒有開放給網頁直接連</strong>（技術上叫 CORS）。
+        所以要在 Cloudflare 放一支小程式幫忙轉一手 —— 那支小程式就是抓新聞用的那一支，
+        <strong>已經設過新聞來源的話，這裡會自動沿用，不用再貼一次</strong>（但要記得回去把程式碼更新成新版）。
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label">Worker URL</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="quoteWorkerInput" class="form-input" placeholder="留空 = 沿用新聞來源的 Worker" style="flex:1;">
+          <button class="btn btn-sm" id="quoteWorkerTestBtn" onclick="testQuoteWorker()">測試</button>
+        </div>
+        <div id="quoteWorkerHint" style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px; letter-spacing:0.05em;"></div>
+      </div>
+
+      <div id="quoteWorkerResult" style="margin-bottom:14px;"></div>
+
+      <details style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px;">
+        <summary style="cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:0.15em; color:var(--accent);">📖 部署教學（5 分鐘 · 免費 · 免信用卡）</summary>
+        <ol style="margin:10px 0 0; padding-left:20px; font-size:12px; line-height:1.75; color:var(--ink-secondary);">
+          <li>到 <a href="https://dash.cloudflare.com" target="_blank" rel="noopener" style="color:var(--accent);">dash.cloudflare.com</a> 註冊 / 登入</li>
+          <li>左側 <strong>Workers &amp; Pages</strong> → <strong>Create</strong> → <strong>Create Worker</strong></li>
+          <li>取名（例如 <code>news-rss</code>）→ <strong>Deploy</strong>（先用預設範本）</li>
+          <li>點 <strong>Edit code</strong>，把預設程式全刪</li>
+          <li>從 GitHub <a href="https://github.com/wugys/kevin-ai-system/blob/main/worker/news-rss.js" target="_blank" rel="noopener" style="color:var(--accent);">worker/news-rss.js</a> 複製<strong>全部</strong>內容貼進去</li>
+          <li>右上 <strong>Deploy</strong> → 複製分配到的 URL（形如 <code>https://news-rss.xxx.workers.dev</code>）</li>
+          <li>貼到上面欄位 → 按「測試」→ 按「儲存」</li>
+        </ol>
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); font-size:11.5px; color:var(--ink-secondary); line-height:1.6;">
+          💡 <strong>已經有新聞 Worker 的人</strong>：不用重建，只要重做第 4~6 步（Edit code → 全刪 → 貼新版 → Deploy）。
+          新版同時提供新聞和報價，網址不變，新聞功能完全不受影響。
+        </div>
+        <div style="margin-top:8px; padding:8px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); font-size:11.5px; color:var(--ink-secondary); line-height:1.6;">
+          ⚠ Yahoo 不是官方公開的服務，哪天它改掉美股就會抓不到 —— 那時會自動退回 Finnhub（要金鑰）。
+          台股的證交所 MIS 是官方的，比較穩。
+        </div>
+      </details>
+
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeQuoteSourceModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveQuoteWorker()">儲存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 新聞來源設定 Modal（Cloudflare Worker URL）============ -->
   <div class="modal-backdrop" id="twNewsSourceModal">
     <div class="modal" style="max-width: 600px;">
@@ -7593,9 +7648,10 @@
     <div class="stats-row" id="cfStats"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; align-items:center;">
       <button class="btn btn-sm btn-primary" data-refresh-prices onclick="refreshAllPrices()"
-              title="台股走證交所收盤、美股走 Finnhub 即時、加密走 CoinGecko、外幣走即時匯率">⚡ 一鍵更新全部現價</button>
+              title="台股走證交所 MIS 盤中即時（沒設定就退回證交所收盤）、美股走 Yahoo／Finnhub 即時、加密走 CoinGecko、外幣走即時匯率">⚡ 一鍵更新全部現價</button>
       <span id="cfPriceAge" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);"></span>
       <button class="btn btn-sm" id="cfAutoPriceBtn" onclick="toggleAutoPrice()" title="開 App 時自動更新（最多 6 小時一次，背景進行）">⟳ 自動更新</button>
+      <button class="btn btn-sm" id="cfQuoteSrcBtn" onclick="openQuoteSourceModal()" title="設定盤中即時報價來源（免費 Cloudflare Worker → 證交所 MIS ／ Yahoo）">⚙ 即時報價</button>
       <span style="flex:1;"></span>
       <span id="cfFxLabel" style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary); letter-spacing:0.05em;">USD/TWD —</span>
       <button class="btn btn-sm" onclick="refreshCashflowFxAndRender()">↻ 只更新匯率</button>
@@ -25367,6 +25423,180 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     return null;
   }
+
+  // ===== 盤中即時報價（v16.9）=====
+  // 在這之前台股只有「最近收盤價」——證交所 STOCK_DAY 是盤後才更新的日成交資料，
+  // 盤中看到的永遠是昨天（或今天早上開盤前）的數字，畫面上也一直這樣寫著。
+  // 盤中即時：台股走證交所 MIS（官方、免金鑰、**沒有查詢次數上限**）、美股走 Yahoo（免金鑰）。
+  // ⚠ 這兩個上游 2026-08-25 實測**都沒有 CORS 標頭** → 瀏覽器不能直連，
+  //   要透過使用者自己部署的 Cloudflare Worker（就是抓新聞那一個，加了 /quote 路徑，免費 10 萬次/天）。
+  // ⚠ 一切失敗都要能退回去：沒設 Worker／Worker 是舊版／上游掛掉／代號查不到，
+  //   一律自動退回原本的路（台股＝證交所收盤 quoteTwClose、美股＝Finnhub），
+  //   而且**要在結果卡上講清楚這次拿到的是即時還是收盤**（不能讓畫面繼續講「即時」這種假話）。
+  const QUOTE_WORKER_STORAGE = 'studio_quote_worker_v1';
+  // 沒有另外設 → 沿用抓新聞那一個 Worker（同一支程式同時提供兩種服務，使用者只要部署一次）
+  async function quoteWorkerBase() {
+    let u = '';
+    try { u = (await readKey(QUOTE_WORKER_STORAGE)) || ''; } catch (e) { u = ''; }
+    if (!u) { try { u = (await readKey(TW_STORAGE.newsWorker)) || ''; } catch (e) { u = ''; } }
+    u = String(u || '').trim();
+    if (!u || !/^https?:\/\//i.test(u)) return '';
+    return u.replace(/\/+$/, '');
+  }
+
+  const LIVE_TTL_MS = 60000;          // 同一輪更新裡（持股 → 觀察股）共用，同一檔不會問兩次
+  const liveQuoteCache = new Map();   // 'tw:2330' / 'us:NVDA' -> { q, at }
+  let liveQuoteNote = '';             // 這一輪為什麼沒有即時價（給結果卡講實話用）
+
+  function liveCacheGet(kind, sym) {
+    const hit = liveQuoteCache.get(kind + ':' + sym);
+    return hit && (Date.now() - hit.at) < LIVE_TTL_MS ? hit.q : null;
+  }
+
+  // 回 { tw: {代號: quote}, us: {代號: quote} }。抓不到的就是不在裡面——
+  // ⚠ 絕不回 0 或假值，呼叫端才分得出「沒抓到」和「真的是這個價」。
+  async function fetchLiveQuotes(twCodes, usSyms) {
+    const out = { tw: {}, us: {} };
+    const wantTw = [...new Set((twCodes || []).map(s => String(s || '').trim()).filter(Boolean))];
+    const wantUs = [...new Set((usSyms || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))];
+    const needTw = [], needUs = [];
+    wantTw.forEach(c => { const q = liveCacheGet('tw', c); if (q) out.tw[c] = q; else needTw.push(c); });
+    wantUs.forEach(s => { const q = liveCacheGet('us', s); if (q) out.us[s] = q; else needUs.push(s); });
+    if (!needTw.length && !needUs.length) return out;
+
+    const base = await quoteWorkerBase();
+    if (!base) { liveQuoteNote = liveQuoteNote || 'noworker'; return out; }
+
+    const reqs = [];
+    for (let i = 0; i < needTw.length; i += 20) reqs.push({ tw: needTw.slice(i, i + 20) });
+    for (let i = 0; i < needUs.length; i += 15) reqs.push({ us: needUs.slice(i, i + 15) });
+
+    for (const r of reqs) {
+      let url;
+      try { url = new URL(base + '/quote'); } catch (e) { liveQuoteNote = 'badurl'; return out; }
+      if (r.tw && r.tw.length) url.searchParams.set('tw', r.tw.join(','));
+      if (r.us && r.us.length) url.searchParams.set('us', r.us.join(','));
+      let body = null, status = 0;
+      try {
+        const resp = await fetch(url.toString(), { cache: 'no-store' });
+        status = resp.status;
+        try { body = await resp.json(); } catch (e) {}
+      } catch (e) {
+        // 連不到 Worker：後面的批次一樣會失敗，不要再打，也不要把使用者晾在那邊等
+        liveQuoteNote = 'offline'; return out;
+      }
+      // 舊版 Worker 只認得 /?q= ——它看到 /quote 會回自己的 400 'missing ?q='。
+      // 這一定要分辨出來，否則使用者會以為是網址打錯，一直去改設定（其實是要重貼程式碼）。
+      if (status === 400 && body && body.error === 'missing ?q=') { liveQuoteNote = 'oldworker'; return out; }
+      if (!body || status !== 200) { liveQuoteNote = liveQuoteNote || 'upstream'; continue; }
+      const tw = (body.tw && typeof body.tw === 'object' && !Array.isArray(body.tw)) ? body.tw : {};
+      const us = (body.us && typeof body.us === 'object' && !Array.isArray(body.us)) ? body.us : {};
+      const now = Date.now();
+      Object.keys(tw).forEach(k => {
+        const q = tw[k];
+        if (q && Number(q.price) > 0) { out.tw[k] = q; liveQuoteCache.set('tw:' + k, { q, at: now }); }
+      });
+      Object.keys(us).forEach(k => {
+        const q = us[k];
+        if (q && Number(q.price) > 0) { const K = k.toUpperCase(); out.us[K] = q; liveQuoteCache.set('us:' + K, { q, at: now }); }
+      });
+      if (body.errors && body.errors.tw && !liveQuoteNote) liveQuoteNote = 'twupstream:' + String(body.errors.tw).slice(0, 80);
+    }
+    return out;
+  }
+
+  // 把代碼翻成使用者看得懂、而且知道下一步要做什麼的話
+  function liveQuoteNoteText(n) {
+    if (!n) return '';
+    if (n === 'noworker') return '台股拿到的是收盤價——還沒設定即時報價來源。按「⚙ 即時報價」照教學做一次（免費），之後盤中就會是即時價。';
+    if (n === 'oldworker') return '你的 Cloudflare Worker 還是舊版（只有新聞功能）——把 worker/news-rss.js 重新貼一次並 Deploy，就會有盤中即時報價。這不是網址打錯。';
+    if (n === 'badurl') return '即時報價 Worker 的網址格式不對（要 https:// 開頭），這次改用收盤價。';
+    if (n === 'offline') return '連不到即時報價 Worker，這次改用收盤價。請確認 Worker 已在 Cloudflare Deploy、網址正確。';
+    if (n.indexOf('twupstream:') === 0) return '證交所盤中報價暫時抓不到（' + n.slice(11) + '），這次改用收盤價。';
+    return '即時報價暫時不可用，這次改用收盤價。';
+  }
+
+  // ===== 即時報價來源設定 Modal =====
+  async function openQuoteSourceModal() {
+    let own = '';
+    try { own = (await readKey(QUOTE_WORKER_STORAGE)) || ''; } catch (e) { own = ''; }
+    let news = '';
+    try { news = (await readKey(TW_STORAGE.newsWorker)) || ''; } catch (e) { news = ''; }
+    document.getElementById('quoteWorkerInput').value = own;
+    document.getElementById('quoteWorkerResult').innerHTML = '';
+    const hint = document.getElementById('quoteWorkerHint');
+    hint.innerHTML = own
+      ? '目前用這個網址抓報價（跟新聞來源分開設定）'
+      : news
+        ? `留空中 → 目前沿用新聞來源的 Worker：<span style="color:var(--accent);">${escape(news)}</span>`
+        : '<span style="color:var(--accent-warm);">還沒有任何 Worker → 台股現在拿到的是收盤價。照下面教學做一次就好。</span>';
+    document.getElementById('quoteSourceModal').classList.add('active');
+  }
+  function closeQuoteSourceModal() { document.getElementById('quoteSourceModal').classList.remove('active'); }
+
+  async function saveQuoteWorker() {
+    const v = document.getElementById('quoteWorkerInput').value.trim();
+    if (v && !/^https?:\/\//i.test(v)) { showToast('URL 需以 http(s):// 開頭'); return; }
+    await writeKey(QUOTE_WORKER_STORAGE, v);
+    liveQuoteCache.clear();   // 換來源了，舊的快取不能再用
+    showToast(v ? '✓ 即時報價來源已儲存' : '已清除 → 改為沿用新聞來源的 Worker');
+    closeQuoteSourceModal();
+  }
+
+  // 測試 = 真的去抓一次台積電和 NVDA 回來給他看。
+  // 只回「連得上」沒有用——使用者要的是「我按了更新以後會不會有即時價」。
+  async function testQuoteWorker() {
+    const typed = document.getElementById('quoteWorkerInput').value.trim();
+    const base = typed ? typed.replace(/\/+$/, '') : await quoteWorkerBase();
+    const box = document.getElementById('quoteWorkerResult');
+    const btn = document.getElementById('quoteWorkerTestBtn');
+    const say = (color, html) => {
+      box.innerHTML = `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid ${color}; border-radius:4px; padding:10px 14px; font-size:12px; color:var(--ink-secondary); line-height:1.75;">${html}</div>`;
+    };
+    if (!base) { say('var(--accent-warm)', '還沒有可用的 Worker 網址。請照下面的教學部署一個，或先去設定新聞來源。'); return; }
+    if (!/^https?:\/\//i.test(base)) { say('var(--danger)', 'URL 要以 <code>https://</code> 開頭。'); return; }
+
+    btn.disabled = true; btn.textContent = '測試中…';
+    try {
+      let url;
+      try { url = new URL(base + '/quote'); } catch (e) { say('var(--danger)', 'URL 格式錯誤：' + escape(base)); return; }
+      url.searchParams.set('tw', '2330');
+      url.searchParams.set('us', 'NVDA');
+      const resp = await fetch(url.toString(), { cache: 'no-store' });
+      let body = null;
+      try { body = await resp.json(); } catch (e) {}
+
+      // 舊版 Worker：它不認得 /quote，會回自己的 400 'missing ?q='
+      if (resp.status === 400 && body && body.error === 'missing ?q=') {
+        say('var(--accent-warm)', '連得到這個 Worker，但它<strong>還是舊版</strong>（只有新聞功能）。<br>請到 Cloudflare → Edit code → 全刪 → 貼上新版 <code>worker/news-rss.js</code> → Deploy。<strong>網址不用改</strong>，新聞也不會壞。');
+        return;
+      }
+      if (!resp.ok || !body) { say('var(--danger)', `Worker 回 HTTP ${resp.status}${body && body.error ? '：' + escape(String(body.error)) : ''}`); return; }
+
+      const tw = body.tw && body.tw['2330'];
+      const us = body.us && body.us['NVDA'];
+      if (!tw && !us) {
+        const err = body.errors ? escape(JSON.stringify(body.errors).slice(0, 160)) : '沒有說原因';
+        say('var(--danger)', `Worker 通了，但<strong>兩邊上游都沒抓到報價</strong>。<br>上游訊息：${err}`);
+        return;
+      }
+      const fmt = (q, unit) => q
+        ? `<strong style="color:var(--accent);">${escape(q.name || q.symbol)}</strong> ${unit}${Number(q.price).toLocaleString()}` +
+          (q.pct === null || q.pct === undefined ? '' : ` <span style="color:${q.pct >= 0 ? 'var(--accent)' : 'var(--danger)'};">${q.pct >= 0 ? '+' : ''}${Number(q.pct).toFixed(2)}%</span>`) +
+          (q.time ? ` <span style="color:var(--ink-tertiary); font-family:var(--mono); font-size:10.5px;">${escape(String(q.time).slice(0, 19))}</span>` : '')
+        : '<span style="color:var(--accent-warm);">沒抓到</span>';
+      say('var(--accent)',
+        `✓ 可以用。剛剛真的抓回來的價格：<br>` +
+        `· 台股 2330 ${fmt(tw, 'NT$')}<br>` +
+        `· 美股 NVDA ${fmt(us, 'US$')}<br>` +
+        `<span style="color:var(--ink-tertiary); font-size:11px;">按下面的「儲存」才會生效。</span>`);
+    } catch (e) {
+      say('var(--danger)', '連不到這個網址：' + escape(String(e && e.message || e)) + '<br><span style="color:var(--ink-tertiary); font-size:11px;">請確認 Worker 已在 Cloudflare 按過 Deploy、網址開頭是 https://</span>');
+    } finally {
+      btn.disabled = false; btn.textContent = '測試';
+    }
+  }
+
   // 一次跑幾個，避免被 FinMind 免費層擋
   async function mapLimit(items, limit, fn) {
     const out = new Array(items.length);
@@ -25387,8 +25617,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const oldTxt = btns.map(b => b.textContent);
     btns.forEach(b => { b.disabled = true; b.textContent = '⚡ 更新中…'; });
 
-    const log = { tw: { ok: 0, fail: 0 }, us: { ok: 0, fail: 0, skip: 0 }, crypto: { ok: 0, fail: 0 }, fx: { ok: 0, fail: 0 }, watch: { ok: 0, fail: 0, skip: 0 }, changed: [], firstFill: [] };
+    const log = { tw: { ok: 0, fail: 0, live: 0 }, us: { ok: 0, fail: 0, skip: 0, live: 0 }, crypto: { ok: 0, fail: 0 }, fx: { ok: 0, fail: 0 }, watch: { ok: 0, fail: 0, skip: 0, live: 0 }, changed: [], firstFill: [] };
     const notes = [];
+    liveQuoteNote = '';   // 每一輪重算，不要拿上一輪的理由來解釋這一輪
     try {
       // 0) 匯率先更新（外幣存款要用，儀表板換算也要用）
       const fxRate = await refreshCashflowFx();
@@ -25445,31 +25676,67 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         }
       };
 
-      // 2) 台股：逐檔 FinMind，併發 5
+      // 1b) 盤中即時報價：一次把台股 + 美股全部問完（Worker → 證交所 MIS／Yahoo）。
+      //     拿得到就用即時，拿不到的才走下面原本的路（台股收盤價／Finnhub）。
       const twJobs = jobs.filter(j => j.kind === 'tw');
+      const usJobs = jobs.filter(j => j.kind === 'us');
+      let live = { tw: {}, us: {} };
+      if (twJobs.length || usJobs.length) {
+        try { live = await fetchLiveQuotes(twJobs.map(j => j.sym), usJobs.map(j => j.sym)); }
+        catch (e) { liveQuoteNote = liveQuoteNote || 'offline'; live = { tw: {}, us: {} }; }
+      }
+      // 即時報價比收盤價多給昨收／漲跌／時間 → 一起存，卡片上才顯示得出「今天漲跌」
+      const setLive = (job, q) => {
+        setPx(job, Number(q.price));
+        if (Number(q.prev) > 0) job.h.prevClose = Number(q.prev);
+        if (q.change !== null && q.change !== undefined) job.h.dayChange = Number(q.change);
+        if (q.pct !== null && q.pct !== undefined) job.h.dayChangePct = Number(q.pct);
+        job.h.priceLive = true;
+        job.h.priceAsOf = String(q.time || '');
+      };
+
+      // 2) 台股：即時拿不到的，退回證交所收盤價（併發 5）
       if (twJobs.length) {
-        await mapLimit(twJobs, 5, async job => {
-          try {
-            const q = await quoteTwClose(job.sym);
-            if (q && q.price > 0) { setPx(job, q.price); log.tw.ok++; } else log.tw.fail++;
-          } catch (e) { log.tw.fail++; }
-        });
+        const twRest = [];
+        for (const job of twJobs) {
+          const q = live.tw[job.sym];
+          if (q && Number(q.price) > 0) { setLive(job, q); log.tw.ok++; log.tw.live++; }
+          else twRest.push(job);
+        }
+        if (twRest.length) {
+          await mapLimit(twRest, 5, async job => {
+            try {
+              const q = await quoteTwClose(job.sym);
+              // ⚠ 一定要標回 false，否則上一輪拿到即時、這一輪只拿到收盤，卡片會繼續掛著「即時」的標籤
+              if (q && q.price > 0) { setPx(job, q.price); job.h.priceLive = false; log.tw.ok++; } else log.tw.fail++;
+            } catch (e) { log.tw.fail++; }
+          });
+        }
       }
 
-      // 3) 美股：Finnhub，需要金鑰
-      const usJobs = jobs.filter(j => j.kind === 'us');
+      // 3) 美股：即時拿不到的，退回 Finnhub（需要金鑰）
       if (usJobs.length) {
-        if (!finnhubKey) { try { await loadFinnhubKey(); } catch (e) {} }
-        if (!finnhubKey) {
-          log.us.skip = usJobs.length;
-          notes.push(`美股 ${usJobs.length} 檔沒更新——還沒設定 Finnhub 金鑰（美股工具列的「🔑 金鑰」）`);
+        const usRest = [];
+        for (const job of usJobs) {
+          const q = live.us[job.sym.toUpperCase()];
+          if (q && Number(q.price) > 0) { setLive(job, q); log.us.ok++; log.us.live++; }
+          else usRest.push(job);
+        }
+        // ⚠ 全部都拿到即時價時不可以再喊「請設定 Finnhub 金鑰」——那是沒發生的問題，只會嚇人
+        if (usRest.length && !finnhubKey) { try { await loadFinnhubKey(); } catch (e) {} }
+        if (!usRest.length) {
+          // 都拿到即時價了，這裡沒事做
+        } else if (!finnhubKey) {
+          log.us.skip = usRest.length;
+          notes.push(`美股 ${usRest.length} 檔沒更新——即時報價沒抓到，而 Finnhub 金鑰也還沒設定（美股工具列的「🔑 金鑰」）`);
         } else {
-          for (const job of usJobs) {   // 免費層 60 次/分，這裡保守序列跑
+          for (const job of usRest) {   // 免費層 60 次/分，這裡保守序列跑
             try {
               const q = await finnhubQuote(job.sym);
               if (q && Number(q.c) > 0) {
                 setPx(job, Number(q.c));
                 job.h.dayChange = q.d; job.h.dayChangePct = q.dp; job.h.prevClose = q.pc;
+                job.h.priceLive = true;    // Finnhub /quote 本來就是即時報價，只是換一個來源拿到而已
                 log.us.ok++;
               } else log.us.fail++;
             } catch (e) {
@@ -25536,12 +25803,24 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             alogAll[sym].lastPriceAt = Date.now();
             log.watch.ok++;
           };
-          const tw = watchJobs.filter(w => w.kind === 'tw');
+          // 觀察股也先問即時（60 秒內問過的直接吃快取，不會重複打）
+          let wLive = { tw: {}, us: {} };
+          try { wLive = await fetchLiveQuotes(watchJobs.filter(w => w.kind === 'tw').map(w => w.sym), watchJobs.filter(w => w.kind === 'us').map(w => w.sym)); } catch (e) {}
+
+          const tw = watchJobs.filter(w => w.kind === 'tw').filter(w => {
+            const q = wLive.tw[w.sym];
+            if (q && Number(q.price) > 0) { setWatch(w.sym, Number(q.price)); log.watch.live++; return false; }
+            return true;
+          });
           await mapLimit(tw, 5, async w => {
             try { const q = await quoteTwClose(w.sym); if (q && q.price > 0) setWatch(w.sym, q.price); else log.watch.fail++; }
             catch (e) { log.watch.fail++; }
           });
-          const us = watchJobs.filter(w => w.kind === 'us');
+          const us = watchJobs.filter(w => w.kind === 'us').filter(w => {
+            const q = wLive.us[w.sym.toUpperCase()];
+            if (q && Number(q.price) > 0) { setWatch(w.sym, Number(q.price)); log.watch.live++; return false; }
+            return true;
+          });
           if (us.length && finnhubKey) {
             for (const w of us) {
               try { const q = await finnhubQuote(w.sym); if (q && Number(q.c) > 0) setWatch(w.sym, Number(q.c)); else log.watch.fail++; }
@@ -25565,6 +25844,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         arr.forEach(h => { try { if (h.priceUpdatedAt) t.push(h); } catch (e) {} });
       }
       await writeKey('studio_price_refresh_v1', JSON.stringify({ at: Date.now(), ok: log.tw.ok + log.us.ok + log.crypto.ok + log.fx.ok }));
+
+      // 這一輪有東西該拿即時卻沒拿到 → 把真正的原因寫出來（而且要說得出下一步）。
+      // 全部都拿到即時就不要囉嗦——會亂叫的提醒比沒提醒更糟。
+      const wantedLive = twJobs.length + usJobs.length;
+      if (liveQuoteNote && wantedLive > 0 && (log.tw.live + log.us.live) < wantedLive) {
+        notes.push(liveQuoteNoteText(liveQuoteNote));
+      }
 
       if (!silent) renderPriceRefreshResult(log, notes, fxRate);
       renderPriceAge();
@@ -25624,6 +25910,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!el) return;
     const up = log.changed.filter(c => c.pct > 0).length;
     const down = log.changed.filter(c => c.pct < 0).length;
+    // ⚠ 這一行以前寫死「台股是最近收盤價（不是盤中即時）」——現在台股可能是即時、可能是收盤，
+    //   也可能一部分即時一部分收盤（上市抓到、興櫃沒抓到）。畫面要照這一輪的實際狀況講。
+    const twLive = log.tw.live || 0, twClose = Math.max(0, (log.tw.ok || 0) - twLive);
+    const twSrcLine = !log.tw.ok ? ''
+      : twLive && !twClose ? '台股是<strong style="color:var(--accent);">盤中即時價</strong>（證交所 MIS）；'
+      : twLive && twClose ? `台股 <strong style="color:var(--accent);">${twLive} 檔即時</strong>、${twClose} 檔是最近收盤價；`
+      : '台股是<strong>最近收盤價</strong>（不是盤中即時）；';
     const big = [...log.changed].sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)).slice(0, 6);
     el.innerHTML = `
       <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:12px 14px; margin-top:12px;">
@@ -25643,7 +25936,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         </div>` : ''}
         ${notes.length ? `<div style="margin-top:9px; font-size:11.5px; color:var(--accent-warm); line-height:1.7;">${notes.map(n => '· ' + escape(n)).join('<br>')}</div>` : ''}
         <div style="margin-top:9px; font-size:11px; color:var(--ink-tertiary); line-height:1.7;">
-          台股是<strong>最近收盤價</strong>（不是盤中即時）；美股是即時報價；加密與匯率是即時。
+          ${twSrcLine}美股是即時報價；加密與匯率是即時。
           基金／貴金屬／不動產沒有公開報價來源，要自己填。
         </div>
       </div>`;
