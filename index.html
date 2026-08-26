@@ -9305,7 +9305,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.21 · θθ</div>
+    <div>v 16.22 · ιι</div>
   </footer>
 </div>
 
@@ -12771,6 +12771,23 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     );
   }
 
+  // ===== 配息實收（v16.22）=====
+  // ⚠ 配息表單上那個欄位就叫「補充保費 / 稅費」（台股二代健保 2.11%、美股股利預扣 30%），
+  //   使用者填了、也存進 storage 了，但**以前每一個算配息的地方都只算 shares × price**——
+  //   填進去的錢從來沒有被扣掉。已實現損益、累計配息、現金流、XIRR 全部高估。
+  //   ⚠ 連最小心的那一段都漏了：XIRR 那裡的註解寫著「稅以前沒扣…不大，但錯就是錯」，
+  //     卻只修了買賣兩行，**正上方的配息那一行還是 gross**（同一個毛病還有誰也這樣 → 一次掃完）。
+  // ⚠ 殖利率（xxxYield / xxxDivPerShare）刻意**不改**：殖利率的市場慣例是「稅前」，
+  //   改成稅後會跟券商、Yahoo、ETF 官網全部對不起來——那是另一種假話。
+  function divGross(t) { return (Number(t.shares) || 0) * (Number(t.price) || 0); }
+  function divNet(t) { return divGross(t) - (Number(t.fee) || 0); }
+  // 交易列尾巴：**有填費用才出現**（沒填就不要多嘴，多數人不會填）
+  function divFeeTail(t, fmt) {
+    const fee = Number(t.fee) || 0;
+    if (t.type !== 'dividend' || !(fee > 0)) return '';
+    return ` <span style="color:var(--ink-tertiary);">−${fmt(fee)}</span> → <strong>${fmt(divNet(t))}</strong>`;
+  }
+
   // === 計算工具 ===
   function holdingCost(h) { return (h.shares || 0) * (h.avgCost || 0); }
   function holdingValue(h) {
@@ -13427,7 +13444,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
         avgCost = shares > 0 ? totalCost / shares : 0;
       } else if (t.type === 'dividend') {
         // 現金股利：直接計入已實現
-        realizedDelta += (t.shares || 0) * (t.price || 0);
+        realizedDelta += divNet(t);            // ⚠ 以前是 shares×price，補充保費/稅費從來沒扣
       }
     });
 
@@ -13480,7 +13497,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
           shares += t.shares;
           avgCost = shares > 0 ? totalCost / shares : 0;
         } else if (t.type === 'dividend') {
-          total += (t.shares || 0) * (t.price || 0);
+          total += divNet(t);                  // 同上（recomputeAllRealized）
         }
       });
     });
@@ -16107,7 +16124,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
           shares += t.shares;
           avgCost = shares > 0 ? totalCost / shares : 0;
         } else if (t.type === 'dividend') {
-          total += (t.shares || 0) * (t.price || 0);
+          total += divNet(t);                  // 美股配息會被預扣 30%，填在 fee 欄位
         }
       });
     });
@@ -16862,7 +16879,7 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
           shares += t.shares;
           avgCost = shares > 0 ? totalCost / shares : 0;
         } else if (t.type === 'dividend') {
-          total += (t.shares || 0) * (t.price || 0);
+          total += divNet(t);
         }
       });
     });
@@ -16995,13 +17012,13 @@ CREATE POLICY "Allow all" ON crypto_transactions FOR ALL USING (true) WITH CHECK
     return hdEtfTxns
       .filter(t => t.type === 'dividend' && t.symbol === symbol)
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+      .reduce((s, t) => s + divNet(t), 0);
   }
   function hdEtfTotalDividends(sinceTs) {
     return hdEtfTxns
       .filter(t => t.type === 'dividend')
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+      .reduce((s, t) => s + divNet(t), 0);
   }
   // 近 N 期「每股配息」加總（per-share，與現價同基準，減碼/賣出不會灌大殖利率）
   function hdEtfPerShareDiv(symbol, sinceTs) {
@@ -17292,7 +17309,7 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
       : txnsForHolding.map(t => {
           const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '增' }[t.type] || '?';
           const right = t.type === 'dividend'
-            ? `${hdEtfShares(t.shares)} × ${hdEtfPrice(t.price)} = ${hdEtfMoney((t.shares || 0) * (t.price || 0))}`
+            ? `${hdEtfShares(t.shares)} × ${hdEtfPrice(t.price)} = ${hdEtfMoney(divGross(t))}${divFeeTail(t, hdEtfMoney)}`
             : `${hdEtfShares(t.shares)} 股 × ${hdEtfPrice(t.price)}`;
           return `
             <div class="hc-txn-row" onclick="event.stopPropagation(); openHdEtfTxnModal('${escape(t.id)}')">
@@ -17843,13 +17860,13 @@ CREATE POLICY "Allow all" ON hdetf_transactions FOR ALL USING (true) WITH CHECK 
     return mkEtfTxns
       .filter(t => t.type === 'dividend' && t.symbol === symbol)
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+      .reduce((s, t) => s + divNet(t), 0);
   }
   function mkEtfTotalDividends(sinceTs) {            // 已換算台幣
     return mkEtfTxns
       .filter(t => t.type === 'dividend')
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * mkEtfRate(t), 0);
+      .reduce((s, t) => s + divNet(t) * mkEtfRate(t), 0);
   }
   // 近 N 期「每股配息」加總（per-share，與現價同基準，減碼/賣出不會灌大殖利率）
   function mkEtfPerShareDiv(symbol, sinceTs) {
@@ -18153,7 +18170,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       : txnsForHolding.map(t => {
           const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '增' }[t.type] || '?';
           const right = t.type === 'dividend'
-            ? `${mkEtfShares(t.shares)} × ${mkEtfPrice(t.price)} = ${mkEtfMoneyC((t.shares || 0) * (t.price || 0), h)}`
+            ? `${mkEtfShares(t.shares)} × ${mkEtfPrice(t.price)} = ${mkEtfMoneyC(divGross(t), h)}${divFeeTail(t, (v) => mkEtfMoneyC(v, h))}`
             : `${mkEtfShares(t.shares)} 股 × ${mkEtfPrice(t.price)}`;
           return `
             <div class="hc-txn-row" onclick="event.stopPropagation(); openMkEtfTxnModal('${escape(t.id)}')">
@@ -20425,13 +20442,13 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     return bondTxns
       .filter(t => t.type === 'dividend' && t.symbol === symbol)
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+      .reduce((s, t) => s + divNet(t), 0);
   }
   function bondTotalDividends(sinceTs) {            // 已換算台幣
     return bondTxns
       .filter(t => t.type === 'dividend')
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * bondRate(t), 0);
+      .reduce((s, t) => s + divNet(t) * bondRate(t), 0);
   }
   // 近 N 期「每股配息」加總（per-share，與現價同基準，減碼/賣出不會灌大殖利率）
   function bondPerShareDiv(symbol, sinceTs) {
@@ -20746,7 +20763,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
       : txnsForHolding.map(t => {
           const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '增' }[t.type] || '?';
           const right = t.type === 'dividend'
-            ? `${bondShares(t.shares)} × ${bondPrice(t.price)} = ${bondMoneyC((t.shares || 0) * (t.price || 0), h)}`
+            ? `${bondShares(t.shares)} × ${bondPrice(t.price)} = ${bondMoneyC(divGross(t), h)}${divFeeTail(t, (v) => bondMoneyC(v, h))}`
             : `${bondShares(t.shares)} 股 × ${bondPrice(t.price)}`;
           return `
             <div class="hc-txn-row" onclick="event.stopPropagation(); openBondTxnModal('${escape(t.id)}')">
@@ -21353,13 +21370,13 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
     return fxDepTxns
       .filter(t => t.type === 'dividend' && t.symbol === symbol)
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+      .reduce((s, t) => s + divNet(t), 0);
   }
   function fxDepTotalDividends(sinceTs) {            // 已換算台幣
     return fxDepTxns
       .filter(t => t.type === 'dividend')
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * fxDepRate(t), 0);
+      .reduce((s, t) => s + divNet(t) * fxDepRate(t), 0);
   }
   // 近 N 期「每股配息」加總（per-share，與現價同基準，減碼/賣出不會灌大殖利率）
   function fxDepPerShareDiv(symbol, sinceTs) {
@@ -21664,7 +21681,7 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
       ? '<div style="text-align:center; padding:10px; color:var(--ink-tertiary);">尚無交易紀錄</div>'
       : txnsForHolding.map(t => {
           const typeLabel = { buy: '存', sell: '解', dividend: '息', stock_div: '增' }[t.type] || '?';
-          const right = `${fxDepShares(t.shares)} ${escape(h.symbol)} × ${fxDepPrice(t.price)} = ${fxDepMoneyC((t.shares || 0) * (t.price || 0), h)}`;
+          const right = `${fxDepShares(t.shares)} ${escape(h.symbol)} × ${fxDepPrice(t.price)} = ${fxDepMoneyC(divGross(t), h)}${divFeeTail(t, (v) => fxDepMoneyC(v, h))}`;
           return `
             <div class="hc-txn-row" onclick="event.stopPropagation(); openFxDepTxnModal('${escape(t.id)}')">
               <span class="hc-txn-type ${escape(t.type)}">${typeLabel}</span>
@@ -22262,13 +22279,13 @@ CREATE POLICY "Allow all" ON fxdep_transactions FOR ALL USING (true) WITH CHECK 
     return fundTxns
       .filter(t => t.type === 'dividend' && t.symbol === symbol)
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0), 0);
+      .reduce((s, t) => s + divNet(t), 0);
   }
   function fundTotalDividends(sinceTs) {
     return fundTxns
       .filter(t => t.type === 'dividend')
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * fundRate(t), 0);
+      .reduce((s, t) => s + divNet(t) * fundRate(t), 0);
   }
 
   async function loadFund() {
@@ -22566,7 +22583,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
       : txnsForHolding.map(t => {
           const typeLabel = { buy: '申', sell: '贖', dividend: '息', stock_div: '增' }[t.type] || '?';
           const right = t.type === 'dividend'
-            ? `${fundUnits(t.shares)} × ${fundNav(t.price)} = ${fundMoneyC((t.shares || 0) * (t.price || 0), h)}`
+            ? `${fundUnits(t.shares)} × ${fundNav(t.price)} = ${fundMoneyC(divGross(t), h)}${divFeeTail(t, (v) => fundMoneyC(v, h))}`
             : `${fundUnits(t.shares)} 單位 × ${fundNav(t.price)}`;
           return `
             <div class="hc-txn-row" onclick="event.stopPropagation(); openFundTxnModal('${escape(t.id)}')">
@@ -23175,7 +23192,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
     return metalTxns
       .filter(t => t.type === 'dividend')
       .filter(t => !sinceTs || new Date(t.date).getTime() >= sinceTs)
-      .reduce((s, t) => s + (Number(t.shares) || 0) * (Number(t.price) || 0) * metalRate(t), 0);
+      .reduce((s, t) => s + divNet(t) * metalRate(t), 0);
   }
 
   async function loadMetal() {
@@ -23480,7 +23497,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
       : txnsForHolding.map(t => {
           const typeLabel = { buy: '買', sell: '賣', dividend: '息', stock_div: '增' }[t.type] || '?';
           const right = t.type === 'dividend'
-            ? `${metalQty(t.shares)} × ${metalPrice(t.price)} = ${metalMoneyC((t.shares || 0) * (t.price || 0), h)}`
+            ? `${metalQty(t.shares)} × ${metalPrice(t.price)} = ${metalMoneyC(divGross(t), h)}${divFeeTail(t, (v) => metalMoneyC(v, h))}`
             : `${metalQty(t.shares)} ${escape(unit)} × ${metalPrice(t.price)}`;
           return `
             <div class="hc-txn-row" onclick="event.stopPropagation(); openMetalTxnModal('${escape(t.id)}')">
@@ -26924,7 +26941,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       try { const v = await readKey(s.tKey); const o = v ? JSON.parse(v) : []; txns = Array.isArray(o) ? o : []; } catch (e) { txns = []; }
       const cost = holdings.reduce((a, h) => a + holdingCost(h) * cfItemRate(s, h, fx), 0);
       const value = holdings.reduce((a, h) => a + holdingValue(h) * cfItemRate(s, h, fx), 0);
-      const div = txns.filter(t => t.type === 'dividend').reduce((a, t) => a + (Number(t.shares) || 0) * (Number(t.price) || 0) * cfItemRate(s, t, fx), 0);
+      const div = txns.filter(t => t.type === 'dividend').reduce((a, t) => a + divNet(t) * cfItemRate(s, t, fx), 0);
       // 基金模組裡的債券型／貨幣型要歸到「債券／現金」那一格，不能算成股票
       const bondish = s.key === 'fund'
         ? holdings.filter(h => typeof fundIsBondish === 'function' && fundIsBondish(h)).reduce((a, h) => a + holdingValue(h) * cfItemRate(s, h, fx), 0)
@@ -30164,7 +30181,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         // XIRR 要的是「真的進出口袋的錢」：賣出實拿 = 金額 − 手續費 − 證交稅。
         // 稅以前沒扣（實測一筆 390 元的稅讓 XIRR 高估 0.05 個百分點——不大，但錯就是錯）。
         const tax = Number(t.tax) || 0;
-        if (t.type === 'dividend') { divSum += amt * rate; flows.push({ date: t.date, amount: amt * rate }); }
+        if (t.type === 'dividend') { const net = divNet(t); divSum += net * rate; flows.push({ date: t.date, amount: net * rate }); }
         else if (t.type === 'buy') flows.push({ date: t.date, amount: -(amt + fee + tax) * rate });
         else if (t.type === 'sell') flows.push({ date: t.date, amount: (amt - fee - tax) * rate });
       });
