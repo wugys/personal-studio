@@ -9305,7 +9305,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.22 · ιι</div>
+    <div>v 16.23 · κκ</div>
   </footer>
 </div>
 
@@ -9825,11 +9825,18 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
   // 同步視窗一開就檢查。掛在 openModalOnTop 上 → 13 個同步視窗與**未來新增的**全部自動涵蓋，
   // 不必記得在每個 openXxxSyncModal() 各加一行（那種「記得加」的規矩一定會漏）。
+  // 「這是不是一個在設定 Supabase 的視窗」——**看畫面上有沒有那兩個欄位**，
+  // 不要用視窗 id 的命名規則去猜。v16.20 寫 /SyncModal$/，結果**剛好漏掉最重要的那一個**：
+  // 「雲端同步總管」（syncMasterModal，一次設定 13 個模組的金鑰）——
+  // 那正是使用者最可能把旅遊金鑰貼進理財模組的地方，卻是唯一不會警告的地方。
+  function looksLikeSyncModal(box) {
+    return !!(box.querySelector('input[id*="upabase"][id*="rl"], input[id$="Url"], input[id$="URL"]')
+           && box.querySelector('input[id*="upabase"][id*="ey"], input[id$="Key"]'));
+  }
   function refreshKeyClashNotice(id) {
     try {
-      if (!/SyncModal$/.test(id)) return;
       const box = document.getElementById(id) && document.getElementById(id).querySelector('.modal');
-      if (!box) return;
+      if (!box || !looksLikeSyncModal(box)) return;
       let el = box.querySelector('.key-clash-note');
       const html = keyClashHtml();
       if (!html) { if (el) el.remove(); return; }
