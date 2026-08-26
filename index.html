@@ -3441,6 +3441,7 @@
         <div style="display:flex; gap:6px;">
           <input type="text" id="quoteWorkerInput" class="form-input" placeholder="留空 = 沿用新聞來源的 Worker" style="flex:1;">
           <button class="btn btn-sm" id="quoteWorkerTestBtn" onclick="testQuoteWorker()">測試</button>
+          <button class="btn btn-sm" id="quoteHealthBtn" onclick="runSourceHealth()" title="讓 Worker 把每一個上游都真的打一次，看誰通誰不通">🩺 全部來源</button>
         </div>
         <div id="quoteWorkerHint" style="font-size:10.5px; color:var(--ink-tertiary); margin-top:6px; letter-spacing:0.05em;"></div>
       </div>
@@ -9304,7 +9305,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.20 · ηη</div>
+    <div>v 16.21 · θθ</div>
   </footer>
 </div>
 
@@ -18094,7 +18095,7 @@ CREATE POLICY "Allow all" ON mketf_transactions FOR ALL USING (true) WITH CHECK 
       <div class="stat-card">
         <div class="stat-label">現值</div>
         <div class="stat-value">${mkEtfMoney(totalValue)}</div>
-        <div class="stat-sub">${hasUsd ? 'USD/TWD ' + mkEtfFx().toFixed(2) : 'CURRENT · MARKET · VALUE'}</div>
+        <div class="stat-sub">${hasUsd ? fxStampLabel(mkEtfFx()) : 'CURRENT · MARKET · VALUE'}</div>
       </div>
       <div class="stat-card ${pnlClass}">
         <div class="stat-label">未實現損益</div>
@@ -20686,7 +20687,7 @@ CREATE POLICY "Allow all" ON bond_transactions FOR ALL USING (true) WITH CHECK (
       <div class="stat-card">
         <div class="stat-label">現值</div>
         <div class="stat-value">${bondMoney(totalValue)}</div>
-        <div class="stat-sub">${hasUsd ? 'USD/TWD ' + bondFx().toFixed(2) : 'CURRENT · MARKET · VALUE'}</div>
+        <div class="stat-sub">${hasUsd ? fxStampLabel(bondFx()) : 'CURRENT · MARKET · VALUE'}</div>
       </div>
       <div class="stat-card ${pnlClass}">
         <div class="stat-label">未實現損益</div>
@@ -22503,7 +22504,7 @@ CREATE POLICY "Allow all" ON fund_transactions FOR ALL USING (true) WITH CHECK (
       <div class="stat-card">
         <div class="stat-label">現值</div>
         <div class="stat-value">${fundMoney(totalValue)}</div>
-        <div class="stat-sub">${hasUsd ? 'USD/TWD ' + fundFx().toFixed(2) : 'CURRENT · NET · VALUE'}</div>
+        <div class="stat-sub">${hasUsd ? fxStampLabel(fundFx()) : 'CURRENT · NET · VALUE'}</div>
       </div>
       <div class="stat-card ${pnlClass}">
         <div class="stat-label">未實現損益</div>
@@ -23413,7 +23414,7 @@ CREATE POLICY "Allow all" ON metal_transactions FOR ALL USING (true) WITH CHECK 
       <div class="stat-card">
         <div class="stat-label">現值</div>
         <div class="stat-value">${metalMoney(totalValue)}</div>
-        <div class="stat-sub">${hasUsd ? 'USD/TWD ' + metalFx().toFixed(2) : 'CURRENT · MARKET · VALUE'}</div>
+        <div class="stat-sub">${hasUsd ? fxStampLabel(metalFx()) : 'CURRENT · MARKET · VALUE'}</div>
       </div>
       <div class="stat-card ${pnlClass}">
         <div class="stat-label">未實現損益</div>
@@ -25640,6 +25641,96 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     writeKey(CF_STORAGE.fx, JSON.stringify(cashflowFx));
     loadCashflow();
   }
+  // ===== 資料來源健檢（v16.21）=====
+  // ⚠ 為什麼要讓 Worker 去打、不在這裡自己打：**已經踩過兩次「本機通、機房不通」**
+  //   （Google News、櫃買 openapi 都擋 Cloudflare 機房 IP）。從你的瀏覽器測全部 200，
+  //   結論卻是錯的。真正在幫你抓資料的是 Worker，要問就要問它。
+  const SRC_HEALTH_STORAGE = 'studio_src_health_v1';
+  async function runSourceHealth() {
+    const typed = document.getElementById('quoteWorkerInput').value.trim();
+    const base = typed ? typed.replace(/\/+$/, '') : await quoteWorkerBase();
+    const box = document.getElementById('quoteWorkerResult');
+    const btn = document.getElementById('quoteHealthBtn');
+    const say = (color, html) => {
+      box.innerHTML = `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid ${color}; border-radius:4px; padding:10px 14px; font-size:12px; color:var(--ink-secondary); line-height:1.75;">${html}</div>`;
+    };
+    if (!base) { say('var(--accent-warm)', '還沒有可用的 Worker 網址，先照下面的教學部署一個。'); return; }
+    if (!/^https?:\/\//i.test(base)) { say('var(--danger)', 'URL 要以 <code>https://</code> 開頭。'); return; }
+
+    btn.disabled = true; btn.textContent = '檢查中…';
+    say('var(--ink-tertiary)', '正在讓 Worker 把每一個上游都打一次（約 5-15 秒）…');
+    try {
+      const resp = await fetch(base + '/health?json=1', { cache: 'no-store' });
+      let body = null;
+      try { body = await resp.json(); } catch (e) {}
+      if (resp.status === 400 && body && body.error === 'missing ?q=') {
+        say('var(--accent-warm)', '你的 Worker <strong>還是舊版</strong>，沒有健檢功能。<br>到 Cloudflare → Edit code → 全刪 → 貼上新版 <code>worker/news-rss.js</code> → Deploy。<strong>網址不用改。</strong>');
+        return;
+      }
+      if (!resp.ok || !body || !Array.isArray(body.checks)) {
+        say('var(--danger)', `Worker 回 HTTP ${resp.status}${body && body.error ? '：' + escape(String(body.error)) : ''}`);
+        return;
+      }
+      // 存起來，首頁健檢才講得出「上次檢查發現什麼」（不必每次開健檢都等 15 秒）
+      try { await writeKey(SRC_HEALTH_STORAGE, JSON.stringify({
+        at: Date.now(), ok: !!body.ok, broken: body.broken || [], degraded: body.degraded || []
+      })); } catch (e) {}
+
+      const rowHtml = (c) => {
+        const mark = c.ok ? (c.warn ? '<span style="color:var(--accent);">⚠</span>' : '<span style="color:#9aa06a;">✅</span>')
+                          : '<span style="color:var(--danger);">❌</span>';
+        return `<div style="display:flex; gap:8px; padding:4px 0; border-bottom:1px solid var(--line); align-items:baseline;">
+          <span style="flex-shrink:0;">${mark}</span>
+          <span style="flex-shrink:0; min-width:150px;">${escape(c.name)}</span>
+          <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); flex-shrink:0;">${c.ms}ms</span>
+          <span style="font-size:11px; color:var(--ink-tertiary);">${escape(c.detail)}</span>
+        </div>`;
+      };
+      const head = body.ok
+        ? '<strong style="color:#9aa06a;">✅ 全部正常</strong>——每一組來源都至少有一條路是通的。'
+        : `<strong style="color:var(--danger);">❌ 有問題：${escape((body.broken || []).join('、'))}</strong>`;
+      const deg = (body.degraded && body.degraded.length)
+        ? `<div style="margin-top:4px; color:var(--accent);">⚠ 靠備援撐著：${escape(body.degraded.join('、'))}<div style="font-size:10.5px; color:var(--ink-tertiary);">現在還有數字可以用，但主來源已經不通了。</div></div>`
+        : '';
+      say(body.ok ? 'var(--accent)' : 'var(--danger)',
+        head + deg +
+        `<div style="margin-top:8px;">${body.checks.map(rowHtml).join('')}</div>` +
+        `<div style="margin-top:8px; font-size:10.5px; color:var(--ink-tertiary);">每一列都是 Worker 剛剛真的打了一次的結果，沒有快取。有備援的那幾組（新聞四家、台股代號表三支）只要有一條通就算正常。<br>想看完整的一頁：<a href="${escape(base)}/health" target="_blank" rel="noopener" style="color:var(--accent);">${escape(base)}/health</a></div>`);
+    } catch (e) {
+      say('var(--danger)', '連不到這個網址：' + escape(String(e && e.message || e)));
+    } finally {
+      btn.disabled = false; btn.textContent = '🩺 全部來源';
+    }
+  }
+
+  // 匯率標籤：只寫數字看不出「這是今天抓的」還是「從沒更新過的預設值 32」。
+  // 現金流頁（cfFxLabel 的原始寫法）與健檢都有講，但四個資產模組的小卡一直沒有。
+  // ⚠ 從沒更新過時要明講「預設值」——那是硬掰出來的數字，不是事實（v16.11 的教訓）。
+  function fxStampLabel(rate) {
+    const r = Number(rate) || 0;
+    const base = 'USD/TWD ' + r.toFixed(2);
+    try {
+      if (!cashflowFx.updatedAt) return base + ' · 預設值';
+      const d = new Date(cashflowFx.updatedAt);
+      const mmdd = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+      return base + ' · ' + mmdd + (cashflowFx.manual ? ' 手動' : '');
+    } catch (e) { return base; }
+  }
+
+  // 資產配置那一頁的「總資產」會**加上**手動填的現金／債券／不動產／其他，這一頁不會。
+  // 兩個數字並排（其實是兩頁）而沒有人解釋差在哪，就是使用者以為算錯的原因。
+  // ⚠ 只有真的填過（合計 > 0）才講；沒填過的人看到這句只會困惑。
+  function cfManualNote() {
+    try {
+      const raw = localStorage.getItem(ALLOC_STORAGE);
+      const o = raw ? JSON.parse(raw) : null;
+      if (!o || typeof o !== 'object' || Array.isArray(o)) return 'TOTAL · NET · WORTH';
+      const sum = ['cash', 'bond', 'realEstate', 'otherAlt'].reduce((a, k) => a + (Number(o[k]) || 0), 0);
+      if (!(sum > 0)) return 'TOTAL · NET · WORTH';
+      return '不含資產配置手動填的 ' + cfMoney(sum);
+    } catch (e) { return 'TOTAL · NET · WORTH'; }
+  }
+
   // ===== 一鍵更新全部現價 =====
   // 整個系統（儀表板／資產配置／挑戰目標／下單計畫看守）都吃 holding.currentPrice，
   // 但除了美股以外全都要手動輸入。資料一舊，所有數字與提醒就跟著失準。
@@ -27505,6 +27596,33 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           '做法：到 Supabase <strong>另開一個專案</strong>給理財模組用，把同步設定裡的網址與金鑰換掉，再按一次「建立資料表」。旅遊那邊不用動。<br>' +
           '⚠ 如果你從來沒把旅遊連結發給任何人，這條可以忽略。',
           'twStockView', hits.length);
+      }
+    } catch (e) {}
+
+    // 15) 上次「🩺 全部來源」檢查發現的問題（不在這裡重打，那要 5-15 秒）
+    //     ⚠ 沒按過就完全不提——叫人去按一個他不知道用途的按鈕只是雜訊。
+    //     ⚠ 太舊的結果也要講清楚是多久以前的，不要讓人以為是現在的狀況（v15.9 的教訓）。
+    try {
+      const sh = await readJson(SRC_HEALTH_STORAGE, null);
+      if (sh && sh.at) {
+        const days = Math.floor((Date.now() - sh.at) / 86400000);
+        const when = days === 0 ? '今天' : days + ' 天前';
+        if (Array.isArray(sh.broken) && sh.broken.length) {
+          add('bad', `資料來源有問題：${escape(sh.broken.join('、'))}`,
+            `這是<strong>${when}</strong>按「🩺 全部來源」時的結果。這幾組來源當時完全連不上，` +
+            `受影響的功能會抓不到資料（新聞／報價／查股）。<br>` +
+            `到現金流儀表板按「⚙ 即時報價」→「🩺 全部來源」再測一次，看是不是已經恢復了。`,
+            'cashflowView', sh.broken.length);
+        } else if (Array.isArray(sh.degraded) && sh.degraded.length) {
+          add('warn', `${escape(sh.degraded.join('、'))}正在靠備援撐著`,
+            `這是<strong>${when}</strong>檢查的結果。現在還有數字可以用，但<strong>主來源已經不通</strong>——` +
+            `備援哪天也掛就會整個沒有。<br>到「⚙ 即時報價」→「🩺 全部來源」可以再測一次。`,
+            'cashflowView', sh.degraded.length);
+        } else if (days >= 30) {
+          add('info', `資料來源已經 ${days} 天沒檢查過`,
+            '上次檢查時全部正常。免費來源沒有任何保證，偶爾按一下「⚙ 即時報價」→「🩺 全部來源」比較安心。',
+            'cashflowView');
+        }
       }
     } catch (e) {}
 
@@ -29950,7 +30068,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const pnlClass = totalPnl > 0 ? 'profit' : totalPnl < 0 ? 'loss' : 'flat';
     const statsEl = document.getElementById('cfStats');
     if (statsEl) statsEl.innerHTML = `
-      <div class="stat-card"><div class="stat-label">總資產</div><div class="stat-value">${cfMoney(totalValue)}</div><div class="stat-sub">TOTAL · NET · WORTH</div></div>
+      <div class="stat-card"><div class="stat-label">總資產</div><div class="stat-value">${cfMoney(totalValue)}</div><div class="stat-sub">${cfManualNote()}</div></div>
       <div class="stat-card"><div class="stat-label">總投入</div><div class="stat-value">${cfMoney(totalCost)}</div><div class="stat-sub">${totalCount} 檔標的</div></div>
       <div class="stat-card ${pnlClass}"><div class="stat-label">未實現損益</div><div class="stat-value">${cfMoneySign(totalPnl)}</div><div class="stat-pct">${totalPnlPct >= 0 ? '+' : ''}${totalPnlPct.toFixed(2)}%</div></div>
       <div class="stat-card ${totalDiv < 0 ? 'loss' : 'profit'}"><div class="stat-label">累計現金收入</div><div class="stat-value">${cfMoney(totalDiv)}</div><div class="stat-sub">配息 + 租金 − 房產支出</div></div>`;
