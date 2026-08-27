@@ -7984,11 +7984,11 @@
       <div class="checklist-section">
         <h3><span class="num">05</span>設定提醒</h3>
         <div class="setting-row">
-          <div class="setting-label">瀏覽器通知<small>集合前 30 分鐘與 5 分鐘提醒</small></div>
+          <div class="setting-label">瀏覽器通知<small id="gatherWarnNote">集合前 30 分鐘與 5 分鐘提醒</small></div>
           <div class="switch" id="notifySwitch" onclick="toggleNotify()"></div>
         </div>
         <div class="setting-row">
-          <div class="setting-label">5 分鐘倒數彈窗<small>強制全螢幕提醒</small></div>
+          <div class="setting-label"><span id="gatherPopupLabel">5 分鐘倒數彈窗</span><small>強制全螢幕提醒</small></div>
           <div class="switch on" id="popupSwitch" onclick="togglePopup()"></div>
         </div>
         <div class="setting-row">
@@ -8993,7 +8993,8 @@ alter publication supabase_realtime add table party_locations;</pre>
       <h2>整團 <em>順延</em></h2>
       <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.9; margin-bottom:16px;">
         車晚了、景點排隊超時、有人走散——按下去之後，<strong>今天剩下的行程時間全部往後推</strong>。<br>
-        原本的行程資料不會被改掉，隨時可以歸零。
+        原本的行程資料不會被改掉，隨時可以歸零。<br>
+        <span style="color:var(--ink-tertiary);">⚠ 只動今天的行程時間。<strong>你在「⏰ 集合」自己設的集合時間不會跟著移動</strong>，要另外改。</span>
       </div>
       <div class="form-group">
         <label class="form-label">延後幾分鐘</label>
@@ -9306,7 +9307,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.31 · σσ</div>
+    <div>v 16.32 · ττ</div>
   </footer>
 </div>
 
@@ -32158,16 +32159,23 @@ ${baseSchema}
     if (!box || !d) return;
     const mins = Number(document.getElementById('delayMinutes').value) || 0;
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-    const rest = d.spots.filter(s => {
+    // ⚠ 這裡原本寫 `'今天剩下 ' + d.spots.length + ' 項'`——**那是今天「全部」的項數，不是剩下的**。
+    //   今天 8 項、只剩 3 項還沒到時，畫面會說「今天剩下 8 項」；而且後面的「…」是拿
+    //   `d.spots.length > rest.length` 判斷，**三項全部列完了照樣印一個「…」**，暗示還有沒列出來的。
+    //   車晚了、全團在等的時候看的就是這一格，數字不能亂講。
+    const restAll = d.spots.filter(s => {
       const base = trvTimeToMin(s.time);
       return base != null && base + trvDelayOf(d.date) >= nowMin;
-    }).slice(0, 5);
+    });
+    const rest = restAll.slice(0, 5);
     if (!rest.length) { box.innerHTML = '今天剩下的行程已經跑完了，順延不會影響任何一項。'; return; }
-    box.innerHTML = '今天剩下 ' + d.spots.length + ' 項中的這幾項會變成：<br>' + rest.map(s => {
+    const more = restAll.length - rest.length;
+    box.innerHTML = '今天還沒到的 ' + restAll.length + ' 項' +
+      (more > 0 ? '（先列前 ' + rest.length + ' 項）' : '') + '會變成：<br>' + rest.map(s => {
       const base = trvTimeToMin(s.time);
       return escape(trvMinToTime(base + trvDelayOf(d.date))) + ' → <strong style="color:var(--accent);">' +
         escape(trvMinToTime(base + mins)) + '</strong> · ' + escape(s.name);
-    }).join('<br>') + (d.spots.length > rest.length ? '<br>…' : '');
+    }).join('<br>') + (more > 0 ? '<br>…還有 ' + more + ' 項' : '');
   }
   async function applyDelay() {
     const d = trvTodayDay();
@@ -32967,7 +32975,7 @@ ${baseSchema}
     return {
       stale: false,
       txt: h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`,
-      urgent: diff <= (Number(trvGather.warn2) || 5) * 60000
+      urgent: diff <= gatherWarnMins().warn2 * 60000
     };
   }
   // ⚠ 每秒重畫整個畫面會把使用者正在點的按鈕抽掉（點名一格一格點的時候最明顯）。
@@ -36019,7 +36027,32 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       : n === 0 ? '今天' : n === -1 ? '昨天' : n < 0 ? (-n) + ' 天前' : n === 1 ? '明天' : n + ' 天後';
     return `${day} ${trvGather.time}`;
   }
+  // 「集合前幾分鐘提醒」是使用者自己選的（5/10/15/30/60 與 3/5/10），
+  // ⚠ 但「設定提醒」那兩行文字**寫死 30 與 5**——他選了 60 分鐘，畫面照樣說 30 分鐘，
+  //   而真正的鬧鐘是照他選的跑（tickGather 讀 trvGather.warn/warn2）。
+  //   於是畫面說的跟實際會發生的事對不起來：他要嘛以為沒存到，要嘛照 30 分鐘去安排。
+  // ⚠ 一定要在下面那個 `if (!trvGather) return` **之前**呼叫——早退守衛會讓它整段跑不到（v10.0 的教訓）。
+  const GATHER_WARN_DEFAULT = 30, GATHER_WARN2_DEFAULT = 5;
+  function gatherWarnMins() {
+    const g = (trvGather && typeof trvGather === 'object') ? trvGather : null;
+    const w1 = Number(g && g.warn), w2 = Number(g && g.warn2);
+    return {
+      warn: w1 > 0 ? w1 : GATHER_WARN_DEFAULT,
+      warn2: w2 > 0 ? w2 : GATHER_WARN2_DEFAULT,
+      // 還沒設過集合，講的就是「預設值」，不要講得像已經替他設好了
+      isDefault: !(g && (w1 > 0 || w2 > 0))
+    };
+  }
+  function renderGatherWarnLabels() {
+    const m = gatherWarnMins();
+    const note = document.getElementById('gatherWarnNote');
+    if (note) note.textContent = `集合前 ${m.warn} 分鐘與 ${m.warn2} 分鐘提醒` +
+      (m.isDefault ? '（預設值，設定集合時間時可改）' : '');
+    const pop = document.getElementById('gatherPopupLabel');
+    if (pop) pop.textContent = `${m.warn2} 分鐘倒數彈窗`;
+  }
   function renderGather() {
+    renderGatherWarnLabels();
     const card = document.getElementById('gatherCard');
     const photoDisplay = document.getElementById('gatherPhotoDisplay');
     const navBtn = document.getElementById('gatherNavBtn');
@@ -36068,22 +36101,26 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const s = Math.floor((diff % 60000) / 1000);
     countdownEl.textContent = h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
     const minLeft = diff / 60000;
-    card.classList.toggle('urgent', minLeft <= (trvGather.warn2 || 5));
+    // ⚠ 同一組分鐘數，畫面上的說明與真正會響的鬧鐘**只准算一份**（gatherWarnMins）。
+    //   原本這裡三個地方寫 `trvGather.warn2 || 5`、兩個地方寫**沒有預設值的** `trvGather.warn`／`warn2`——
+    //   匯入或舊資料沒有這兩個欄位時，`minLeft <= undefined` 恆為 false，**第一次提醒就安靜地永遠不會響**。
+    const wm = gatherWarnMins();
+    card.classList.toggle('urgent', minLeft <= wm.warn2);
     // 第一次提醒
-    if (!trvGather.warned1 && minLeft <= trvGather.warn) {
+    if (!trvGather.warned1 && minLeft <= wm.warn) {
       trvGather.warned1 = true;
       saveTravelKey(TRAVEL_STORAGE.gather, trvGather);
-      notifyGather(`還有 ${trvGather.warn} 分鐘集合`, trvGather.desc);
+      notifyGather(`還有 ${wm.warn} 分鐘集合`, trvGather.desc);
     }
     // 第二次提醒 + 強制彈窗
-    if (!trvGather.warned2 && minLeft <= trvGather.warn2) {
+    if (!trvGather.warned2 && minLeft <= wm.warn2) {
       trvGather.warned2 = true;
       saveTravelKey(TRAVEL_STORAGE.gather, trvGather);
-      notifyGather(`⚠ 剩 ${trvGather.warn2} 分鐘！`, trvGather.desc);
+      notifyGather(`⚠ 剩 ${wm.warn2} 分鐘！`, trvGather.desc);
       if (trvSettings.popup) showGatherPopup();
     }
-    // 5 分鐘倒數彈窗持續更新
-    if (trvSettings.popup && minLeft <= (trvGather.warn2 || 5) && minLeft > 0 && trvShownGatherPopup) {
+    // 倒數彈窗持續更新（門檻同樣吃 warn2，不要再寫死 5）
+    if (trvSettings.popup && minLeft <= wm.warn2 && minLeft > 0 && trvShownGatherPopup) {
       document.getElementById('gatherPopupTime').textContent = countdownEl.textContent;
     }
   }
@@ -36097,6 +36134,11 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function showGatherPopup() {
     if (!trvSettings.popup || trvShownGatherPopup) return;
     trvShownGatherPopup = true;
+    // HTML 裡的預設值是寫死的 5:00——設 10 分鐘的人第一眼會看到錯的數字，先用真正的倒數蓋掉
+    try {
+      const now = document.getElementById('gatherCountdown');
+      if (now && now.textContent) document.getElementById('gatherPopupTime').textContent = now.textContent;
+    } catch (e) {}
     document.getElementById('gatherPopupTarget').textContent = trvGather.desc;
     document.getElementById('gatherPopup').classList.add('active');
   }
@@ -36197,7 +36239,22 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     showToast('已加入清單');
   }
   async function resetChecklist() {
-    if (!confirm('重置清單為預設項目？你新增的自訂項目也會刪除。')) return;
+    // ⚠ 原本的確認只講「你新增的自訂項目也會刪除」——**沒講已經打勾的會全部歸零**。
+    //   出發前正在打包的人，最不想弄丟的就是那些勾（這趟 32 項，勾到一半按下去就全沒了），
+    //   而那顆按鈕就排在「+ 新增項目」旁邊。把真正會失去的東西、連數量一起講出來。
+    const list = Array.isArray(trvChecklist) ? trvChecklist : [];
+    const done = list.filter(x => x && x.done).length;
+    const custom = list.filter(x => x && !x.builtin).length;
+    const NL = String.fromCharCode(10);
+    const lose = [
+      done ? `· 已經打勾的 ${done} 項會全部歸零` : '',
+      custom ? `· 你新增的 ${custom} 個自訂項目會被刪除` : ''
+    ].filter(Boolean);
+    const msg = '重置清單為預設項目？' + NL + NL +
+      (lose.length
+        ? lose.join(NL) + NL + NL + '這個動作無法復原。'
+        : '目前沒有打勾、也沒有自訂項目，重置只是換成這趟目的地的預設清單。');
+    if (!confirm(msg)) return;
     trvChecklist = defaultChecklistFor();
     await saveTravelKey(TRAVEL_STORAGE.checklist, trvChecklist);
     renderChecklist();
