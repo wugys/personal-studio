@@ -8055,7 +8055,7 @@
       <div class="ai-disclaimer">
         ⚐ AI 管家以本團行程為基底協助你：物價比對、飯店設施、應對突發、文化禮節、行李整理建議。資訊僅供參考。<br>
         <span style="opacity:0.85;">送出問題時會一併帶上<strong>行程</strong>與團員檔案裡的<strong>姓名、飲食禁忌、身體狀況</strong>（這樣才推薦得準）。
-        電話、護照效期、緊急聯絡人<strong>不會送出</strong>。</span>
+        電話、證件效期、緊急聯絡人<strong>不會送出</strong>。</span>
       </div>
       <div class="butler-card">
         <div class="form-group" style="margin-bottom:12px;">
@@ -9306,7 +9306,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.30 · ρρ</div>
+    <div>v 16.31 · σσ</div>
   </footer>
 </div>
 
@@ -31894,6 +31894,16 @@ ${baseSchema}
       hcMap.textContent = withGps === 0 ? '這趟沒填座標'
         : (withGps === hsSpots ? `${withGps} 個點 · 都有座標` : `${withGps} / ${hsSpots} 個點有座標`);
     }
+    // 🆘 狀況：八張首頁卡裡**唯一從來沒有人更新過的一張**——寫死「走失 · 護照 · 送醫 · 班機 · 失竊」。
+    // ⚠ v16.8 修的是地圖卡那句寫死的假話，這一張當時漏掉（「修好這一個、沒問還有誰」，連續第四次）。
+    //   實際上情境卡是**動態生成**的：這趟會上到 3,550m 所以多一張「高原反應」，首頁卻不算它；
+    //   而大陸團看的是台胞證，「護照」兩個字也不對。改成直接從 sosScenarios() 生成，以後加卡片自動跟上。
+    const hcSos = document.getElementById('hc-sos');
+    if (hcSos) {
+      let names = [];
+      try { names = sosScenarios().map(x => x.short || x.title).filter(Boolean); } catch (e) { names = []; }
+      hcSos.textContent = names.length ? names.join(' · ') : '緊急聯絡與應對步驟';
+    }
     // 同團（V4 多人）
     const hcMulti = document.getElementById('hc-multi');
     if (hcMulti) {
@@ -32312,6 +32322,11 @@ ${baseSchema}
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const first = ITINERARY.days[0], last = ITINERARY.days[ITINERARY.days.length - 1];
+    // 班機提醒本來一律寫「護照」——但大陸團真正離不開的那本是台胞證（出境要用它），
+    // 護照只是轉機／備用。兩本都要帶，所以兩本都要講。名稱一樣只從 tripDocKind() 拿。
+    const docWord = (() => {
+      try { const d = tripDocKind(); return d.name === '護照' ? '護照' : d.name + '、護照'; } catch (e) { return '護照'; }
+    })();
     const dToday = trvDayByDate(today);
     const dTmr = trvDayByDate(trvDateOffset(1));
     const flightOf = d => (d && Array.isArray(d.spots)) ? d.spots.find(s => s.type === '航班') : null;
@@ -32379,7 +32394,7 @@ ${baseSchema}
       }
       else if (Array.isArray(trvChecklist) && trvChecklist.length) add('☑', '行前清單<strong>全部打勾了</strong>。', 'good');
       const f = flightOf(first);
-      if (f) add('✈', `第一天 ${escape(f.time)} 的班機（${escape(f.name)}）。護照與電子機票<strong>先截圖存離線</strong>，機場沒網路也看得到。`);
+      if (f) add('✈', `第一天 ${escape(f.time)} 的班機（${escape(f.name)}）。${docWord}與電子機票<strong>先截圖存離線</strong>，機場沒網路也看得到。`);
       // 緊急電話只在快出發時提一次——出事的當下沒有時間查，但太早講也只是雜訊
       if (toStart <= 7) {
         try {
@@ -32405,7 +32420,7 @@ ${baseSchema}
       // --- 白天：今天要注意什麼 ---
       if (lastMin != null) add('📅', `今天共 <strong>${dToday.spots.length} 站</strong>，最後一項 ${escape(trvMinToTime(lastMin))}。`);
       const f = flightOf(dToday);
-      if (f) add('✈', `<strong>今天有班機</strong> ${escape(f.name)} ${escape(trvSpotTimeText(dToday.date, f.time))}。護照放手邊，提早到機場。`, 'warn');
+      if (f) add('✈', `<strong>今天有班機</strong> ${escape(f.name)} ${escape(trvSpotTimeText(dToday.date, f.time))}。${docWord}放手邊，提早到機場。`, 'warn');
       const todayAlt = dayAlt(dToday);
       if (todayAlt.max != null && altLevel(todayAlt.max) > 0) {
         add('⛰', `今天最高會到 <strong>${altText(todayAlt.max)}</strong>（${escape(todayAlt.maxName)}）。` +
@@ -32474,7 +32489,7 @@ ${baseSchema}
     // 那時候行李都掛完了）。掛在班機那一行上，不另外佔一個名額——管家只顯示前 5 項。
     const homePrep = (dTmr.date === last.date)
       ? '<strong>明天是最後一天</strong>：伴手禮、退稅單和收據今晚先收好，<strong>別放進託運行李</strong>。' : '';
-    if (tf) add('✈', `明天有班機 ${escape(tf.name)} ${escape(trvSpotTimeText(dTmr.date, tf.time))}，護照與登機證先準備好。${homePrep}`, 'warn');
+    if (tf) add('✈', `明天有班機 ${escape(tf.name)} ${escape(trvSpotTimeText(dTmr.date, tf.time))}，${docWord}與登機證先準備好。${homePrep}`, 'warn');
     else if (homePrep) add('🏠', homePrep, 'warn');
     const tsp = spotsOf(dTmr);
     if (tsp.length >= 4) add('👟', `明天要走 <strong>${tsp.length} 個景點</strong>，鞋子和行動電源今晚先備好。`);
@@ -32807,6 +32822,11 @@ ${baseSchema}
     const el = document.getElementById('rosterProfiles');
     if (!el) return;
     const r = trvRosterNorm();
+    // ⚠ 證件名稱只准有一個來源（tripDocKind）。表單標籤、首頁提醒、列印那張紙早就是動態的了，
+    //   **只有這張卡片與「複製緊急聯絡表」還寫死「護照」**——使用者在表單填的是「台胞證效期到」，
+    //   卡片卻把那個日期標成「護照」，複製出去給領隊的那張表也寫「護照效期：2026-10-01」。
+    //   台胞證與護照是兩本不同的證件、效期也不同，標錯等於告訴他「護照已經檢查過了」。
+    const dk = (() => { try { return tripDocKind(); } catch (e) { return { name: '護照', sixMonth: true, hint: '' }; } })();
     const tools = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:14px;">
         <button class="btn btn-sm" data-tap onclick="openRosterModal()">＋ 加人</button>
         ${r.people.length ? `<button class="btn btn-sm" data-tap onclick="copySpecialNeeds()">📋 複製特殊需求</button>
@@ -32815,7 +32835,7 @@ ${baseSchema}
     if (!r.people.length) {
       el.innerHTML = `<div class="prof-empty">
           <div style="font-family:var(--serif); font-size:16px; color:var(--ink-secondary); margin-bottom:6px;">還沒有團員檔案</div>
-          在上面「＋ 加人」把人加進來，就可以記<strong>飲食禁忌、身體狀況、緊急聯絡人、護照效期</strong>。<br>
+          在上面「＋ 加人」把人加進來，就可以記<strong>飲食禁忌、身體狀況、緊急聯絡人、${escape(dk.name)}效期</strong>。<br>
           這些是出事的當下要立刻講得出來的東西。
         </div>` + tools;
       return;
@@ -32828,7 +32848,7 @@ ${baseSchema}
       `<span class="prof-sum-item"><strong>${r.people.length}</strong> 位團員</span>`,
       diet.length ? `<span class="prof-sum-item"><strong>${diet.length}</strong> 位有飲食禁忌</span>` : '',
       health.length ? `<span class="prof-sum-item warn"><strong>${health.length}</strong> 位身體要注意</span>` : '',
-      ppIssue.length ? `<span class="prof-sum-item warn"><strong>${ppIssue.length}</strong> 位護照效期不夠</span>` : '',
+      ppIssue.length ? `<span class="prof-sum-item warn"><strong>${ppIssue.length}</strong> 位${escape(dk.name)}效期不夠</span>` : '',
       noEc.length ? `<span class="prof-sum-item"><strong>${noEc.length}</strong> 位沒留緊急聯絡人</span>` : ''
     ].filter(Boolean).join('');
 
@@ -32849,12 +32869,17 @@ ${baseSchema}
           ${row('緊急', (p.ecName || p.ecPhone)
               ? `${escape(p.ecName || '')}${p.ecPhone ? ` <a href="tel:${escape(p.ecPhone)}" data-tap>${escape(p.ecPhone)} 📞</a>` : ''}`
               : '')}
-          ${row('護照', ps ? escape(ps.text) : '', ps ? (ps.level === 'bad' ? 'bad' : ps.level === 'warn' ? 'warn' : '') : '')}
+          ${row(escape(dk.name), ps ? escape(ps.text) : '', ps ? (ps.level === 'bad' ? 'bad' : ps.level === 'warn' ? 'warn' : '') : '')}
           ${row('備註', escape(p.note || ''))}
         </div>
       </div>`;
     }).join('') + tools +
-      `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); margin-top:10px;">護照效期是拿「回國那天」算的，不是今天 · 這些資料只存在這台裝置上</div>`;
+      `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); margin-top:10px;">` +
+      `${escape(dk.name)}效期是拿「回國那天」算的，不是今天` +
+      // 大陸團看的是台胞證，那護照效期就**完全沒有人在看**——不講的話，這張卡片等於在暗示「護照查過了」。
+      // ⚠ 只講事實、不亮紅燈（會誤報的保護比沒保護糟）。
+      (dk.name !== '護照' ? ` · 這裡只檢查${escape(dk.name)}，護照效期沒有記錄——出發前自己看一次` : '') +
+      ` · 這些資料只存在這台裝置上</div>`;
   }
 
   function copySpecialNeeds() {
@@ -32871,13 +32896,16 @@ ${baseSchema}
   function copyEmergencyList() {
     const r = trvRosterNorm();
     if (!r.people.length) { showToast('還沒有團員名單'); return; }
+    // ⚠ 這張表會被複製出去貼 LINE 群／交給領隊。把台胞證的日期標成「護照效期」，
+    //   收到的人會以為護照查過了——**離開 App 的文字更不能標錯**。
+    const dkName = (() => { try { return tripDocKind().name; } catch (e) { return '護照'; } })();
     const txt = [`【緊急聯絡表】${(ITINERARY && ITINERARY.title) || '本團'} · 共 ${r.people.length} 位`, '',
       ...r.people.map((p, i) => [
         `${i + 1}. ${p.name}${p.room ? '（' + p.room + ' 房）' : ''}`,
         p.phone ? `   本人：${p.phone}` : '',
         (p.ecName || p.ecPhone) ? `   緊急聯絡：${p.ecName || ''}${p.ecPhone ? ' ' + p.ecPhone : ''}` : '   緊急聯絡：（未填）',
         (p.health || '').trim() ? `   身體：${String(p.health).replace(/\n/g, '；')}` : '',
-        p.passport ? `   護照效期：${p.passport}` : ''
+        p.passport ? `   ${dkName}效期：${p.passport}` : ''
       ].filter(Boolean).join('\n'))].join('\n\n');
     trvCopy(txt, '已複製緊急聯絡表');
   }
@@ -33503,6 +33531,12 @@ ${baseSchema}
     const hotelPlanLine = (hotelNow.inTrip && hotelNow.hasPlan && !hotelNow.same)
       ? `今晚行程表上是 <strong>${escape(hotelNow.plan)}</strong>。` : '';
     const mofa = tel(SOS_MOFA.paid, `外交部急難救助 ${SOS_MOFA.paid}`);
+    // 去哪裡就看哪一本證件——名稱只從 tripDocKind() 拿一份（表單標籤、團員檔案、列印那張紙都吃同一支）
+    const isCN = !!(co && co.code === 'CN');
+    const docName = (() => { try { return tripDocKind().name; } catch (e) { return '護照'; } })();
+    // ⚠ 標題只算一份——「財物被偷」那張卡會叫人「跳到上面的『◯◯遺失』」，
+    //   兩邊各寫一次的話，標題一改那句話就指到一張不存在的卡。
+    const docLostTitle = isCN ? '證件遺失（台胞證 · 護照）' : `${docName}遺失`;
     // 團員檔案帶得出來的東西
     const withHealth = r.people.filter(p => (p.health || '').trim());
     const withEc = r.people.filter(p => (p.ecPhone || '').trim());
@@ -33510,7 +33544,7 @@ ${baseSchema}
 
     return [
       {
-        id: 'lost', icon: '🔍', title: '團員走失', sub: '人不見了 · 聯絡不上',
+        id: 'lost', icon: '🔍', title: '團員走失', sub: '人不見了 · 聯絡不上', short: '走失',
         steps: [
           '先問同行的人：<strong>最後一次看到他是幾點、在哪一個位置</strong>。這句話決定要往哪裡找。',
           `打他的手機。沒接就<strong>每 5 分鐘再打一次</strong>——他可能在吵雜的地方沒聽到。名單上的電話在「集合 → 團員檔案」，可以直接點撥。`,
@@ -33529,23 +33563,35 @@ ${baseSchema}
         ]
       },
       {
-        id: 'passport', icon: '🛂', title: '護照遺失', sub: '沒有它就回不了家',
+        // ⚠ 這張卡本來從頭到尾只講「護照」，而且第 5 步寫「請**館處**核發入國證明書」——
+        //   但同一頁最上面那段自己就寫著「台灣在大陸沒有駐外館處」（v16.0 為此才自動帶海基會）。
+        //   **同一個畫面上兩句話互相打架**，而這是出事當下照著做的步驟。又是「一半修對了」：
+        //   v16.0 把電話換成海基會，卡片裡的步驟一個字都沒跟著改。
+        //   而且大陸團真正回不了家的那本是**台胞證**（出境要用它），這張卡從來沒提過它。
+        //   ⚠ 照這一區自己訂的規矩：只寫「不管在哪個國家都成立」的步驟，
+        //     不編當地補辦流程（我不知道的細節就交給海基會講，不要硬掰）。
+        id: 'passport', icon: '🛂',
+        title: docLostTitle, short: isCN ? '證件' : docName,
+        sub: '沒有它就回不了家',
         steps: [
           '先確認真的不見了：<strong>行李夾層、飯店保險箱、昨天穿的外套</strong>。八成在其中之一。',
           `去當地警察局報案（${police}），<strong>一定要拿到「報案證明」</strong>。沒有這張紙，後面每一步都辦不了。`,
           `打 ${embassy}；聯絡不上就打 ${mofa}。`,
-          '準備：<strong>2 吋照片 2 張、報案證明、身分證明</strong>（護照影本、身分證或健保卡都可以）。',
-          '請館處核發<strong>「入國證明書」</strong>（只能回台灣用，最快）或補發護照（要比較久）。',
+          `準備：<strong>2 吋照片 2 張、報案證明、身分證明</strong>（${docName}影本、身分證或健保卡都可以）。`,
+          isCN
+            ? `台灣在大陸<strong>沒有館處，開不出「入國證明書」</strong>——照 ${embassy} 告訴你的方式辦，不要自己跑錯單位。`
+            : '請館處核發<strong>「入國證明書」</strong>（只能回台灣用，最快）或補發護照（要比較久）。',
+          ...(isCN ? [`<strong>台胞證不見了就出不了境</strong>——回程要用它，補辦流程跟護照不一樣，兩本都要跟海基會講清楚是哪一本不見了。`] : []),
           `通知 ${guide} 和航空公司——可能要改班機，越早講選擇越多。`
         ],
         tips: [
-          { t: `<strong>現在就先做</strong>：把護照資料頁拍照存在手機，再多印一份紙本放行李箱。有影本，補辦時間可以少一半。` },
+          { t: `<strong>現在就先做</strong>：把${isCN ? '<strong>台胞證與護照</strong>的資料頁都' : `${docName}資料頁`}拍照存在手機，再多印一份紙本放行李箱。有影本，補辦時間可以少一半。` },
           { t: `信用卡、機票、保單也一起拍。<strong>存離線相簿，不要只放在需要網路才打得開的地方。</strong>` }
         ]
       },
       // ⚠ 只有這趟真的會上到高處才出現。平地團看到這張卡只是雜訊。
       ...((tripMaxAlt() || 0) >= ALT_WATCH ? [{
-        id: 'altitude', icon: '⛰', title: '高原反應', sub: '頭痛 · 想吐 · 喘不過氣',
+        id: 'altitude', icon: '⛰', title: '高原反應', sub: '頭痛 · 想吐 · 喘不過氣', short: '高原',
         steps: [
           '先確認是不是：上到高處<strong>幾小時到一天內開始頭痛</strong>，再加上頭暈、想吐、沒胃口、睡不著、比平常喘——這幾樣一起來，多半就是。',
           '<strong>立刻停下來休息，不要再往上走。</strong>大部分人休息之後會自己好。',
@@ -33563,7 +33609,7 @@ ${baseSchema}
         ]
       }] : []),
       {
-        id: 'medical', icon: '🚑', title: '生病 · 受傷 · 送醫', sub: '有人不舒服',
+        id: 'medical', icon: '🚑', title: '生病 · 受傷 · 送醫', sub: '有人不舒服', short: '送醫',
         steps: [
           '先看三件事：<strong>叫得醒嗎、有沒有在呼吸、有沒有大量出血</strong>。任何一項不對，不要猶豫，直接叫救護車。',
           `叫救護車：${amb}。`,
@@ -33579,7 +33625,7 @@ ${baseSchema}
         ]
       },
       {
-        id: 'flight', icon: '✈', title: '班機延誤 · 取消', sub: '飛機飛不了',
+        id: 'flight', icon: '✈', title: '班機延誤 · 取消', sub: '飛機飛不了', short: '班機',
         steps: [
           '去櫃檯拿<strong>書面的延誤／取消證明</strong>。這張是理賠唯一的依據，離開機場就拿不到了。',
           '問航空公司三件事：<strong>改簽哪一班、餐食誰付、住宿誰付</strong>。有些會直接給，不問就沒有。',
@@ -33594,13 +33640,13 @@ ${baseSchema}
         ]
       },
       {
-        id: 'theft', icon: '🕵', title: '財物被偷 · 被搶', sub: '東西不見了',
+        id: 'theft', icon: '🕵', title: '財物被偷 · 被搶', sub: '東西不見了', short: '失竊',
         steps: [
           '<strong>人先安全。不要追。</strong>錢包可以再賺，人不行。',
           '立刻<strong>掛失信用卡</strong>。打卡片背面的號碼，或台灣發卡銀行的 24 小時客服（用網路電話也可以打）。',
           `報警（${police}），拿<strong>報案證明</strong>。理賠和補辦證件都要這張。`,
           '手機被偷 → 用另一支手機<strong>遠端鎖定與清除</strong>，再打電信公司掛失門號。',
-          `護照也一起不見了 → 跳到上面的「護照遺失」，並通知 ${embassy}。`,
+          `${isCN ? '台胞證或護照' : docName}也一起不見了 → 跳到上面的「${docLostTitle}」，並通知 ${embassy}。`,
           `通知 ${guide}，並打 ${insurer} 問賠不賠。`,
           '把損失清單寫下來：<strong>什麼東西、大概多少錢、什麼時候在哪裡不見的</strong>。'
         ],
