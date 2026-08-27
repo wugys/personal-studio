@@ -7820,7 +7820,7 @@
       <div class="travel-hero-eyebrow" id="travelHeroEyebrow">TRAVEL · CONCIERGE</div>
       <h1 id="travelHeroTitle">—</h1>
       <div class="travel-hero-meta" id="travelHeroMeta">
-        <div><strong id="trvDDay">—</strong> 天倒數</div>
+        <div id="trvDDayWrap"><strong id="trvDDay">—</strong></div>
         <div>出發 · <strong id="trvHeroDate">—</strong></div>
         <div>航班 · <strong id="trvHeroFlight">—</strong></div>
         <div>團費 · <strong id="trvHeroCost">—</strong></div>
@@ -8968,6 +8968,7 @@ alter publication supabase_realtime add table party_locations;</pre>
           <label class="form-label">飯店名稱</label>
           <input type="text" class="form-input" id="sosHotelName" placeholder="住哪裡（走失的人要講得出來）">
         </div>
+        <div id="sosHotelHint" style="display:none; font-size:10.5px; color:var(--ink-tertiary); line-height:1.7; margin:-8px 0 14px;"></div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">飯店地址</label>
@@ -9305,7 +9306,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.23 · κκ</div>
+    <div>v 16.30 · ρρ</div>
   </footer>
 </div>
 
@@ -31061,6 +31062,24 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       ? `${printDoc.name}（效期 6 個月以上）· 簽證`
       : `${printDoc.name}（在有效期內即可）· 護照（轉機／備用，也要帶）`;
     const printC = (typeof sosNorm === 'function') ? (sosNorm().c || {}) : {};
+    // 集合時間／地點（v16.28b）。
+    // ⚠ v14.9 立的規矩是「**印出來的那張紙必須跟 App 上的一模一樣**」——當時修的是電話，
+    //   但**集合時間整個沒被印出來**：App 首頁最上面那張卡就是集合倒數，紙上卻一個字都沒有。
+    //   而那正是第一天最重要的一行（幾點、在哪裡集合），也是最該印在紙上發給團友的東西
+    //   （集合時間**不會跟著分享連結同步**給團友，見 guestNotSyncedNote）。
+    // ⚠ 紙印出來就不會再更新，所以**一律連日期一起印**（不寫「今天 06:30」那種會過期的講法）；
+    //   如果印的當下那筆集合已經過期了，就在紙上明講，不要讓人拿著一張過期的紙。
+    let printGather = null;
+    try {
+      if (trvGather && trvGather.date && trvGather.time) {
+        printGather = {
+          when: `${trvGather.date}　${trvGather.time}`,
+          desc: (trvGather.desc || '').trim(),
+          stale: (typeof gatherIsStale === 'function') ? gatherIsStale() : false,
+          whenText: (typeof gatherWhenText === 'function') ? gatherWhenText() : ''
+        };
+      }
+    } catch (e) { printGather = null; }
     const printHotel = printC.hotelName
       ? [printC.hotelName, printC.hotelAddr, printC.hotelPhone].filter(Boolean).join('　')
       : '';
@@ -31081,6 +31100,10 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         </div>
         <div class="print-emergency-card">
           <div class="label">出事的時候打這幾支</div>
+          ${printGather ? `<div style="font-size:10.5pt; line-height:1.8; margin:-2px 0 10px; padding:6px 8px; border:1px solid #000;">
+            <strong>集合</strong>　${escape(printGather.when)}${printGather.desc ? '　' + escape(printGather.desc) : ''}
+            ${printGather.stale ? `<br><span style="font-size:9pt; color:#888;">（列印的當下，這是${escape(printGather.whenText)}的集合、已經過去了——到 App 設定下一次再重印。）</span>` : ''}
+          </div>` : ''}
           <div style="font-size:10pt; line-height:1.8;">
             ${printPhones.map(x => `<strong>${escape(x.label)}</strong>　${escape(x.num)}`).join('<br>')}
           </div>
@@ -31094,8 +31117,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         </div>
         ${printHotel ? `
         <div class="print-emergency-card">
-          <div class="label">住宿（可以直接給計程車看）</div>
+          <div class="label">飯店（你在 🆘 那頁填的那一間 · 可以直接給計程車看）</div>
           <div style="font-size:10pt; line-height:1.7;">${escape(printHotel)}</div>
+          <div style="font-size:9pt; color:#888; margin-top:3px;">每晚住哪見前面的「住宿列表」——這一格是整趟共用的一格，不會每天換。</div>
         </div>` : ''}
       </div>
     ` : '';
@@ -31984,15 +32008,25 @@ ${baseSchema}
       `TRAVEL · ${(ITINERARY.destination || '').toUpperCase()}`;
 
     // DDay
-    const target = new Date(ITINERARY.startDate + 'T00:00:00');
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const days = Math.round((target - today) / (1000 * 60 * 60 * 24));
-    const el = document.getElementById('trvDDay');
-    if (days > 0) el.textContent = 'D-' + days;
-    else if (days === 0) el.textContent = '今天';
-    else if (days >= -ITINERARY.days.length) el.textContent = '進行中 D' + (Math.abs(days) + 1);
-    else el.textContent = '已完成';
+    // ⚠ 這一格以前是 HTML 裡寫死「天倒數」三個字、JS 只塞一個值進去，**四種狀態有三種讀不通**：
+    //   出發當天「今天 天倒數」／旅程中「進行中 D5 天倒數」（人都在九寨溝了，倒數什麼？）／
+    //   結束後「已完成 天倒數」。而這一行是**團友打開分享連結第一眼看到的東西**，
+    //   而且旅程那八天天天都在錯。→ 整句由 JS 產生，寫死的字拿掉。
+    // ⚠ 而且**沿用 tripStatus()**（首頁行程卡用的同一支），不要在這裡再算一份「今天是第幾天」——
+    //   兩份算法遲早會對不起來，而那正是 v16.5 抓到的那種「同一件事兩個畫面給不同答案」。
+    // ⚠ 自建行程可能沒填 endDate（tripStatus 拿不到就會誤判成「已完成」）→ 用行程表最後一天補。
+    const lastDay = ITINERARY.days[ITINERARY.days.length - 1];
+    const endOk = ITINERARY.endDate && !isNaN(new Date(ITINERARY.endDate + 'T00:00:00').getTime());
+    const st = tripStatus({
+      startDate: ITINERARY.startDate,
+      endDate: endOk ? ITINERARY.endDate : ((lastDay && lastDay.date) || ITINERARY.startDate)
+    });
+    const el = document.getElementById('trvDDayWrap');
+    if (el) {
+      el.innerHTML = st.state === 'past'
+        ? '<strong id="trvDDay">已完成</strong>'
+        : `<strong id="trvDDay">${escape(st.label)}</strong> ${escape(st.sub)}`;
+    }
 
     // Meta
     const sd = new Date(ITINERARY.startDate + 'T00:00:00');
@@ -32153,6 +32187,25 @@ ${baseSchema}
   // 今天現在進行到哪一項、下一項是什麼。
   // ⚠ 抽成共用函式是因為現場模式也要用同一份答案——兩邊各算一份，遲早會出現
   //   「首頁說現在是樂山大佛、現場模式說是午餐」這種對不起來的情況。
+  // 一項行程什麼時候「結束」。
+  // 預設是「下一項開始的時候」（沒有下一項就給 90 分鐘）——沒有時長資料就只能這樣。
+  // ⚠ **但航班是唯一有明確結束時間的**：`ITINERARY.flights` 裡白紙黑字寫著 `arr`。
+  //   以前不看它，於是第 1 天 10:25 就落地澳門了，畫面到 12:20（下一段班機）都還在說
+  //   「現在：NX657 高雄 → 澳門」——**你人在候機室，它說你在飛機上**。
+  //   來源早就告訴你答案、畫面卻在硬掰，跟 v16.11 那個「上櫃股被寫成上市」是同一種。
+  // ⚠ 其他類型**不猜**：午餐後接 5 小時車程，寧可繼續顯示午餐（時間就寫在下面「13:00 開始」），
+  //   也不要編一個「餐廳只待 90 分鐘」出來——猜錯的假話比過期的真話更難發現。
+  function trvSpotEndMin(d, x, nextMin) {
+    const dflt = nextMin != null ? nextMin : x.min + 90;
+    if (!x || !x.s || x.s.type !== '航班') return dflt;
+    const legs = (ITINERARY && Array.isArray(ITINERARY.flights)) ? ITINERARY.flights : [];
+    const code = String(x.s.name || '').trim().split(/\s+/)[0];
+    const f = legs.find(l => l && l.code && String(l.code) === code);
+    if (!f || !f.arr) return dflt;
+    const arr = trvSpotMin(d.date, f.arr);          // 跟起飛一樣要套「整團順延」，不然兩邊基準不同
+    if (arr == null || arr <= x.min) return dflt;   // 跨夜班機或資料怪怪的 → 不猜
+    return Math.min(arr, dflt);
+  }
   function trvCurNext(d) {
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const list = d.spots.map((s, i) => ({ s, i, min: trvSpotMin(d.date, s.time) }))
@@ -32163,12 +32216,13 @@ ${baseSchema}
       if (list[k].min <= nowMin) cur = list[k];
       else { next = list[k]; break; }
     }
-    // 目前這項如果已經超過下一項的時間就不算「進行中」（沒有下一項時給 90 分鐘）
+    // 目前這項如果已經結束就不算「進行中」；結束的那一項要留著（畫面得講得出「空檔」是接在誰後面）
+    let curEnd = null, ended = null;
     if (cur) {
-      const endMin = next ? next.min : cur.min + 90;
-      if (nowMin >= endMin) cur = null;
+      curEnd = trvSpotEndMin(d, cur, next ? next.min : null);
+      if (nowMin >= curEnd) { ended = cur; cur = null; }
     }
-    return { nowMin, cur, next };
+    return { nowMin, cur, next, curEnd, ended };
   }
   function renderTrvNowNext() {
     const el = document.getElementById('trvNowNext');
@@ -32202,14 +32256,19 @@ ${baseSchema}
       return;
     }
 
-    const { nowMin, cur, next } = trvCurNext(d);
+    const { nowMin, cur, next, curEnd, ended } = trvCurNext(d);
     const nameOf = x => escape(x.s.name);
     const rows = [];
     if (cur) {
-      const endMin = next ? next.min : cur.min + 90;
+      const endMin = curEnd != null ? curEnd : (next ? next.min : cur.min + 90);
       const left = Math.max(0, endMin - nowMin);
       rows.push(`<div class="nownext-row"><span class="nownext-tag">現在</span><span class="nownext-name">${nameOf(cur)}</span></div>
         <div class="nownext-sub" style="margin-top:6px;">${escape(trvMinToTime(cur.min))} 開始${next ? ` · 還有 ${trvDurText(left)}就要走` : ''}</div>`);
+    } else if (ended) {
+      // 上一項有明確的結束時間（目前只有航班），而下一項還沒開始 → 這段是空檔，
+      // 不能再說「現在正在做那一項」，也不能說「還沒開始」（今天早就開始了）
+      rows.push(`<div class="nownext-row"><span class="nownext-tag next">空檔</span><span class="nownext-name small">${nameOf(ended)} 已經結束</span></div>
+        <div class="nownext-sub" style="margin-top:6px;">${escape(trvMinToTime(curEnd))} 結束</div>`);
     } else if (next) {
       rows.push(`<div class="nownext-row"><span class="nownext-tag next">還沒開始</span><span class="nownext-name small">${escape(d.title || ('第 ' + d.day + ' 天'))}</span></div>`);
     }
@@ -32376,7 +32435,20 @@ ${baseSchema}
     if (spentToday === 0) add('¥', '今天還沒記任何花費——趁還記得，到「預算」補一下。');
 
     if (!dTmr) {
-      add('🏠', '<strong>明天就要回家了</strong>。伴手禮收好、退稅單和收據準備好，別放託運行李。');
+      // ⚠ 這裡以前寫「明天就要回家了。伴手禮收好、退稅單…別放託運行李」——**兩個地方都錯**：
+      //   ① 日子講錯：走到這個分支代表**今天就是最後一天**，回家的是今天不是明天
+      //      （九寨溝第 8 天 21:45 從澳門起飛、23:15 就到高雄了）。
+      //   ② 那句提醒到這一天已經來不及：行李早就掛上去了。**已移到前一晚**（見下面 homePrep）。
+      // ⚠ 也不能改講「今天就要回家了」：最後一天不一定是回家日，自建行程可能停在飯店。
+      //   只講「行程表上的最後一天」＋今天還剩什麼，全部從資料來，不猜。
+      const restToday = (Array.isArray(dToday.spots) ? dToday.spots : [])
+        .map(s => ({ s, min: trvSpotMin(dToday.date, s.time) }))
+        .filter(x => x.min != null && x.min > nowMin)
+        .sort((a, b) => a.min - b.min);
+      add('🏁', '<strong>今天是行程表上的最後一天</strong>。' +
+        (restToday.length
+          ? `今天還有 <strong>${escape(trvMinToTime(restToday[0].min))} ${escape(restToday[0].s.name)}</strong>${restToday.length > 1 ? `，共 ${restToday.length} 項` : ''}。`
+          : '行程已經全部跑完。'), 'good');
       return out;
     }
     const tMins = trvDayMinutes(dTmr);
@@ -32398,7 +32470,12 @@ ${baseSchema}
     const wxM = wxLine(dTmr.date, '明天');
     if (wxM) add(wxM.icon, wxM.text, wxM.tone);
     const tf = flightOf(dTmr);
-    if (tf) add('✈', `明天有班機 ${escape(tf.name)} ${escape(trvSpotTimeText(dTmr.date, tf.time))}，護照與登機證先準備好。`, 'warn');
+    // 「伴手禮、退稅單、別放進託運行李」要在**還來得及的前一晚**講（以前寫在最後一天當天的晚上，
+    // 那時候行李都掛完了）。掛在班機那一行上，不另外佔一個名額——管家只顯示前 5 項。
+    const homePrep = (dTmr.date === last.date)
+      ? '<strong>明天是最後一天</strong>：伴手禮、退稅單和收據今晚先收好，<strong>別放進託運行李</strong>。' : '';
+    if (tf) add('✈', `明天有班機 ${escape(tf.name)} ${escape(trvSpotTimeText(dTmr.date, tf.time))}，護照與登機證先準備好。${homePrep}`, 'warn');
+    else if (homePrep) add('🏠', homePrep, 'warn');
     const tsp = spotsOf(dTmr);
     if (tsp.length >= 4) add('👟', `明天要走 <strong>${tsp.length} 個景點</strong>，鞋子和行動電源今晚先備好。`);
     return out;
@@ -32414,7 +32491,17 @@ ${baseSchema}
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const mins = dToday ? trvDayMinutes(dToday) : [];
     const dayDone = dToday && (!mins.length || nowMin >= mins[mins.length - 1]);
-    const title = !dToday ? '行前提醒' : (dayDone || nowMin >= 20 * 60) ? '今日回顧 · 明天預告' : '今天要注意';
+    // ⚠ 標題以前只有兩種寫法，於是旅程結束後會出現「管家提醒 · **行前提醒**」，
+    //   底下那一行卻寫著「這趟旅程已經結束」——**標題跟內容自己打架**。
+    //   最後一天的晚上也一樣：沒有明天了，卻還掛著「明天預告」。
+    const daysArr = (ITINERARY && Array.isArray(ITINERARY.days)) ? ITINERARY.days : [];
+    const lastDay = daysArr.length ? daysArr[daysArr.length - 1] : null;
+    const afterEnd = lastDay ? daysBetweenToday(lastDay.date) : null;
+    const tripEnded = !dToday && afterEnd != null && afterEnd < 0;
+    const hasTmr = !!trvDayByDate(trvDateOffset(1));
+    const title = !dToday
+      ? (tripEnded ? '旅程結束' : '行前提醒')
+      : (dayDone || nowMin >= 20 * 60) ? (hasTmr ? '今日回顧 · 明天預告' : '今日回顧') : '今天要注意';
     el.style.display = '';
     el.innerHTML = `<div class="brief-head">◈ 管家提醒 <em>${escape(title)}</em></div>` +
       items.slice(0, 5).map(it => `<div class="brief-item ${it.tone}"><span class="brief-icon">${it.icon}</span><span class="brief-text">${it.text}</span></div>`).join('');
@@ -32920,14 +33007,23 @@ ${baseSchema}
 
     let nowCard = '';
     if (d) {
-      const { nowMin, cur, next } = trvCurNext(d);
+      const { nowMin, cur, next, curEnd, ended } = trvCurNext(d);
       if (cur) {
-        const endMin = next ? next.min : cur.min + 90;
+        const endMin = curEnd != null ? curEnd : (next ? next.min : cur.min + 90);
         nowCard = `<div class="fm-card">
           <div class="fm-tag">現在 · NOW</div>
           <div class="fm-big">${escape(cur.s.name)}</div>
           <div class="fm-sub">${escape(trvMinToTime(cur.min))} 開始${next ? ` · 還有 <strong>${escape(trvDurText(Math.max(0, endMin - nowMin)))}</strong> 就要走` : ''}</div>
           ${next ? `<div class="fm-sub" style="color:var(--ink-tertiary);">下一個 ${escape(trvMinToTime(next.min))} ${escape(next.s.name)}</div>` : ''}
+        </div>`;
+      } else if (ended && next) {
+        // 空檔（目前只有航班算得出來）：講「上一段已經結束」＋下一項，不要假裝還在飛
+        const wait = next.min - nowMin;
+        nowCard = `<div class="fm-card">
+          <div class="fm-tag">空檔 · GAP</div>
+          <div class="fm-big">${escape(ended.s.name)}<em>已經結束</em></div>
+          <div class="fm-sub">${escape(trvMinToTime(curEnd))} 結束</div>
+          <div class="fm-sub" style="color:var(--ink-tertiary);">下一個 ${escape(trvMinToTime(next.min))} ${escape(next.s.name)} · ${wait <= 0 ? '就是現在' : `還有 <strong>${escape(trvDurText(wait))}</strong>`}</div>
         </div>`;
       } else if (next) {
         const wait = next.min - nowMin;
@@ -33079,7 +33175,10 @@ ${baseSchema}
       fmCall('當地地陪' + (c.localName ? `（${c.localName}）` : ''), c.localPhone, '', false),
       fmCall('保險 24 小時' + (c.insurerName ? `（${c.insurerName}）` : ''), c.insurerPhone, '', false),
       fmCall(c.embassyName || '駐外館處', c.embassyPhone, '', false),
-      fmCall('飯店' + (c.hotelName ? `（${c.hotelName}）` : ''), c.hotelPhone, c.hotelAddr || '', false)
+      // ⚠ 撥出去的是「上面那格填的那間」，但今晚排的可能是另一間（理由見 tonightHotel()）
+      fmCall('飯店' + (c.hotelName ? `（${c.hotelName}）` : ''), c.hotelPhone,
+        (() => { const h = tonightHotel();
+          return [(h.inTrip && h.hasPlan && !h.same) ? '今晚行程表：' + h.plan : '', c.hotelAddr || ''].filter(Boolean).join('　'); })(), false)
     ].filter(Boolean);
     const missing = [!c.guidePhone && '領隊', !c.localPhone && '地陪', !c.insurerPhone && '保險 24 小時',
       !c.embassyPhone && co.code !== 'CN' && '駐外館處', !c.hotelPhone && '飯店'].filter(Boolean);
@@ -33121,6 +33220,52 @@ ${baseSchema}
     if (!c.insurerPhone) miss.push('保險 24 小時');
     if (!c.embassyPhone && !sosIsCN()) miss.push('駐外館處');   // 大陸沒有駐外館處，清單已自動帶海基會，不算缺
     return miss;
+  }
+
+  // ===== 今晚住哪（v16.24）=====
+  // ⚠ 「飯店」在 🆘 那一頁只有一格，但**飯店是每天會換的事實**：
+  //   九寨溝八天七夜住 4 間不同的飯店。使用者出發前填了第一晚那間，於是——
+  //   第 5 天人在九寨溝，「今天的重點」的「今晚住」還在寫成都的飯店（差 450 公里）；
+  //   第 8 天當天飛回高雄、根本沒有住宿，畫面照樣硬寫一間。
+  //   而那段字正是「沒訊號、手機沒電只能看別人截圖」時唯一還在的東西——寫錯比沒有更糟。
+  // ⚠ 不自動選一個：行程表知道「今晚排哪一間」（常常是「A / B」同級擇一），
+  //   使用者填的那組知道「確定是哪一間 ＋ 地址 ＋ 電話」——兩邊都不完整。
+  //   所以兩個都寫出來、標明哪個是哪個，讓看的人自己判斷（v11.5／v13.9 同一條規矩）。
+  // ⚠ 也**不做「名字像不像」的模糊比對**：行程表寫「溫江皇冠酒店 / 保利皇冠酒店」、
+  //   使用者填「成都溫江皇冠假日酒店」，任何比對規則猜錯成「一樣」就等於把真正的衝突藏起來；
+  //   反過來每天叫一次「這兩個不一樣」則是會誤報的保護，看兩天就被忽略了（v12.1b）。
+  //   兩行並排、各自標明來源，本身就講完了。
+  function tonightHotel(day) {
+    const d = day || (typeof trvTodayDay === 'function' ? trvTodayDay() : null);
+    const c = (typeof sosNorm === 'function' ? (sosNorm().c || {}) : {});
+    const spot = (d && Array.isArray(d.spots)) ? d.spots.find(x => x.type === '住宿') : null;
+    const plan = spot ? String(spot.name || '').trim() : '';
+    const filledName = String(c.hotelName || '').trim();
+    const filled = filledName
+      ? [filledName, String(c.hotelAddr || '').trim(), String(c.hotelPhone || '').trim()].filter(Boolean).join('　')
+      : '';
+    return {
+      day: d, inTrip: !!d, plan, hasPlan: !!plan, filled, filledName,
+      same: !!(plan && filledName && plan === filledName)   // 一字不差才算同一間，不猜
+    };
+  }
+  // 這趟總共住幾間不同的飯店（1 間以下就不用多嘴）
+  function tripHotelCount() {
+    const days = (ITINERARY && Array.isArray(ITINERARY.days)) ? ITINERARY.days : [];
+    const names = days.map(d => {
+      const s = Array.isArray(d.spots) ? d.spots.find(x => x.type === '住宿') : null;
+      return s ? String(s.name || '').trim() : '';
+    }).filter(Boolean);
+    return new Set(names).size;
+  }
+  // 純文字版：「今天的重點」用（貼 LINE 群 / 存離線）
+  function tonightHotelLines(day) {
+    const h = tonightHotel(day);
+    if (!h.inTrip) return [];
+    const L = [];
+    L.push(h.hasPlan ? `行程表：${h.plan}` : '行程表上今天沒有寫住宿');
+    if (h.filled) L.push(h.same ? h.filled : `你在🆘填的：${h.filled}`);
+    return L;
   }
 
   // ===== 今天的重點（一段可以貼 LINE 群、存下來離線看的純文字）=====
@@ -33165,18 +33310,14 @@ ${baseSchema}
     }
 
     // 電話：使用者填過的優先，沒填的整行不出現
-    const s = sosNorm(), co = sosCountry(), c = s.c || {};
     const tel = sosPhoneList().map(x => x.line);
     push('');
     push('── 電話 ──');
     tel.forEach(push);
 
-    // 住宿：使用者填的飯店優先，沒填就用行程上的
-    const hotelSpot = d.spots.find(x => x.type === '住宿');
-    const hotelLine = c.hotelName
-      ? `${c.hotelName}${c.hotelAddr ? '　' + c.hotelAddr : ''}${c.hotelPhone ? '　' + c.hotelPhone : ''}`
-      : (hotelSpot ? hotelSpot.name : '');
-    if (hotelLine) { push(''); push('── 今晚住 ──'); push(hotelLine); }
+    // 住宿：行程表的「今晚」在前，使用者填的那組（有地址電話）在後——理由見 tonightHotel()
+    const hotelLines = tonightHotelLines(d);
+    if (hotelLines.length) { push(''); push('── 今晚住 ──'); hotelLines.forEach(push); }
 
     push('');
     push('（把這段存起來，沒訊號的時候也看得到）');
@@ -33290,6 +33431,23 @@ ${baseSchema}
       ${sub ? `<span class="sub">${sub}</span>` : ''}</a>`;
   }
 
+  // ===== 團友看到的空白，跟主辦人看到的空白意思不一樣（v16.28）=====
+  // ⚠ 分享連結只帶了 Supabase 連線資訊，真正會同步的**只有三張表**：
+  //   `party_messages`（聊天）／`party_members`（同團成員）／`party_locations`（位置）。
+  //   **集合時間、緊急電話、團員檔案、行前清單、預算全部留在主辦人自己的手機上。**
+  //   所以團友看到「尚未設定集合時間」「還有 5 項沒填電話」時，畫面講的是
+  //   「還沒設」，但真正的原因是「那份資料不在這支手機上」——**兩種原因相反**，
+  //   只講前者的話，團友的結論一定是「領隊還沒設」，那是錯的（v16.13 同一條教訓）。
+  // ⚠ 只在 Guest Mode 出現：主辦人自己看到的空白就真的是「還沒設」，多講一句是雜訊。
+  const isGuestMode = () => document.body.classList.contains('guest-mode');
+  function guestNotSyncedNote(what, how) {
+    if (!isGuestMode()) return '';
+    return `<div class="sos-tip" style="margin-top:10px;">
+      <strong>${escape(what)}不會跟著分享連結過來</strong>——它存在主辦人自己的手機上，
+      所以這裡是空的<strong>不代表他還沒設</strong>。${how}
+    </div>`;
+  }
+
   function renderSos() {
     renderSosCalls();
     renderSosScenarios();
@@ -33340,6 +33498,10 @@ ${baseSchema}
     const hotel = hotelFilled
       ? `<strong>${escape(c.hotelName || '')}</strong>${c.hotelAddr ? `（${escape(c.hotelAddr)}）` : ''}${c.hotelPhone ? ' ' + tel(c.hotelPhone) : ''}`
       : '<strong>你還沒填住哪裡</strong>，到下面「填 / 改電話」補上，這裡就會直接寫出來';
+    // ⚠ 走失是「今晚住哪」最要命的那一刻，而上面那格是整趟共用的一格（理由見 tonightHotel()）
+    const hotelNow = tonightHotel();
+    const hotelPlanLine = (hotelNow.inTrip && hotelNow.hasPlan && !hotelNow.same)
+      ? `今晚行程表上是 <strong>${escape(hotelNow.plan)}</strong>。` : '';
     const mofa = tel(SOS_MOFA.paid, `外交部急難救助 ${SOS_MOFA.paid}`);
     // 團員檔案帶得出來的東西
     const withHealth = r.people.filter(p => (p.health || '').trim());
@@ -33362,8 +33524,8 @@ ${baseSchema}
         tips: [
           { t: `<strong>事前做這件事會差很多</strong>：每天出門前拍一張全員合照。走失時直接把照片給警察或工作人員看，比用嘴巴形容快十倍。`, },
           { t: hotelFilled
-              ? `讓每個人身上都有<strong>飯店的名片或地址</strong>——${hotel}。走失的人只要拿得出這張，計程車就送得回去。`
-              : `讓每個人身上都有<strong>飯店的名片或地址</strong>，走失的人只要拿得出這張，計程車就送得回去。${hotel}。` }
+              ? `讓每個人身上都有<strong>飯店的名片或地址</strong>，走失的人只要拿得出這張，計程車就送得回去。${hotelPlanLine ? '<br>' + hotelPlanLine : ''}<br>你填的是 ${hotel}。`
+              : `讓每個人身上都有<strong>飯店的名片或地址</strong>，走失的人只要拿得出這張，計程車就送得回去。${hotelPlanLine ? '<br>' + hotelPlanLine : ''}<br>${hotel}。` }
         ]
       },
       {
@@ -33519,6 +33681,8 @@ ${baseSchema}
       (missing > 0 ? `<div class="sos-tip sos-miss" style="margin-top:${rows.length ? '10px' : '0'};">
         還有 <strong>${missing} 項</strong>沒填電話：${escape(missNames.join('、'))}。${nameOnly.length ? `<strong>${escape(nameOnly.join('、'))}只填了名字沒有號碼</strong>，` : ''}上面每一張情境卡都會用到這些號碼——<strong>沒填的地方，那時候就只會顯示「打給領隊」四個字，沒有號碼可以點。</strong>
       </div>` : '') +
+      guestNotSyncedNote('領隊 · 地陪 · 保險 · 飯店這些電話',
+        '請主辦人按「📋 複製這些電話」貼到 LINE 群，或直接跟他要；你也可以自己填一份，只會存在這支手機上。') +
       `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:14px;">
         <button class="btn btn-sm" data-tap onclick="openSosContactModal()">⚙ 填 / 改電話</button>
         ${rows.length ? `<button class="btn btn-sm" data-tap onclick="copySosContacts()">📋 複製這些電話</button>` : ''}
@@ -33553,6 +33717,7 @@ ${baseSchema}
     put('sosEmbassyName', c.embassyName); put('sosEmbassyPhone', c.embassyPhone);
     put('sosHotelName', c.hotelName); put('sosHotelAddr', c.hotelAddr); put('sosHotelPhone', c.hotelPhone);
     sosCountryHint();
+    sosHotelHint();
     openModalOnTop('sosContactModal');
   }
   // 「駐外館處」欄位旁的提示跟著選的國家走：去大陸的人會想填「駐成都辦事處」之類不存在的單位，
@@ -33563,6 +33728,20 @@ ${baseSchema}
     const isCN = sel.value === 'CN';
     el.style.display = isCN ? '' : 'none';
     el.innerHTML = isCN ? `<strong>去大陸：台灣在那裡沒有駐外館處。</strong>這兩格留空，App 會自動帶 ${escape(SOS_SEF.name)} ${escape(SOS_SEF.num)}（24 小時，海外撥打付費）。` : '';
+  }
+  // 「飯店」只有一格，但這趟可能住好幾間——**主動講**，不然使用者永遠不會知道要回來改，
+  // 而「今天的重點」印出去的地址與電話會一路停在第一晚那間（理由見 tonightHotel()）。
+  // ⚠ 只住一間（或行程表根本沒寫住宿）就閉嘴，不然是雜訊。
+  function sosHotelHint() {
+    const el = document.getElementById('sosHotelHint');
+    if (!el) return;
+    const n = tripHotelCount();
+    if (n <= 1) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    const h = tonightHotel();
+    el.style.display = '';
+    el.innerHTML = `<strong>這趟行程表上住 ${n} 間不同的飯店，但這裡只有一格。</strong>`
+      + `換飯店的那天記得回來改——「今天的重點」與走失時要給計程車看的地址都是讀這一格。`
+      + (h.inTrip && h.hasPlan ? `<br>今晚行程表上是 <strong>${escape(h.plan)}</strong>。` : '');
   }
   function closeSosContactModal() { closeModalRestore('sosContactModal'); }
   async function saveSosContacts(e) {
@@ -33919,6 +34098,20 @@ ${baseSchema}
       });
     });
     const rows = Object.values(idx).map(x => ({ ...x, bal: Math.round((x.paid - x.owe) * 100) / 100 }));
+    // ⚠ 差額**在這裡整數化一次就好**，不要讓畫面與「怎麼還」各自四捨五入一次。
+    //   上面那段已經很小心地把除不盡的餘數丟給付錢的人吸收（三個人分 1000 →
+    //   333.33/333.33/333.34，加起來剛好 1000），**但轉帳金額原本又各自 Math.round 一次，
+    //   餘數就跑回來了**：我代墊 1000、三個人分，畫面寫「我 應收 1,000」，
+    //   下面卻是三筆各 333（＝999）——我少收 1 元，而畫面上看不出來少在哪，
+    //   複製到 LINE 群大家一加就發現對不起來。**又是「一半修對了」。**
+    //   零頭一律由「被欠最多的那個人」吸收——他就是代墊最多的那個，跟上面同一條規矩。
+    let drift = 0;
+    rows.forEach(r => { r.bal = Math.round(r.bal); drift += r.bal; });
+    if (drift !== 0 && rows.length) {
+      let k = 0;
+      for (let i = 1; i < rows.length; i++) if (rows[i].bal > rows[k].bal) k = i;
+      rows[k].bal -= drift;
+    }
     // 「這趟真正是我的錢」＝ 沒分帳而我付的 ＋ 分帳裡我該負擔的那一份。
     // ⚠ 這跟上面的 paid/owe 不一樣：那兩欄只看有分帳的筆數（不然差額加起來不會是 0）。
     //   使用者真正想知道的是這個數字，所以另外算一個，不要讓他自己去加。
@@ -35786,7 +35979,9 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const navBtn = document.getElementById('gatherNavBtn');
     if (!trvGather) {
       document.getElementById('gatherCountdown').textContent = '—';
-      document.getElementById('gatherTarget').textContent = '尚未設定集合時間';
+      // ⚠ 團友看到的空白跟主辦人看到的空白意思不一樣（見 guestNotSyncedNote）
+      document.getElementById('gatherTarget').innerHTML = '尚未設定集合時間' +
+        guestNotSyncedNote('集合時間', '以 LINE 群公告為準；你也可以自己設一個，倒數與提醒只有這支手機看得到。');
       card.classList.remove('urgent');
       if (photoDisplay) photoDisplay.style.display = 'none';
       if (navBtn) navBtn.style.display = 'none';
