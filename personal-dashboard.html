@@ -9337,7 +9337,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.43 · ϤϤ</div>
+    <div>v 16.44 · ϦϦ</div>
   </footer>
 </div>
 
@@ -27912,7 +27912,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         const pnl = proceeds - used * avg - fee - tax;
         st.shares = Math.max(0, st.shares - n);
         st.cost = Math.max(0, st.cost - used * avg);
-        Y.sell += proceeds * rate;
+        // 賣出欄＝實際入袋（成交金額扣手續費與證交稅）。買進欄本來就含手續費（實際掏出），
+        // 三欄都用「真的進出口袋的錢」，下面「淨現金流＝配息＋賣出−買進」那句話才成立。
+        Y.sell += (proceeds - fee - tax) * rate;
         Y.realized += pnl * rate;
         Y.fee += fee * rate; Y.tax += tax * rate;
         Y.trades++;
@@ -27922,7 +27924,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         Y.buy += (n * px + fee) * rate;
         Y.fee += fee * rate;
       } else if (t.type === 'dividend') {
-        Y.div += n * px * rate;          // 不動產的支出是負的 price，加總起來自然變成淨額
+        // 一定要用 divNet：模組的「已實現損益」自 v16.22 起扣掉補充保費/稅費，
+        // 而註腳承諾「兩欄相加會跟模組對得起來」——這裡不跟著扣，那句承諾就是假話。
+        // （不動產的支出是負的 price，divNet 照樣讓它加總成淨額）
+        Y.div += divNet(t) * rate;
         Y.fee += fee * rate; Y.tax += tax * rate;
       } else if (t.type === 'stock_div') {
         st.shares += n;                   // 配股只增加股數、不動成本
@@ -28022,6 +28027,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         <strong>⚠ 跟各模組裡那個「已實現損益」數字會不一樣</strong>：模組是把<strong>配息也加進同一個數字</strong>，
         這裡故意拆成「已實現損益」與「配息收入」兩欄（配息不是買賣賺的錢，混在一起看不出來到底是會挑股票還是只是領息）。
         兩欄相加就會跟模組對得起來。<br>
+        <strong>每一欄都是真的進出口袋的錢</strong>：買進含手續費、賣出已扣手續費與證交稅、配息已扣你填的補充保費／稅費。
+        「手續費+稅」那欄只是把整年的摩擦成本單獨列出來看，<strong>已經反映在前面幾欄裡，不要再扣一次</strong>。<br>
         <strong>淨現金流</strong>＝配息 ＋ 賣出 − 買進，也就是那一年你的口袋實際進出多少。
         <strong>勝率</strong>只看賣出次數，不看金額大小（賺 10 次小的輸 1 次大的，勝率還是很好看）。<br>
         外幣的交易用<strong>目前匯率</strong>換算，不是當時的匯率，所以歷史年度會有誤差。<strong>報稅請以券商對帳單為準。</strong>
@@ -28036,7 +28043,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     const text = rows.map(r => r.map(esc).join(',')).join('\r\n');
-    const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8;' });
+    // BOM 用 \uFEFF 逃逸寫法，不放實體字元——實體不可見位元組編輯器看不到、部署管線還可能弄壞它（§6.3 同族）
+    const blob = new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename;
@@ -28074,7 +28082,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           pnl = Math.round((n * px - used * avg - fee - tax) * rate);
           st[sym].shares = Math.max(0, st[sym].shares - n);
           st[sym].cost = Math.max(0, st[sym].cost - used * avg);
-        } else if (t.type === 'dividend') { amt = n * px; }
+        } else if (t.type === 'dividend') { amt = divNet(t); }   // 跟賣出列同口徑：金額欄一律是實際入袋（賣出扣費稅、配息扣補充保費），混一欄兩種口徑的話 Excel 一加總就高估
         else if (t.type === 'stock_div') { st[sym].shares += n; note = '只增加股數、不動成本'; }
         out.push([t.date || '', s.name, sym, typeName[t.type] || t.type,
           n || '', px || '', ccy, fee || '', tax || '',
