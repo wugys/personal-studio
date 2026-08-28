@@ -7533,6 +7533,33 @@
     </div>
   </div>
 
+  <!-- ============ 掃描結果 · 交給 AI 排序 Modal（v16.43）============ -->
+  <div class="modal-backdrop" id="scanAiModal">
+    <div class="modal" style="max-width:760px;">
+      <h2>🤖 讓 AI <em>挑前 5 名</em></h2>
+      <div id="scanAiNote" style="font-size:12.5px; color:var(--ink-secondary); line-height:1.8; margin-bottom:14px;"></div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button class="btn btn-sm" type="button" onclick="copyScanAiPrompt('')">📋 只複製提示詞</button>
+        <button class="btn btn-sm" type="button" onclick="copyScanAiPrompt('claude')">複製並開 Claude</button>
+        <button class="btn btn-sm" type="button" onclick="copyScanAiPrompt('chatgpt')">複製並開 ChatGPT</button>
+        <button class="btn btn-sm" type="button" onclick="copyScanAiPrompt('gemini')">複製並開 Gemini</button>
+        <button class="btn btn-primary btn-sm" type="button" id="scanAiRunBtn" onclick="runScanAi()" style="margin-left:auto;">🤖 直接分析（Claude）</button>
+      </div>
+      <textarea id="scanAiPrompt" readonly style="width:100%; height:190px; font-family:var(--mono); font-size:11px; line-height:1.6; background:var(--bg-elevated); color:var(--ink-secondary); border:1px solid var(--line); border-radius:4px; padding:10px; resize:vertical;"></textarea>
+      <div style="font-size:11px; color:var(--ink-muted); line-height:1.7; margin-top:6px;">
+        沒有 API 金鑰也能用：按「複製並開 Claude」，貼上送出就好（免費帳號就可以）。
+      </div>
+      <div id="scanAiResult" style="display:none; margin-top:14px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px 16px; font-size:13px; line-height:1.85; max-height:44vh; overflow-y:auto;"></div>
+      <div class="ai-disclaimer" style="margin-top:14px;">
+        ⚐ AI 看到的只有這些技術指標與比率，<strong>沒有新聞、財報與盤中價格</strong>。
+        這是把數字整理過的參考，<strong>不構成投資建議</strong>，實際買賣請自行判斷並承擔風險。
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeScanAiModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 美股 · 短線機會掃描 Modal ============ -->
   <div class="modal-backdrop" id="usScanModal">
     <div class="modal" style="max-width: 900px;">
@@ -9310,7 +9337,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.42 · ϢϢ</div>
+    <div>v 16.43 · ϤϤ</div>
   </footer>
 </div>
 
@@ -29001,7 +29028,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       loadAlog().then(() => { try { renderUsScanResults(); } catch (e) {} }).catch(() => {});
     }
     const m = market === 'tw' ? 'tw' : 'us';
-    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; usScanBlocked = null; }   // 換市場先清結果，避免混在一起
+    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; usScanBlocked = null; usScanScored = null; }   // 換市場先清結果，避免混在一起
     const lab = document.getElementById('usScanMarketLabel');
     if (lab) lab.textContent = m === 'tw' ? '台股短線' : '美股短線';
     const src = document.getElementById('usScanSourceLabel');
@@ -29468,6 +29495,135 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return { matched, missed };
   }
 
+  // ===== 讓 AI 從掃描結果裡挑前幾名（v16.43）=====
+  //
+  // 為什麼要有：掃描器一次會列出幾十檔「符合條件」的股票，但**符合條件不等於值得買**，
+  //   而使用者還是得一檔一檔點進去看。這一段把畫面上排好的那份清單整批餵給 AI 排序。
+  //
+  // ⚠ 誠實原則（這一段最重要的部分）：
+  //   1. **只餵真的算出來的數字**——技術指標、停損目標、（有抓到才給的）基本面比率。
+  //      沒有新聞、沒有財報全文、沒有產業比較，所以**提示詞裡要明講 AI 看不到那些**，
+  //      並要求它「不要假裝知道你沒看到的東西」。不然它會很自然地開始編故事。
+  //   2. **日期要寫出來**。本機累積的日 K 可能是好幾天前的，AI 不知道，使用者也不會想到。
+  //   3. 一律附「不構成投資建議」，跟本專案其他 AI 功能同一條規矩。
+  let usScanScored = null;              // 畫面上排好的那一份（由兩個 renderer 寫入）
+  let usScanAiPrompt = '';
+  const SCAN_AI_MAX = 30;               // 最多餵 30 檔：再多提示詞會過長，而且第 30 名之後也沒在看了
+
+  function scanAiRowLine(r, i, cur) {
+    const c = r.ctx;
+    const g = c.sig || {};
+    const n = (v, d) => (v == null || !isFinite(v)) ? '—' : Number(v).toFixed(d == null ? 2 : d);
+    const stop = c.lv && c.lv.stops && c.lv.stops[0];
+    const why = usScanScored.mode === 'strategy'
+      ? '符合策略：' + r.passed.map(h => h.s.name).join('、')
+      : '符合條件：' + r.matched.map(x => x.name).join('、');
+    const fund = c.fund
+      ? `　基本面：本益比 ${n(c.fund.pe)}／股價淨值比 ${n(c.fund.pb)}／ROE ${n(c.fund.roe, 1)}%／殖利率 ${n(c.fund.dy, 2)}%`
+      : '　基本面：這次沒有抓（掃描時沒勾「同時檢查基本面」）';
+    return `${i + 1}. ${c.symbol}${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? '（' + (c.zh || c.name) + '）' : ''}
+　收盤 ${cur}${n(c.price)}（資料日期 ${c.lastDate || '不明'}）　綜合研判：${g.overall || '—'}（分數 ${g.score == null ? '—' : g.score}）
+　${why}
+　均線：MA5 ${n(g.ma5)}／MA20 ${n(g.ma20)}／MA60 ${n(g.ma60)}　RSI ${n(g.rsi, 1)}　MACD柱 ${g.macd ? n(g.macd.hist, 3) : '—'}　KD ${g.kd ? n(g.kd.k, 1) + '/' + n(g.kd.d, 1) : '—'}
+　布林位置 %B ${n(c.pctB, 1)}　量比(5日/20日) ${n(c.volRatio, 2)}　距 60 日高 ${n(c.fromHigh60, 1)}%
+　停損參考 ${stop ? cur + n(stop.v) + '（' + n(stop.pct, 1) + '%）' : '—'}　2:1 目標 ${stop ? cur + n(stop.target2r) + '（+' + n(stop.target2rPct, 1) + '%）' : '—'}${fund}`;
+  }
+
+  // 兩個 renderer（條件模式／策略模式）長得一模一樣，按鈕只寫一份共用——
+  // v9.9 就踩過「加按鈕時只改了一處」的虧。
+  function scanAiBtnHtml() {
+    return `<button class="btn btn-sm btn-primary" type="button" style="margin-left:auto;"
+      onclick="openScanAiModal()" title="把畫面上排好的前 30 檔整批交給 AI，請它挑前 5 名">🤖 讓 AI 挑前 5 名</button>`;
+  }
+  function buildScanAiPrompt() {
+    if (!usScanScored || !usScanScored.list || !usScanScored.list.length) return '';
+    const cur = scanCur();
+    const mktName = usScanMarket === 'tw' ? '台股' : '美股';
+    const rows = usScanScored.list.slice(0, SCAN_AI_MAX);
+    const total = usScanScored.list.length;
+    const dates = [...new Set(rows.map(r => r.ctx.lastDate).filter(Boolean))].sort();
+    const dateNote = dates.length
+      ? `這批資料的最後一根日 K 落在 ${dates[0]}${dates.length > 1 ? ' ~ ' + dates[dates.length - 1] : ''}`
+      : '資料日期不明';
+    const how = usScanScored.mode === 'strategy'
+      ? `我勾了 ${usScanScored.picked.map(s => s.name).join('、')} 這幾種策略，下面是至少符合一種的股票，依「符合幾種」排序。`
+      : `我勾了 ${usScanPicked.length} 個技術條件、門檻設為「至少符合 ${usScanScored.need} 項」，下面是通過的股票，依「符合幾項」排序。`;
+    return `你是一位協助我從「技術面掃描結果」裡收斂標的的研究助理。
+
+【我做了什麼】
+我用自己的工具掃了${mktName}，${how}
+掃描母體共 ${usScanRows.length} 檔，通過 ${total} 檔，以下列出前 ${rows.length} 檔。
+
+【⚠ 你看得到的資料只有下面這些】
+· 只有技術指標、停損／目標參考價，以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
+· **你沒有新聞、沒有財報全文、沒有法說會、沒有產業或競爭對手的資料，也沒有今天盤中的價格。**
+· ${dateNote}——如果現在距離那天已經有一段時間，請在回答裡提醒我這件事。
+· **請不要假裝知道你沒看到的東西。** 需要查證才敢講的，就寫進最後一段叫我自己去查，不要用推測填空。
+
+【資料】
+${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
+
+【請用以下結構回答（繁體中文）】
+【1. 我會先看的 5 檔】把上面挑成前 5 名，每一檔一句話講「為什麼是它」——理由只能來自上面的數字。
+【2. 每一檔的主要風險】具體指出是哪個數字讓你擔心（例如 RSI 已經偏高、量比不足、距 60 日高太近等）。
+【3. 進場與停損】就上面給的停損參考與 2:1 目標，說明合不合理；不合理的話請說明你會怎麼調整。
+【4. 我會先跳過的幾檔】從清單裡點名 3~5 檔並說明為什麼——這一段跟第 1 段一樣重要。
+【5. 你應該自己查證的事】列出你「因為看不到資料所以不能判斷」的項目（例如最近有沒有財報、有沒有重大消息、產業景氣）。
+
+最後請加一句提醒：這只是把數字整理過的參考，不構成投資建議，實際買賣請自行判斷並承擔風險。`;
+  }
+
+  function openScanAiModal() {
+    if (!usScanScored || !usScanScored.list || !usScanScored.list.length) {
+      showToast('先掃描出結果，才有東西可以請 AI 排序');
+      return;
+    }
+    usScanAiPrompt = buildScanAiPrompt();
+    const n = Math.min(SCAN_AI_MAX, usScanScored.list.length);
+    const total = usScanScored.list.length;
+    const el = document.getElementById('scanAiNote');
+    if (el) el.innerHTML = `把畫面上排好的<strong>前 ${n} 檔</strong>${total > n ? `（共 ${total} 檔通過）` : ''}整批交給 AI，請它挑出前 5 名並說明理由與風險。<br>` +
+      `<span style="color:var(--ink-tertiary);">⚠ AI 看得到的<strong>只有技術指標與（有抓到才附的）基本面比率</strong>——沒有新聞、沒有財報、沒有盤中價格。提示詞裡已經把這件事明講給它，並要求它不要假裝知道。</span>`;
+    const ta = document.getElementById('scanAiPrompt');
+    if (ta) ta.value = usScanAiPrompt;
+    const out = document.getElementById('scanAiResult');
+    if (out) { out.style.display = 'none'; out.innerHTML = ''; }
+    openModalOnTop('scanAiModal');
+  }
+  function closeScanAiModal() { closeModalRestore('scanAiModal'); }
+  function copyScanAiPrompt(alsoOpen) {
+    let copied = false;
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = usScanAiPrompt;
+      ta.style.position = 'fixed'; ta.style.top = '-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+    if (navigator.clipboard) navigator.clipboard.writeText(usScanAiPrompt).then(() => {}, () => {});
+    if (alsoOpen) openAiSite(alsoOpen);   // 同一個手勢內開新分頁，不然會被彈窗攔截
+    showToast(copied ? '✓ 提示詞已複製' + (alsoOpen ? ' · 貼上送出即可' : '') : '複製失敗，請手動選取上面的文字');
+  }
+  async function runScanAi() {
+    const out = document.getElementById('scanAiResult');
+    const btn = document.getElementById('scanAiRunBtn');
+    const ak = await readKey(AI_KEY_STORAGE);
+    if (!ak) { showToast('還沒設定 Anthropic API Key——用左邊「📋 複製提示詞」貼到 Claude.ai 也一樣'); return; }
+    const orig = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 20-60 秒）'; }
+    out.style.display = 'block';
+    out.innerHTML = '<div style="color:var(--ink-tertiary);">Claude 正在讀這 ' + Math.min(SCAN_AI_MAX, usScanScored.list.length) + ' 檔…</div>';
+    try {
+      const text = await callClaudeWithWebSearch(usScanAiPrompt);
+      out.innerHTML = usMdLite(text);
+    } catch (e) {
+      out.innerHTML = '<div style="color:var(--danger);">分析失敗：' + escape(e.message) + '</div>';
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+    }
+  }
+
   function renderUsScanResults() {
     const box = document.getElementById('usScanResults');
     if (!box) return;
@@ -29499,6 +29655,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const scored = usScanRows.map(ctx => ({ ctx, ...usScanEvaluate(ctx) }))
       .filter(r => r.matched.length >= Math.min(need, usScanPicked.length))
       .sort((a, b) => b.matched.length - a.matched.length || b.ctx.sig.score - a.ctx.sig.score);
+    // ⚠ 存下「畫面上真的排好的這一份」給 AI 用——**不要在別的地方重算一次**，
+    //   不然 AI 看到的排名跟畫面上的會不一樣（本專案付過好幾次代價的那一條）。
+    usScanScored = { mode: 'cond', need, list: scored };
     if (!scored.length) {
       box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
         掃了 ${usScanRows.length} 檔，<strong>沒有一檔符合到 ${need} 項</strong>。<br>
@@ -29510,8 +29669,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const cur = scanCur();
     const f = v => cur + Number(v).toFixed(2);
     box.innerHTML = `
-      <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px;">
-        共 ${scored.length} 檔符合（掃了 ${usScanRows.length} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">
+          共 ${scored.length} 檔符合（掃了 ${usScanRows.length} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序
+        </span>
+        ${scanAiBtnHtml()}
       </div>` + scored.map((r, i) => {
       const c = r.ctx;
       const stop = c.lv && c.lv.stops[0];
@@ -29588,6 +29750,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       return { ctx, hits, passed: hits.filter(h => h.pass) };
     }).filter(r => r.passed.length > 0)
       .sort((a, b) => b.passed.length - a.passed.length || b.ctx.sig.score - a.ctx.sig.score);
+    usScanScored = { mode: 'strategy', picked, list: scored };   // 同上：AI 要看的就是這一份
 
     if (!scored.length) {
       // 沒中也要有用：告訴他「差一點就中」的是哪些
@@ -29612,8 +29775,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
 
     box.innerHTML = `
-      <div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); margin-bottom:8px;">
-        共 ${scored.length} 檔至少符合 1 種策略（掃了 ${usScanRows.length} 檔 · 選了 ${picked.length} 種策略）· 依符合策略數排序
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">
+          共 ${scored.length} 檔至少符合 1 種策略（掃了 ${usScanRows.length} 檔 · 選了 ${picked.length} 種策略）· 依符合策略數排序
+        </span>
+        ${scanAiBtnHtml()}
       </div>` + scored.map((r, i) => {
       const c = r.ctx;
       const stop = c.lv && c.lv.stops[0];
