@@ -9309,7 +9309,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.38 · ϖϖ</div>
+    <div>v 16.39 · ϛϛ</div>
   </footer>
 </div>
 
@@ -32267,8 +32267,11 @@ ${baseSchema}
   //   來源早就告訴你答案、畫面卻在硬掰，跟 v16.11 那個「上櫃股被寫成上市」是同一種。
   // ⚠ 其他類型**不猜**：午餐後接 5 小時車程，寧可繼續顯示午餐（時間就寫在下面「13:00 開始」），
   //   也不要編一個「餐廳只待 90 分鐘」出來——猜錯的假話比過期的真話更難發現。
-  function trvSpotEndMin(d, x, nextMin) {
-    const dflt = nextMin != null ? nextMin : x.min + 90;
+  // 回 { min, real }：**real 只有在「資料裡真的寫了結束時間」時才是 true**（目前只有航班的 arr）。
+  // ⚠ 沒有 real 這個旗標的話，畫面分不出「10:25 落地」跟「下一項 18:00 開始」，
+  //   於是把後者也講成「還有 5 小時就要走」——午餐哪有五小時（v16.39）。
+  function trvSpotEnd(d, x, nextMin) {
+    const dflt = { min: nextMin != null ? nextMin : x.min + 90, real: false };
     if (!x || !x.s || x.s.type !== '航班') return dflt;
     const legs = (ITINERARY && Array.isArray(ITINERARY.flights)) ? ITINERARY.flights : [];
     const code = String(x.s.name || '').trim().split(/\s+/)[0];
@@ -32276,8 +32279,9 @@ ${baseSchema}
     if (!f || !f.arr) return dflt;
     const arr = trvSpotMin(d.date, f.arr);          // 跟起飛一樣要套「整團順延」，不然兩邊基準不同
     if (arr == null || arr <= x.min) return dflt;   // 跨夜班機或資料怪怪的 → 不猜
-    return Math.min(arr, dflt);
+    return arr <= dflt.min ? { min: arr, real: true } : { min: dflt.min, real: false };
   }
+  function trvSpotEndMin(d, x, nextMin) { return trvSpotEnd(d, x, nextMin).min; }
   function trvCurNext(d) {
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const list = d.spots.map((s, i) => ({ s, i, min: trvSpotMin(d.date, s.time) }))
@@ -32289,12 +32293,24 @@ ${baseSchema}
       else { next = list[k]; break; }
     }
     // 目前這項如果已經結束就不算「進行中」；結束的那一項要留著（畫面得講得出「空檔」是接在誰後面）
-    let curEnd = null, ended = null;
+    let curEnd = null, curEndReal = false, ended = null;
     if (cur) {
-      curEnd = trvSpotEndMin(d, cur, next ? next.min : null);
+      const e = trvSpotEnd(d, cur, next ? next.min : null);
+      curEnd = e.min; curEndReal = e.real;
       if (nowMin >= curEnd) { ended = cur; cur = null; }
     }
-    return { nowMin, cur, next, curEnd, ended };
+    return { nowMin, cur, next, curEnd, curEndReal, ended };
+  }
+  // 「現在正在做的這一項」那一行的副標——**橫幅與現場模式共用一份**（兩個消費者只准算一份）。
+  // ⚠ 原本兩處都寫「13:00 開始 · 還有 5 小時就要走」，而那個 5 小時是**下一個行程幾點開始**，
+  //   不是「你可以在這裡待多久」。第 5 天午餐 13:00、下一項是 18:00 抵達九寨溝（中間是 5 小時車程）——
+  //   看的人會以為午餐可以吃五小時。而且下面「下一個」那一列本來就已經寫了同一個數字。
+  //   → 只有**資料裡真的有結束時間**（航班的 arr）才講「幾點結束」；猜的就不要講。
+  function curSpotSubText(cur, curEnd, curEndReal, nowMin) {
+    const head = trvMinToTime(cur.min) + ' 開始';
+    if (!curEndReal || curEnd == null) return head;
+    const left = Math.max(0, curEnd - nowMin);
+    return head + ' · ' + trvMinToTime(curEnd) + ' 結束' + (left > 0 ? '（還有 ' + trvDurText(left) + '）' : '');
   }
   function renderTrvNowNext() {
     const el = document.getElementById('trvNowNext');
@@ -32328,14 +32344,12 @@ ${baseSchema}
       return;
     }
 
-    const { nowMin, cur, next, curEnd, ended } = trvCurNext(d);
+    const { nowMin, cur, next, curEnd, curEndReal, ended } = trvCurNext(d);
     const nameOf = x => escape(x.s.name);
     const rows = [];
     if (cur) {
-      const endMin = curEnd != null ? curEnd : (next ? next.min : cur.min + 90);
-      const left = Math.max(0, endMin - nowMin);
       rows.push(`<div class="nownext-row"><span class="nownext-tag">現在</span><span class="nownext-name">${nameOf(cur)}</span></div>
-        <div class="nownext-sub" style="margin-top:6px;">${escape(trvMinToTime(cur.min))} 開始${next ? ` · 還有 ${trvDurText(left)}就要走` : ''}</div>`);
+        <div class="nownext-sub" style="margin-top:6px;">${escape(curSpotSubText(cur, curEnd, curEndReal, nowMin))}</div>`);
     } else if (ended) {
       // 上一項有明確的結束時間（目前只有航班），而下一項還沒開始 → 這段是空檔，
       // 不能再說「現在正在做那一項」，也不能說「還沒開始」（今天早就開始了）
@@ -33131,14 +33145,15 @@ ${baseSchema}
 
     let nowCard = '';
     if (d) {
-      const { nowMin, cur, next, curEnd, ended } = trvCurNext(d);
+      const { nowMin, cur, next, curEnd, curEndReal, ended } = trvCurNext(d);
       if (cur) {
-        const endMin = curEnd != null ? curEnd : (next ? next.min : cur.min + 90);
+        // ⚠ 跟橫幅共用 curSpotSubText()——原本兩處各自把「下一項幾點開始」講成「還有 X 就要走」
         nowCard = `<div class="fm-card">
           <div class="fm-tag">現在 · NOW</div>
           <div class="fm-big">${escape(cur.s.name)}</div>
-          <div class="fm-sub">${escape(trvMinToTime(cur.min))} 開始${next ? ` · 還有 <strong>${escape(trvDurText(Math.max(0, endMin - nowMin)))}</strong> 就要走` : ''}</div>
-          ${next ? `<div class="fm-sub" style="color:var(--ink-tertiary);">下一個 ${escape(trvMinToTime(next.min))} ${escape(next.s.name)}</div>` : ''}
+          <div class="fm-sub">${escape(curSpotSubText(cur, curEnd, curEndReal, nowMin))}</div>
+          ${next ? `<div class="fm-sub" style="color:var(--ink-tertiary);">下一個 ${escape(trvMinToTime(next.min))} ${escape(next.s.name)}${
+            next.min > nowMin ? `（還有 ${escape(trvDurText(next.min - nowMin))}）` : ''}</div>` : ''}
         </div>`;
       } else if (ended && next) {
         // 空檔（目前只有航班算得出來）：講「上一段已經結束」＋下一項，不要假裝還在飛
@@ -33308,7 +33323,7 @@ ${baseSchema}
       // ⚠ 撥出去的是「上面那格填的那間」，但今晚排的可能是另一間（理由見 tonightHotel()）
       fmCall('飯店' + (c.hotelName ? `（${c.hotelName}）` : ''), c.hotelPhone,
         (() => { const h = tonightHotel();
-          return [(h.inTrip && h.hasPlan && !h.same) ? '今晚行程表：' + h.plan : '', c.hotelAddr || ''].filter(Boolean).join('　'); })(), false)
+          return [c.hotelAddr || '', (h.inTrip && h.hasPlan && !h.same) ? '今晚行程表上是：' + h.plan : ''].filter(Boolean).join('　·　'); })(), false)
     ].filter(Boolean);
     const missing = [!c.guidePhone && '領隊', !c.localPhone && '地陪', !c.insurerPhone && '保險 24 小時',
       !c.embassyPhone && co.code !== 'CN' && '駐外館處', !c.hotelPhone && '飯店'].filter(Boolean);
