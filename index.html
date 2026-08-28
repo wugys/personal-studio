@@ -7789,6 +7789,7 @@
       </div>
       <div id="tvChartBox" style="height:360px; margin-bottom:14px; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; color:var(--ink-tertiary); font-size:12px;">趨勢圖載入中…</div>
       <div id="twCheckPanel"></div>
+      <div id="twChipsPanel"></div>
       <div id="twLevelsPanel"></div>
       <div id="tvSignalsPanel"></div>
       <div style="border-top:1px solid var(--line); padding-top:12px;">
@@ -9337,7 +9338,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.46 · ϪϪ</div>
+    <div>v 16.47 · ϬϬ</div>
   </footer>
 </div>
 
@@ -14328,6 +14329,153 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     } };
   }
 
+  // ===== 法人動向 ＋ 月營收（v16.47）——台股單檔評估的兩塊補強 =====
+  // 台股分析師看個股，基本面之外最先看的兩個：三大法人在買還是在倒、月營收有沒有轉強。
+  // 兩個都是 FinMind 免金鑰 dataset，**只在單檔畫面抓**（掃描器不碰——那邊要顧額度與離線）。
+  // ⚠ 拉不到（額度/斷線）與查無（興櫃沒有法人資料）是兩回事，畫面要分開講（v11.4）；
+  //   拉不到不快取（v11.4），查無是真的答案、可以快取。
+  let twChipsCache = {};   // { code: { data, ts } }
+  let twMrevCache = {};
+  const TW_CHIPS_TTL = 6 * 3600 * 1000;
+
+  async function fetchTwChips(code) {
+    const c = twChipsCache[code];
+    if (c && Date.now() - c.ts < TW_CHIPS_TTL) return c.data;
+    const start = todayISO(Date.now() - 70 * 864e5);   // 約 45 個交易日，夠算近 20 日與連買天數
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+    const rows = await finmindFetch(url);   // 額度類錯誤往上丟，呼叫端分「拉不到」與「查無」
+    // 外資含外資自營、自營商含避險——跟看盤軟體的「三大法人」同一種分法
+    const GROUP = { Foreign_Investor: 'foreign', Foreign_Dealer_Self: 'foreign',
+                    Investment_Trust: 'trust', Dealer_self: 'dealer', Dealer_Hedging: 'dealer' };
+    const byDate = {};
+    (rows || []).forEach(x => {
+      const g = GROUP[x.name];
+      if (!g) return;
+      if (!byDate[x.date]) byDate[x.date] = { foreign: 0, trust: 0, dealer: 0 };
+      byDate[x.date][g] += (Number(x.buy) || 0) - (Number(x.sell) || 0);
+    });
+    const dates = Object.keys(byDate).sort();
+    if (!dates.length) { twChipsCache[code] = { data: null, ts: Date.now() }; return null; }
+    const sum = (n, g) => dates.slice(-n).reduce((a, d) => a + byDate[d][g], 0);
+    // 連買/連賣：從最新一天往回數同方向的天數（0 買賣超算斷）
+    const streak = g => {
+      let days = 0, dir = 0;
+      for (let i = dates.length - 1; i >= 0; i--) {
+        const v = byDate[dates[i]][g];
+        if (v === 0) break;
+        const s = v > 0 ? 1 : -1;
+        if (!dir) dir = s;
+        if (s !== dir) break;
+        days++;
+      }
+      return { days, dir };
+    };
+    const data = {
+      lastDate: dates[dates.length - 1], days: dates.length,
+      d5: { foreign: sum(5, 'foreign'), trust: sum(5, 'trust'), dealer: sum(5, 'dealer') },
+      d20: { foreign: sum(20, 'foreign'), trust: sum(20, 'trust'), dealer: sum(20, 'dealer') },
+      streak: { foreign: streak('foreign'), trust: streak('trust') }
+    };
+    twChipsCache[code] = { data, ts: Date.now() };
+    return data;
+  }
+
+  async function fetchTwMonthRevenue(code) {
+    const c = twMrevCache[code];
+    if (c && Date.now() - c.ts < TW_CHIPS_TTL) return c.data;
+    const start = todayISO(Date.now() - 800 * 864e5);   // 約 26 個月，才算得出近 12 個月的年增率
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMonthRevenue&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+    const rows = await finmindFetch(url);
+    const rev = {};   // 'YYYY-M' → 當月營收（元）
+    (rows || []).forEach(x => {
+      const y = Number(x.revenue_year), m = Number(x.revenue_month), v = Number(x.revenue);
+      if (y > 0 && m >= 1 && m <= 12 && v >= 0) rev[y + '-' + m] = v;
+    });
+    const keys = Object.keys(rev).map(k => k.split('-').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (!keys.length) { twMrevCache[code] = { data: null, ts: Date.now() }; return null; }
+    const list = keys.map(([y, m]) => {
+      const prev = rev[(y - 1) + '-' + m];
+      return { y, m, rev: rev[y + '-' + m], yoy: prev > 0 ? (rev[y + '-' + m] / prev - 1) * 100 : null };
+    });
+    let streak = 0;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].yoy != null && list[i].yoy > 0) streak++; else break;
+    }
+    const data = { list: list.slice(-12), latest: list[list.length - 1], streak };
+    twMrevCache[code] = { data, ts: Date.now() };
+    return data;
+  }
+
+  const twLots = v => { const n = Math.round(Number(v) / 1000); return (n > 0 ? '+' : '') + n.toLocaleString('en-US'); };   // 股 → 張
+  const twRevYi = v => { const n = Number(v) / 1e8; return n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(1); };   // 元 → 億
+  const twStreakTxt = s => !s || !s.days ? '' : `${s.dir > 0 ? '連買' : '連賣'} ${s.days} 天`;
+
+  // 餵 AI 的那一句——跟畫面吃同一份數字（兩個出口不准分岔）
+  function twChipsAiLine(ch, mr) {
+    const parts = [];
+    if (ch) {
+      parts.push(`法人動向（資料到 ${ch.lastDate}）：外資 近5日 ${twLots(ch.d5.foreign)} 張／近20日 ${twLots(ch.d20.foreign)} 張${ch.streak.foreign.days ? '／' + twStreakTxt(ch.streak.foreign) : ''}；投信 近5日 ${twLots(ch.d5.trust)} 張／近20日 ${twLots(ch.d20.trust)} 張${ch.streak.trust.days ? '／' + twStreakTxt(ch.streak.trust) : ''}`);
+    }
+    if (mr && mr.latest) {
+      parts.push(`月營收：${mr.latest.y}/${String(mr.latest.m).padStart(2, '0')} 營收 ${twRevYi(mr.latest.rev)} 億${mr.latest.yoy != null ? `、年增 ${mr.latest.yoy.toFixed(1)}%` : ''}${mr.streak >= 2 ? `、已連續 ${mr.streak} 個月年增` : ''}`);
+    }
+    return parts.join('\n');
+  }
+
+  function renderTwChipsPanel(ch, mr, errs) {
+    const head = t => `<div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 8px;">${t}</div>`;
+    const box = inner => `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:11px 13px; margin-bottom:10px;">${inner}</div>`;
+    const failNote = e => (e && (e.finmindQuota || e.finmindBlocked))
+      ? '<span style="color:var(--danger);">拉不到資料（免費額度或斷線）——不是這檔沒有資料，等一下重開這個視窗會重抓。</span>'
+      : null;
+    const numCol = v => v > 0 ? 'var(--accent)' : v < 0 ? 'var(--danger)' : 'var(--ink-tertiary)';
+
+    let chipsHtml;
+    const cErr = failNote(errs && errs.chips);
+    if (cErr) chipsHtml = `<div style="font-size:11.5px; line-height:1.7;">${cErr}</div>`;
+    else if (!ch) chipsHtml = `<div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7;">查無法人買賣超資料——興櫃股沒有這項揭露；新上市的要等幾天才有。</div>`;
+    else {
+      const row = (label, d5, d20, st) => `
+        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:6px 0; border-bottom:1px solid var(--line);">
+          <span style="font-size:12.5px; color:var(--ink-primary); min-width:44px;">${label}</span>
+          <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">近5日 <strong style="color:${numCol(d5)};">${twLots(d5)}</strong> 張</span>
+          <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">近20日 <strong style="color:${numCol(d20)};">${twLots(d20)}</strong> 張</span>
+          ${st && st.days ? `<span style="font-family:var(--mono); font-size:11px; color:${st.dir > 0 ? 'var(--accent)' : 'var(--danger)'};">${twStreakTxt(st)}</span>` : ''}
+        </div>`;
+      chipsHtml = row('外資', ch.d5.foreign, ch.d20.foreign, ch.streak.foreign)
+        + row('投信', ch.d5.trust, ch.d20.trust, ch.streak.trust)
+        + row('自營商', ch.d5.dealer, ch.d20.dealer, null)
+        + `<div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:7px; line-height:1.6;">
+            買賣超＝法人當天買的張數減掉賣的張數。連買代表籌碼往法人手上集中——<strong>但法人也常看錯，這是參考不是答案</strong>。
+            資料到 ${escape(ch.lastDate)}（每天收盤後才公布）${ch.days < 20 ? `；這檔只有 ${ch.days} 個交易日的資料，「近20日」其實是近 ${ch.days} 日` : ''}。
+          </div>`;
+    }
+
+    let mrHtml;
+    const mErr = failNote(errs && errs.mrev);
+    if (mErr) mrHtml = `<div style="font-size:11.5px; line-height:1.7;">${mErr}</div>`;
+    else if (!mr || !mr.latest) mrHtml = `<div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7;">查無月營收資料（ETF 沒有營收；個股新上市的要等公告）。</div>`;
+    else {
+      const recent = mr.list.slice(-3).reverse();
+      mrHtml = `
+        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:6px;">
+          <span style="font-family:var(--serif); font-size:16px; color:var(--ink-primary);">${mr.latest.y}/${String(mr.latest.m).padStart(2, '0')} 營收 ${twRevYi(mr.latest.rev)} 億</span>
+          ${mr.latest.yoy != null ? `<span style="font-family:var(--mono); font-size:12px; color:${numCol(mr.latest.yoy)};">年增 ${mr.latest.yoy >= 0 ? '+' : ''}${mr.latest.yoy.toFixed(1)}%</span>` : '<span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">（去年同月沒有資料，算不出年增率）</span>'}
+          ${mr.streak >= 2 ? `<span style="font-family:var(--mono); font-size:11px; color:var(--accent);">已連續 ${mr.streak} 個月年增</span>` : ''}
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${recent.map(r => `<span style="font-family:var(--mono); font-size:10.5px; padding:3px 9px; border:1px solid var(--line); border-radius:3px; color:${r.yoy == null ? 'var(--ink-tertiary)' : numCol(r.yoy)};">${r.y}/${String(r.m).padStart(2, '0')}　${r.yoy == null ? '—' : (r.yoy >= 0 ? '+' : '') + r.yoy.toFixed(1) + '%'}</span>`).join('')}
+        </div>
+        <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:7px; line-height:1.6;">
+          月營收是台股獨有的每月揭露（次月 10 日前公布），比季報早很多——<strong>營收先轉強、獲利才會跟上</strong>；
+          但營收好不代表有賺頭（毛利差的接單也會衝營收）。年增率＝跟去年同一個月比。
+        </div>`;
+    }
+
+    return head('法人動向 · INSTITUTIONAL FLOWS') + box(chipsHtml)
+         + head('月營收動能 · MONTHLY REVENUE') + box(mrHtml);
+  }
+
   async function loadTwCandleChart(containerId, code, name) {
     const cont = document.getElementById(containerId);
     if (!cont) return;
@@ -14384,6 +14532,22 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       }).catch(() => {
         const l2 = document.getElementById('twLevelsPanel');
         if (l2) l2.innerHTML = renderUsPriceLevels(usPriceLevels(price, null, sig, candles), 'NT$');
+      });
+
+      // 法人動向 ＋ 月營收（v16.47）——台股獨有，另外抓，抓不到不影響其他區塊
+      const chipsEl = document.getElementById('twChipsPanel');
+      if (chipsEl) chipsEl.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:8px 0;">查法人買賣超與月營收中…</div>';
+      Promise.all([
+        fetchTwChips(code).then(d => ({ d })).catch(e => ({ e })),
+        fetchTwMonthRevenue(code).then(d => ({ d })).catch(e => ({ e }))
+      ]).then(([cw, mw]) => {
+        // 使用者可能已經切去看別檔——別把 2330 的法人寫進 2317 的畫面
+        if (!lastAnalysisSnapshot || lastAnalysisSnapshot.symbol !== code) return;
+        const el = document.getElementById('twChipsPanel');
+        if (el) el.innerHTML = renderTwChipsPanel(cw.d || null, mw.d || null, { chips: cw.e, mrev: mw.e });
+        // 餵 AI：跟畫面同一份數字（twChipsAiLine），拉不到就一個字都不加——不憑空描述
+        const line = twChipsAiLine(cw.d, mw.d);
+        if (line) tvChartPrompt += '\n' + line;
       });
     } catch (e) {
       cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--ink-tertiary); font-size:12px;">台股走勢載入失敗：' + escape(e.message) + '<br>可改用下方 AI 分析。</div>';
