@@ -9337,7 +9337,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.45 · ϨϨ</div>
+    <div>v 16.46 · ϪϪ</div>
   </footer>
 </div>
 
@@ -10664,6 +10664,21 @@ alter publication supabase_realtime add table party_locations;</pre>
     return CF_SOURCES.filter(s => !PLAN_PRICE_SKIP.includes(s.key))
       .map(s => ({ key: s.hKey, view: s.view }));
   }
+  // 「現價踩到哪一格」——下單計畫看守、台股自選卡、美股自選卡三個地方共用這一份。
+  // v16.46 以前是三份手抄（內容一樣）：一個東西算三份，遲早有一份是舊的（v16.5/v16.33 同族）。
+  // 回傳 'stop' | 'target' | 'near' | 'close' | 'ok'；px 無效回 null。
+  // ⚠ 「快碰到」的門檻要跟顯示值（四捨五入到 0.1）比（v9.4：206/200 剛好 3% 的教訓）。
+  function planStateOf(px, low, high) {
+    if (!(px > 0)) return null;
+    const lo = Number(low) > 0 ? Number(low) : null;
+    const hi = Number(high) > 0 ? Number(high) : null;
+    if (lo != null && px <= lo) return 'stop';
+    if (hi != null && px >= hi) return 'target';
+    if (lo != null && Number(((1 - lo / px) * 100).toFixed(1)) <= 3) return 'near';
+    if (hi != null && Number(((hi / px - 1) * 100).toFixed(1)) <= 3) return 'close';
+    return 'ok';
+  }
+
   async function buildPlanWatch() {
     const books = await readJson('analysis_log_v1', {});
     if (!books || typeof books !== 'object') return [];
@@ -10710,15 +10725,7 @@ alter publication supabase_realtime add table party_locations;</pre>
         // ⚠ 不可寫成 now/low-1（那是「比停損高幾 %」，基準錯，205 vs 120 會算成 70.8% 而不是 41.5%）。
         if (r.low != null) r.toLowPct = (1 - r.low / now) * 100;
         if (r.high != null) r.toHighPct = (r.high / now - 1) * 100;
-        // ⚠ 門檻要跟「畫面上顯示的那個數字」比（先四捨五入到 1 位），
-        // 否則 206/200 的 3.0000000000000027 會顯示「3.0%」卻被判成不到門檻，自相矛盾。
-        const near1 = r.toLowPct == null ? null : Number(r.toLowPct.toFixed(1));
-        const high1 = r.toHighPct == null ? null : Number(r.toHighPct.toFixed(1));
-        if (r.low != null && now <= r.low) r.status = 'stop';            // 已跌破停損
-        else if (r.high != null && now >= r.high) r.status = 'target';   // 已達停利
-        else if (near1 != null && near1 <= 3) r.status = 'near';         // 快碰到停損
-        else if (high1 != null && high1 <= 3) r.status = 'close';        // 快到停利
-        else r.status = 'ok';
+        r.status = planStateOf(now, r.low, r.high) || 'nopx';
       }
       rows.push(r);
     });
@@ -12982,6 +12989,11 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
     const held = {};
     (twHoldings || []).forEach(h => { if (Number(h.shares) > 0) held[h.symbol] = h; });
     const money = v => v == null ? '—' : 'NT$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    // 現價／狀態／賠率直接吃「下單計畫看守」那一份（v16.46）——
+    // 以前這裡手抄一份一模一樣的判斷，現價又只看台股持股：同一檔 0056 若持有在高股息 ETF 模組，
+    // 首頁提醒用那邊的現價、這張卡卻用舊的 lastPrice——兩個畫面對同一件事講不同的話。
+    const pw = {};
+    try { (await buildPlanWatch()).forEach(r => { pw[r.symbol] = r; }); } catch (e) {}
 
     grid.className = 'opp-grid';
     grid.innerHTML = syms.map(sym => {
@@ -12989,18 +13001,13 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       const p = b.plan || {};
       const name = b.name || (twFindStock(sym) || {}).name || '';
       const own = held[sym];
-      const px = own ? Number(own.currentPrice) : Number(b.lastPrice);
-      const stale = !own && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
-      // 現在踩到哪一格（跟下單計畫看守同一套判斷，避免兩邊講不同的話）
-      let state = null;
-      if (px > 0) {
-        if (p.low > 0 && px <= p.low) state = { t: '已跌破停損', c: 'var(--danger)' };
-        else if (p.high > 0 && px >= p.high) state = { t: '已達停利', c: 'var(--accent)' };
-        else if (p.low > 0 && Number(((1 - p.low / px) * 100).toFixed(1)) <= 3) state = { t: '快碰到停損', c: 'var(--accent-warm)' };
-        else if (p.high > 0 && Number(((p.high / px - 1) * 100).toFixed(1)) <= 3) state = { t: '快到停利', c: 'var(--accent-warm)' };
-      }
-      let rr = null;
-      if (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price) rr = ((p.high - p.price) / (p.price - p.low)).toFixed(2);
+      const w = pw[sym];
+      const px = (w && w.price > 0) ? w.price : (own ? Number(own.currentPrice) : Number(b.lastPrice));
+      const stale = (w ? w.priceFrom === 'snapshot' : !own) && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
+      const stKey = (w && w.status !== 'ok' && w.status !== 'nopx') ? w.status : null;
+      const state = stKey ? { t: PLAN_STATUS[stKey].label, c: PLAN_STATUS[stKey].color } : null;
+      const rr = (w && w.rr != null) ? w.rr.toFixed(2)
+        : (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price ? ((p.high - p.price) / (p.price - p.low)).toFixed(2) : null);
       const notes = (b.entries || []).length;
       return `
         <div class="opp-card" style="${state ? `border-left:2px solid ${state.c};` : ''}">
@@ -14019,14 +14026,35 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
   //   （這跟「一鍵更新全部現價」是同一段邏輯的第二個消費者，v16.9 第一輪只改了那一個。）
   //   改成：先問 Worker → 剩下拿不到的才需要金鑰 → 沒金鑰也只影響那幾檔，不影響已經拿到的。
   async function refreshUsQuotes() {
-    if (usHoldings.length === 0) { showToast('尚無持股'); return; }
+    // ⚠ 自選股也要更新（v16.46）：以前這顆按鈕只更新持股——站在「自選股」分頁按下去，
+    //   卡片上的現價一動也不動；更糟的是「只有自選股、沒持股」的人會被下面這個守衛
+    //   用一句「尚無持股」整個擋掉（v10.0「早退守衛讓後加的功能整段失效」同族）。
+    if (!alogAll || !Object.keys(alogAll).length) { try { await loadAlog(); } catch (e) {} }
+    const watchSyms = (typeof usWatchSymbols === 'function' ? usWatchSymbols() : [])
+      .filter(sym => !usHoldings.some(h => h.symbol === sym));
+    if (usHoldings.length === 0 && watchSyms.length === 0) { showToast('尚無持股或自選股'); return; }
     const btn = document.getElementById('usQuoteBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⚡ 更新中…'; }
-    let ok = 0, fail = 0, aborted = false, liveOk = 0;
+    let ok = 0, fail = 0, aborted = false, liveOk = 0, watchOk = 0;
     try {
       liveQuoteNote = '';
       let live = { tw: {}, us: {} };
-      try { live = await fetchLiveQuotes([], usHoldings.map(h => h.symbol)); } catch (e) {}
+      try { live = await fetchLiveQuotes([], usHoldings.map(h => h.symbol).concat(watchSyms)); } catch (e) {}
+
+      // 自選股只吃免金鑰的即時價（拿不到就等下次「⚡ 一鍵更新全部現價」，那邊有金鑰備援）
+      for (const sym of watchSyms) {
+        const q = live.us[String(sym).toUpperCase()];
+        if (q && Number(q.price) > 0 && alogAll[sym]) {
+          alogAll[sym].lastPrice = Number(q.price);
+          alogAll[sym].lastPriceAt = Date.now();
+          watchOk++;
+        }
+      }
+      if (watchOk) {
+        await saveAlog();
+        try { if (usTab === 'watch') renderUsWatchList(); } catch (e) {}
+        try { refreshStudioAlerts(); } catch (e) {}
+      }
 
       const rest = [];
       for (const h of usHoldings) {
@@ -14089,7 +14117,10 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       }
       // 上面已經為「缺金鑰」講過話了，不要再蓋掉
       if (!aborted && !(rest.length && !finnhubKey)) {
-        showToast(`⚡ 報價更新 · 成功 ${ok}${fail ? ` / 失敗 ${fail}` : ''}${liveOk ? `（${liveOk} 檔免金鑰）` : ''}`);
+        const bits = [];
+        if (usHoldings.length) bits.push(`持股 ${ok} 檔${fail ? `（${fail} 檔失敗）` : ''}${liveOk ? `（${liveOk} 檔免金鑰）` : ''}`);
+        if (watchSyms.length) bits.push(`自選股 ${watchOk}/${watchSyms.length} 檔`);
+        showToast('⚡ 報價更新 · ' + bits.join(' · '));
       }
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '⚡ 即時報價'; }
@@ -14972,13 +15003,18 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (L.resists[0]) parts.push(`最近壓力 ${L.resists[0].label} ${f(L.resists[0].v)}（+${L.resists[0].pct.toFixed(1)}%）`);
     if (L.stops[0]) parts.push(`停損參考 ${f(L.stops[0].v)}（${L.stops[0].pct.toFixed(1)}%）· 對應 2:1 目標 ${f(L.stops[0].target2r)}`);
     if (L.pos52 != null) parts.push(`目前位於 52 週區間 ${L.pos52.toFixed(0)}% 位置`);
+    // 上檔判讀（v16.46）：跟掃描卡同一句 scanBandText——餵給 AI 的總結也要講「目標跟壓力誰先到」
+    const band = scanBandText({ price: L.c, lv: { stops: L.stops, resists: L.resists } }, f);
+    if (band) parts.push(band);
     return parts.join('；') + '。';
   }
 
-  const usLvlPill = (label, v, pct, color) => `
+  // ⚠ cur 一定要傳：以前這裡寫死 '$'，台股的支撐壓力藥丸顯示「$589.00」——
+  //   跟同一個畫面停損列的「NT$」打架，讀起來像美金（v16.46 修）
+  const usLvlPill = (label, v, pct, color, cur) => `
     <div style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line);">
       <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); min-width:76px;">${escape(label)}</span>
-      <span style="font-family:var(--serif); font-size:15px; color:${color};">$${Number(v).toFixed(2)}</span>
+      <span style="font-family:var(--serif); font-size:15px; color:${color};">${escape(cur || '$')}${Number(v).toFixed(2)}</span>
       <span style="margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>
     </div>`;
 
@@ -15019,11 +15055,11 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:6px;">
         <div>
           <div style="font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:0.1em; margin-bottom:2px;">▼ 下方支撐（想買的人會等的位置）</div>
-          ${L.supports.map(s => usLvlPill(s.label, s.v, s.pct, 'var(--accent)')).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px; padding:6px 0;">現價已接近區間最低，下方無明顯支撐。</div>'}
+          ${L.supports.map(s => usLvlPill(s.label, s.v, s.pct, 'var(--accent)', cur)).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px; padding:6px 0;">現價已接近區間最低，下方無明顯支撐。</div>'}
         </div>
         <div>
           <div style="font-family:var(--mono); font-size:10px; color:var(--danger); letter-spacing:0.1em; margin-bottom:2px;">▲ 上方壓力（想賣的人會等的位置）</div>
-          ${L.resists.map(s => usLvlPill(s.label, s.v, s.pct, 'var(--danger)')).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px; padding:6px 0;">現價已在區間最高，上方無明顯壓力。</div>'}
+          ${L.resists.map(s => usLvlPill(s.label, s.v, s.pct, 'var(--danger)', cur)).join('') || '<div style="color:var(--ink-tertiary); font-size:11.5px; padding:6px 0;">現價已在區間最高，上方無明顯壓力。</div>'}
         </div>
       </div>
       ${L.pos52 != null ? `<div style="margin:10px 0 14px;">
@@ -15035,6 +15071,18 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
       </div>` : ''}
       <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 6px;">停損參考 · 買之前就要決定</div>
       ${stopHtml}
+      ${(() => {
+        // 上檔判讀（v16.46）：跟掃描卡吃同一份 scanBandText——上面的「2:1 目標」與「上方壓力」
+        // 並排在同一個畫面，兩個數字的關係要有人講（v13.0：兩個數字並排必說明差別）
+        const bctx = { price: L.c, lv: { stops: L.stops, resists: L.resists } };
+        const band = scanBandText(bctx, f);
+        if (!band) return '';
+        const b = scanBandInfo(bctx);
+        const color = b && b.kind === 'tight' ? 'var(--danger)'
+          : b && (b.kind === 'mid' || b.kind === 'edge') ? 'var(--accent-warm)'
+          : b && b.kind === 'ok' ? 'var(--accent)' : 'var(--ink-tertiary)';
+        return `<div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; margin-top:2px; margin-bottom:8px; padding:7px 11px; background:var(--bg-card); border-left:2px solid ${color}; border-radius:3px;">📏 ${escape(band)}</div>`;
+      })()}
       ${valHtml}`;
   }
 
@@ -15651,6 +15699,9 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
     const held = {};
     (usHoldings || []).forEach(h => { if (Number(h.shares) > 0) held[h.symbol] = h; });
     const money = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    // 現價／狀態／賠率吃「下單計畫看守」那一份（v16.46，跟台股自選卡同一條）
+    const pw = {};
+    try { (await buildPlanWatch()).forEach(r => { pw[r.symbol] = r; }); } catch (e) {}
 
     grid.className = 'opp-grid';
     grid.innerHTML = syms.map(sym => {
@@ -15659,17 +15710,13 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       const zh = (typeof US_STOCKS !== 'undefined' ? US_STOCKS.find(s => s.symbol === sym) : null);
       const name = b.name || (zh && (zh.zh || zh.name)) || '';
       const own = held[sym];
-      const px = own ? Number(own.currentPrice) : Number(b.lastPrice);
-      const stale = !own && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
-      let state = null;
-      if (px > 0) {
-        if (p.low > 0 && px <= p.low) state = { t: '已跌破停損', c: 'var(--danger)' };
-        else if (p.high > 0 && px >= p.high) state = { t: '已達停利', c: 'var(--accent)' };
-        else if (p.low > 0 && Number(((1 - p.low / px) * 100).toFixed(1)) <= 3) state = { t: '快碰到停損', c: 'var(--accent-warm)' };
-        else if (p.high > 0 && Number(((p.high / px - 1) * 100).toFixed(1)) <= 3) state = { t: '快到停利', c: 'var(--accent-warm)' };
-      }
-      let rr = null;
-      if (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price) rr = ((p.high - p.price) / (p.price - p.low)).toFixed(2);
+      const w = pw[sym];
+      const px = (w && w.price > 0) ? w.price : (own ? Number(own.currentPrice) : Number(b.lastPrice));
+      const stale = (w ? w.priceFrom === 'snapshot' : !own) && b.lastPriceAt ? todayISO(b.lastPriceAt) : null;
+      const stKey = (w && w.status !== 'ok' && w.status !== 'nopx') ? w.status : null;
+      const state = stKey ? { t: PLAN_STATUS[stKey].label, c: PLAN_STATUS[stKey].color } : null;
+      const rr = (w && w.rr != null) ? w.rr.toFixed(2)
+        : (p.price > 0 && p.high > p.price && p.low > 0 && p.low < p.price ? ((p.high - p.price) / (p.price - p.low)).toFixed(2) : null);
       const notes = (b.entries || []).length;
       return `
         <div class="opp-card" style="${state ? `border-left:2px solid ${state.c};` : ''}">
@@ -15686,7 +15733,7 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
             </div>
             <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
               <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">現價${stale ? '（' + stale + '）' : ''}</div>
-              <div style="font-family:var(--serif); font-size:14px;">${px > 0 ? money(px) : '<span style="color:var(--ink-muted); font-size:12px;">需金鑰</span>'}</div>
+              <div style="font-family:var(--serif); font-size:14px;">${px > 0 ? money(px) : '<span style="color:var(--ink-muted); font-size:12px;">按⚡更新</span>'}</div>
             </div>
             <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
               <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停利</div>
@@ -27336,7 +27383,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const hi = Number(document.getElementById('alogHigh').value);
     const lo = Number(document.getElementById('alogLow').value);
     const cur = alogCur();
-    if (!(p > 0)) { el.innerHTML = '<span style="color:var(--ink-tertiary);">填上當前價格之後，這裡會幫你算報酬與風險各多少 %、以及賠率划不划算。</span>'; return; }
+    if (!(p > 0)) {
+      // 沒填現價也抓得到的錯：最低價比最高價還高（v16.46——以前這條路什麼都不講，默默存下去）
+      el.innerHTML = (lo > 0 && hi > 0 && lo >= hi)
+        ? '<span style="color:var(--danger);">⚠ 最低價比最高價還高，兩個是不是填反了？</span>'
+        : '<span style="color:var(--ink-tertiary);">填上當前價格之後，這裡會幫你算報酬與風險各多少 %、以及賠率划不划算。</span>';
+      return;
+    }
     const bits = [];
     if (hi > 0) bits.push(`上檔 <strong style="color:var(--accent);">+${((hi - p) / p * 100).toFixed(1)}%</strong>（${cur}${p} → ${cur}${hi}）`);
     if (lo > 0) bits.push(`下檔 <strong style="color:var(--danger);">${((lo - p) / p * 100).toFixed(1)}%</strong>（${cur}${p} → ${cur}${lo}）`);
@@ -27434,10 +27487,29 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     renderAlogPlanHint();
     showToast('已帶入系統的停損與 2:1 目標，你可以再自己調');
   }
+  // 價位填反的當下就問一句（跟投資翻倍的 confirmOppPrices 同一條規矩，v13.3）：
+  // 上面的即時提示只是「提示」，照樣存得下去——存反了之後，看守的方向會相反、
+  // 首頁會立刻報「已跌破停損」，而那其實只是打錯字。
+  // ⚠ 正常填法（低 < 現 < 高）一句都不准問（會誤報的保護比沒保護糟，v12.1b）。
+  function confirmPlanPrices(price, high, low) {
+    const NL = String.fromCharCode(10);
+    const msgs = [];
+    if (low > 0 && high > 0 && low >= high) {
+      msgs.push('最低價（買進/停損）' + low + ' 沒有比最高價（賣出/停利）' + high + ' 低。');
+    } else {
+      if (price > 0 && low > 0 && low >= price) msgs.push('最低價 ' + low + ' 沒有比當前價格 ' + price + ' 低——持有的話，等於現在就已經跌破停損，存下去首頁馬上會報警。');
+      if (price > 0 && high > 0 && high <= price) msgs.push('最高價 ' + high + ' 沒有比當前價格 ' + price + ' 高——等於一存就已經達標。');
+    }
+    if (!msgs.length) return true;
+    return confirm(msgs.join(NL + NL) + NL + NL + '兩個價位是不是打反了？' + NL + '【確定】照這樣存　【取消】回去改');
+  }
+
   async function saveAlogPlan() {
     const b = alogBook(alogSymbol);
     const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
-    b.plan = { price: num('alogPrice'), high: num('alogHigh'), low: num('alogLow'), updatedAt: Date.now() };
+    const nv = { price: num('alogPrice'), high: num('alogHigh'), low: num('alogLow') };
+    if (!confirmPlanPrices(nv.price, nv.high, nv.low)) return;   // 取消就留在視窗裡讓他改
+    b.plan = { ...nv, updatedAt: Date.now() };
     // 記下市場與名稱，首頁提醒才知道幣別與要跳去哪個模組
     b.market = alogMarket; b.name = alogName || alogSymbol;
     if (lastAnalysisSnapshot && lastAnalysisSnapshot.symbol === alogSymbol && Number(lastAnalysisSnapshot.price) > 0) {
