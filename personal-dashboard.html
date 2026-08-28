@@ -9309,7 +9309,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.37 · ωω</div>
+    <div>v 16.38 · ϖϖ</div>
   </footer>
 </div>
 
@@ -36857,7 +36857,9 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function shopSum(x) { return Number(x && x.amount || 0) * (Number(x && x.qty) || 1); }
   // ⚠ 「幾件」跟「幾筆」不是同一件事，而金額**一直都有乘 qty**：
   //   買 10 盒牛肉乾記成一筆（× 10），金額算對了 NT$2,200，旁邊卻寫「1 件」。
-  //   五個地方（購物分頁、首頁卡、列印那張紙、匯出的 txt、備份預覽）全用筆數當件數。
+  //   **八個地方**（購物分頁、首頁卡、列印那張紙、匯出的 txt、備份預覽、
+  //   預算頁的紅框、「一次記進花費」的確認、匯入備份的預覽）全用筆數當件數。
+  //   ⚠ v16.34 只修了前五個，後三個是 v16.38 才補——**修好這一個、沒問還有誰**，又一次。
   //   海關申報、行李規劃看的是「幾件」——**數字旁邊那個字要對得起那個數字**。
   function shopQtyTotal(list) {
     return (Array.isArray(list) ? list : []).reduce((n, x) => n + (Number(x && x.qty) || 1), 0);
@@ -36925,9 +36927,10 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
         hits.map(h => '　· ' + (h.item.name || '購物') + ' NT$' + shopSum(h.item).toLocaleString() +
           '（花費那筆：' + (h.dup.note || '無備註') + ' · ' + (h.dup.date || '沒填日期') + '）').join(NL) + NL +
         '　 記下去會變成同一筆錢算兩次。真的是分開的兩次消費才按確定。' + NL
-      : NL + '⚠ 如果這幾件你已經在「花費」那邊自己記過一次，' + NL +
+      : NL + '⚠ 如果這幾筆你已經在「花費」那邊自己記過一次，' + NL +
         '　 這樣做會變成同一筆錢算兩次——那就先按取消。';
-    if (!confirm('把還沒記進花費的 ' + list.length + ' 件購物，一次記成 ' + list.length + ' 筆花費？' + NL +
+    if (!confirm('把還沒記進花費的 ' + list.length + ' 筆購物（共 ' + shopQtyTotal(list) + ' 件），'
+      + '一次記成 ' + list.length + ' 筆花費？' + NL +
       '合計 NT$' + total.toLocaleString() + '，分類都是「購物」。' + NL + dupMsg)) return;
     list.forEach(shopSyncExpense);
     await saveTravelKey(TRAVEL_STORAGE.shopping, trvShopping);
@@ -36942,7 +36945,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const total = list.reduce((s, x) => s + shopSum(x), 0);
     return `<div style="border:1px solid rgba(201,123,106,0.45); border-left-width:3px; border-radius:4px;
         padding:12px 14px; margin-bottom:14px; font-size:12.5px; color:var(--ink-secondary); line-height:1.85;">
-        <strong style="color:var(--danger);">購物清單有 ${list.length} 件 · NT$${total.toLocaleString()} 還沒記進花費</strong><br>
+        <strong style="color:var(--danger);">購物清單有 ${shopCountText(list)} · NT$${total.toLocaleString()} 還沒記進花費</strong><br>
         ${where === 'budget'
           ? '所以上面的「已用」<strong>沒有算到這些錢</strong>——預算看起來會比實際還多。'
           : '購物清單只是一份清單，這些錢<strong>不會</strong>算進預算的「已用」。'}
@@ -37455,7 +37458,7 @@ ${daysBrief}${butlerPartyBlock()}
       try {
         const d = JSON.parse(ev.target.result);
         const here = (typeof ITINERARY !== 'undefined' && ITINERARY) ? ITINERARY.title : '這一趟';
-        let summary = `清單 ${(d.checklist || []).length} 項 · 花費 ${(d.expenses || []).length} 筆 · 購物 ${(d.shopping || []).length} 件`;
+        let summary = `清單 ${(d.checklist || []).length} 項 · 花費 ${(d.expenses || []).length} 筆 · 購物 ${(d.shopping || []).length} 筆`;
         // ⚠ 不同趟旅遊的資料是分開存的（tripKey），匯錯趟會把這一趟的花費整批換掉
         if (d.tripId && d.tripId !== (activeTripId || 'default')) {
           summary += `\n\n⚠ 這份備份是【${d.tripTitle || d.tripId}】的，你現在打開的是【${here}】。\n`
