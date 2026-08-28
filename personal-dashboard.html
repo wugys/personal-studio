@@ -9307,7 +9307,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.32 · ττ</div>
+    <div>v 16.33 · υυ</div>
   </footer>
 </div>
 
@@ -32153,29 +32153,32 @@ ${baseSchema}
     el.value = String((Number(el.value) || 0) + n);
     renderDelayPreview();
   }
+  // 「今天還沒到的行程」——**彈窗預覽與現場模式共用同一份**。
+  // ⚠ v16.32 修好了彈窗那一版（`d.spots.length` 是今天「全部」的項數、不是剩下的；
+  //   而「…」拿全部去比，兩項都列完了照樣印一個「…」），**卻漏掉現場模式那一版**——
+  //   而現場模式正是「車晚了、全團在停車場等」時真的會按的那一個。
+  //   （本專案第一教訓：修好這一個、沒問還有誰。）**同一件事只准算一份。**
+  function delayRestSpots(d) {
+    if (!d || !Array.isArray(d.spots)) return [];
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const delay = trvDelayOf(d.date);
+    return d.spots.map(s => ({ s, base: trvTimeToMin(s.time) }))
+      .filter(x => x.base != null && x.base + delay >= nowMin);
+  }
   function renderDelayPreview() {
     const box = document.getElementById('delayPreview');
     const d = trvTodayDay();
     if (!box || !d) return;
     const mins = Number(document.getElementById('delayMinutes').value) || 0;
-    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-    // ⚠ 這裡原本寫 `'今天剩下 ' + d.spots.length + ' 項'`——**那是今天「全部」的項數，不是剩下的**。
-    //   今天 8 項、只剩 3 項還沒到時，畫面會說「今天剩下 8 項」；而且後面的「…」是拿
-    //   `d.spots.length > rest.length` 判斷，**三項全部列完了照樣印一個「…」**，暗示還有沒列出來的。
-    //   車晚了、全團在等的時候看的就是這一格，數字不能亂講。
-    const restAll = d.spots.filter(s => {
-      const base = trvTimeToMin(s.time);
-      return base != null && base + trvDelayOf(d.date) >= nowMin;
-    });
+    const restAll = delayRestSpots(d);
     const rest = restAll.slice(0, 5);
     if (!rest.length) { box.innerHTML = '今天剩下的行程已經跑完了，順延不會影響任何一項。'; return; }
     const more = restAll.length - rest.length;
     box.innerHTML = '今天還沒到的 ' + restAll.length + ' 項' +
-      (more > 0 ? '（先列前 ' + rest.length + ' 項）' : '') + '會變成：<br>' + rest.map(s => {
-      const base = trvTimeToMin(s.time);
-      return escape(trvMinToTime(base + trvDelayOf(d.date))) + ' → <strong style="color:var(--accent);">' +
-        escape(trvMinToTime(base + mins)) + '</strong> · ' + escape(s.name);
-    }).join('<br>') + (more > 0 ? '<br>…還有 ' + more + ' 項' : '');
+      (more > 0 ? '（先列前 ' + rest.length + ' 項）' : '') + '會變成：<br>' +
+      rest.map(x => escape(trvMinToTime(x.base + trvDelayOf(d.date))) + ' → <strong style="color:var(--accent);">' +
+        escape(trvMinToTime(x.base + mins)) + '</strong> · ' + escape(x.s.name)).join('<br>') +
+      (more > 0 ? '<br>…還有 ' + more + ' 項' : '');
   }
   async function applyDelay() {
     const d = trvTodayDay();
@@ -32729,17 +32732,34 @@ ${baseSchema}
     renderRollCall();
     showToast(`已帶入 ${added} 位`);
   }
+  // ⚠ 這張名單會被貼進 LINE 群，**收到的人沒有上下文可以校正**：
+  //   「到齊 8 / 10」裡的那 8 個 ✓ 可能是今天早上點的，中間有人走散了名單也不會知道。
+  //   螢幕上早就有警告（rollStatus →「有 ✓ 是 7 小時前點的，不是現在的」），
+  //   **但複製出去的文字一個字都沒帶**——而同一區的「📋 複製房間分配」早就把
+  //   重複房號、座位超過車位的 ⚠ 一起帶進複製文字了。**離開 App 的文字更不能少講**（v16.31）。
+  // ⚠ 抬頭也不可以拿別天的集合來標：`trvGather` 是「最後一次設定的集合」而不是今天這一次，
+  //   把今天的點名結果標上昨天早上的集合時間，收到的人只會看不懂這是哪一次。
   function copyMissingList() {
     const r = trvRosterNorm();
     const miss = r.people.filter(p => !r.present[p.id]);
-    if (!miss.length) { showToast('全員到齊了 🎉'); return; }
-    const where = trvGather ? `${trvGather.date} ${trvGather.time} · ${trvGather.desc}` : '本次集合';
-    const txt = [`【還沒到 ${miss.length} 位】${where}`, '',
-      ...miss.map((p, i) => `${i + 1}. ${p.name}${p.phone ? ' · ' + p.phone : ''}${p.note ? '（' + p.note + '）' : ''}`),
-      '', `到齊 ${r.people.length - miss.length} / ${r.people.length}`].join('\n');
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt).then(() => showToast('已複製未到名單')).catch(() => showToast('複製失敗，請手動選取'));
-    } else showToast('這個瀏覽器不支援自動複製');
+    const rs = rollStatus();
+    const ageTxt = rs ? rollAgeText(Date.now() - rs.at) : '';
+    if (!miss.length) {
+      // 「每個人都打勾了」不等於「現在全員到齊」——過期就不要說恭喜。
+      showToast(rs && rs.stale
+        ? `所有人都打勾了，但最舊的 ✓ 是 ${ageTxt}前點的，不是現在的——先按「重新點名」`
+        : '全員到齊了 🎉');
+      return;
+    }
+    const gToday = trvGather && trvGather.date === todayISO() && trvGather.time;
+    const where = gToday ? `${trvGather.date} ${trvGather.time} · ${trvGather.desc || '集合點'}` : '本次集合';
+    const L = [`【還沒到 ${miss.length} 位】${where}`, ''];
+    miss.forEach((p, i) => L.push(`${i + 1}. ${p.name}${p.phone ? ' · ' + p.phone : ''}${p.note ? '（' + p.note + '）' : ''}`));
+    L.push('', `到齊 ${r.people.length - miss.length} / ${r.people.length}`);
+    if (rs) L.push(rs.stale
+      ? `⚠ 有 ✓ 是 ${ageTxt}前（${rollWhenText(rs.at)}）點的，不是現在的——這份名單可能已經不準`
+      : `點名時間 ${rollWhenText(rs.at)}`);
+    trvCopy(L.join('\n'), rs && rs.stale ? '已複製（名單裡有註明點名已經過期）' : '已複製未到名單');
   }
 
   // ---- 團員檔案：飲食禁忌／身體狀況／緊急聯絡人／護照效期 ----
@@ -33152,15 +33172,20 @@ ${baseSchema}
         <div class="fm-sub">沒有可以順延的行程。</div></div>` + fmBack();
     }
     const delay = trvDelayOf(d.date);
-    const { nowMin } = trvCurNext(d);
-    const rest = d.spots.map(s => ({ s, base: trvTimeToMin(s.time) }))
-      .filter(x => x.base != null && x.base + delay >= nowMin).slice(0, 4);
+    // ⚠ 這裡原本自己算一份，而且犯了 v16.32 在彈窗那邊剛修掉的同一個錯：
+    //   「…」拿 `d.spots.length`（今天**全部**的項數）去比只列出來的 4 項，
+    //   **只剩兩項、兩項都列完了照樣印一個「…」**，暗示還有沒看到的行程；
+    //   而且從頭到尾沒講「還沒到的是幾項」。改成跟彈窗吃同一支 delayRestSpots()。
+    const restAll = delayRestSpots(d);
+    const rest = restAll.slice(0, 4);
+    const more = restAll.length - rest.length;
     return `<div class="fm-card ${delay ? 'hot' : ''}">
         <div class="fm-tag">整團順延 · DELAY</div>
         <div class="fm-big">${delay ? `今天整團<em>${delay > 0 ? '延後' : '提前'} ${Math.abs(delay)} 分鐘</em>` : '目前<em>照原訂時間</em>'}</div>
         <div class="fm-sub">${rest.length
-          ? rest.map(x => `${escape(trvMinToTime(x.base))} → <strong>${escape(trvMinToTime(x.base + delay))}</strong> ${escape(x.s.name)}`).join('<br>')
-            + (d.spots.length > rest.length ? '<br>…' : '')
+          ? `今天還沒到的 <strong>${restAll.length}</strong> 項${more > 0 ? `（先列前 ${rest.length} 項）` : ''}：<br>`
+            + rest.map(x => `${escape(trvMinToTime(x.base))} → <strong>${escape(trvMinToTime(x.base + delay))}</strong> ${escape(x.s.name)}`).join('<br>')
+            + (more > 0 ? `<br>…還有 ${more} 項` : '')
           : '今天剩下的行程已經跑完了，順延不會影響任何一項。'}</div>
       </div>
       <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:4px;">
@@ -33169,7 +33194,8 @@ ${baseSchema}
         <button class="fm-name" data-tap onclick="fmBump(0)">歸零</button>
       </div>
       <div class="fm-note">按下去<strong>馬上生效</strong>，行程表跟「現在／下一個」都會跟著移動。
-        原始行程資料不會被改動，隨時可以按「歸零」回到原本的時間。</div>` + fmBack();
+        原始行程資料不會被改動，隨時可以按「歸零」回到原本的時間。<br>
+        ⚠ 只動今天的行程時間。<strong>你在「⏰ 集合」自己設的集合時間不會跟著移動</strong>，要另外改。</div>` + fmBack();
   }
   async function fmBump(n) {
     const d = trvTodayDay();
