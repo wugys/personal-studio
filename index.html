@@ -3387,6 +3387,7 @@
             <option value="2000">前 2000 大（約 25 MB）</option>
             <option value="4000">前 4000 大（約 49 MB）</option>
             <option value="6000">前 6000 大（約 74 MB）</option>
+            <option value="20000">全部（約 18,400 檔 · 約 226 MB · 約 20 分鐘）</option>
           </select>
         </div>
         <div class="form-group" style="margin:0;">
@@ -9309,7 +9310,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.41 · ϡϡ</div>
+    <div>v 16.42 · ϢϢ</div>
   </footer>
 </div>
 
@@ -26282,6 +26283,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   async function barsSaveProgress(p) { await writeKey(BARS_PROGRESS_KEY, JSON.stringify(p)); }
 
+  let barsWorklistNote = '';   // 建工作清單時發現的問題（例如 Worker 是舊版、給不到那麼多檔）
   // 工作清單：美股走 Worker 的市值排序、台股走全代號表
   async function barsBuildWorklist(mkt, topN) {
     if (mkt === 'tw') {
@@ -26301,6 +26303,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!resp.ok) throw new Error('抓不到美股清單（HTTP ' + resp.status + (j && j.error ? '：' + j.error : '') + '）');
     const list = (j && Array.isArray(j.list)) ? j.list.filter(r => Array.isArray(r) && r[0]).map(r => String(r[0])) : [];
     if (!list.length) throw new Error('美股清單是空的');
+    // ⚠ 舊版 Worker 的 top 上限是 6000。你選「全部」它照樣回 6000 筆、也不會報錯，
+    //   於是累積器跑完會說「全部累積完成」——**而其實少了 12,000 多檔，畫面上完全看不出來**。
+    //   （v16.17 同一條：要使用者手動更新的外部相依，落後時必須明講。）
+    barsWorklistNote = (topN > 6000 && list.length === 6000)
+      ? '你的 Worker 是舊版，最多只給得到 6,000 檔（你選的是全部 18,000+）。'
+        + '要抓全部，請把 worker/news-rss.js 重新貼一次到 Cloudflare——**網址不用改**。'
+      : '';
     return list;
   }
 
@@ -26437,10 +26446,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const verNote = await workerVerNote(WORKER_ROUTE_NEEDED.bars);
     const warnBox = document.getElementById('barsVerWarn');
     if (warnBox) {
+      const box = (color, head, body) => `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid ${color}; border-radius:4px; padding:10px 14px; margin-bottom:12px; font-size:12px; color:var(--ink-secondary); line-height:1.75;">
+             <strong style="color:${color};">${head}</strong><br>${body}</div>`;
       warnBox.innerHTML = verNote
-        ? `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--danger); border-radius:4px; padding:10px 14px; margin-bottom:12px; font-size:12px; color:var(--ink-secondary); line-height:1.75;">
-             <strong style="color:var(--danger);">這個功能還不能用。</strong><br>${verNote}
-           </div>` : '';
+        ? box('var(--danger)', '這個功能還不能用。', verNote)
+        // ⚠ 舊 Worker 只給 6,000 檔卻不會報錯 → 累積完會說「全部完成」而其實少了一萬多檔
+        : (barsWorklistNote ? box('var(--accent-warm)', '⚠ 抓不到你選的那麼多檔。', barsWorklistNote) : '');
     }
     const runBtn0 = document.getElementById('barsRunBtn');
     if (runBtn0) runBtn0.disabled = !!verNote;
@@ -28911,6 +28922,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   //   v16.16 起**先讀本機累積的 K 棒**——已經累積過的就是純計算，秒級；沒有的才照舊連網。
   //   `barsScanHits` / `barsScanMiss` 讓掃描結果講得出「這次有幾檔是本機資料」。
   let barsScanHits = 0, barsScanMiss = 0;
+  // 掃「本機已累積的全部」時設成 true：本機沒有就當成沒有，**一次網路都不打**。
+  // ⚠ 沒有這道閘，18,409 檔裡只要有幾十檔資料不足 60 根（新上市、冷門股），
+  //   就會安靜地變成幾十次連網——使用者只會看到「掃描很慢」，不知道為什麼。
+  let scanLocalOnly = false;
   async function scanFetch(market, sym) {
     try {
       const rec = await barsGet(market === 'tw' ? 'tw' : 'us', sym);
@@ -28920,6 +28935,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       }
     } catch (e) {}
     barsScanMiss++;
+    if (scanLocalOnly) return [];
     return market === 'tw' ? fetchTwOhlc(sym) : fetchUsOhlc(sym);
   }
   const scanCur = () => usScanMarket === 'tw' ? 'NT$' : '$';
@@ -28933,8 +28949,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   const twIsEtf = s => /^00/.test(s.symbol);
 
+  // ⚠ v16.42 補上最重要的一項：**本機已累積的全部**。
+  //   在這之前，掃描範圍全是「寫死在程式裡的清單」——台股 152 檔（TW_STOCKS）、美股 70 檔——
+  //   而 v16.15 早就有 3,138 檔台股與 18,409 檔美股的全代號表、v16.16 也有本機日 K 資料庫。
+  //   **等於資料下載好了，掃描器卻沒在用它**：整條「下載全市場 → 找出有機會的股票」斷在這裡。
+  // ⚠ 這兩個範圍**只掃本機真的有資料的**（不連網補），所以掃 3,000 檔也是幾秒鐘的事；
+  //   沒累積過的就是沒有，畫面要講清楚，不要偷偷去連 18,409 次網路。
   const US_SCAN_SCOPES = {
     us: [
+      { v: 'us_local', t: '本機已累積的全部', local: true },
       { v: 'builtin', t: '內建熱門（42 檔）' },
       { v: 'wide', t: '內建 + 擴充（70 檔）' },
       { v: 'cap100', t: '美股市值前 100 大' },
@@ -28943,13 +28966,34 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       { v: 'custom', t: '自訂代號' }
     ],
     tw: [
+      { v: 'tw_local', t: '本機已累積的全部', local: true },
       { v: 'tw_major', t: '權值與熱門個股（40 檔）' },
-      { v: 'tw_all', t: '全部個股（不含 ETF）' },
-      { v: 'tw_etf', t: '只掃 ETF' },
+      { v: 'tw_all', t: '內建清單的全部個股（不含 ETF）' },
+      { v: 'tw_etf', t: '只掃內建清單的 ETF' },
       { v: 'mine', t: '只掃我的持股' },
       { v: 'custom', t: '自訂代號' }
     ]
   };
+  // 本機資料庫裡這個市場有幾檔（掃描範圍的標籤與提示都要用真的數字，不要寫死）
+  let scanLocalCount = { us: null, tw: null };
+  async function refreshScanLocalCount() {
+    try {
+      const keys = await barsAllKeys();
+      scanLocalCount = { us: 0, tw: 0 };
+      keys.forEach(k => {
+        const kk = String(k);
+        if (kk.startsWith('us:')) scanLocalCount.us++;
+        else if (kk.startsWith('tw:')) scanLocalCount.tw++;
+      });
+    } catch (e) { scanLocalCount = { us: null, tw: null }; }
+    return scanLocalCount;
+  }
+  // 本機已累積的代號（就是掃描範圍本身）
+  async function scanLocalSymbols(mkt) {
+    const keys = await barsAllKeys();
+    const pre = mkt + ':';
+    return keys.map(String).filter(k => k.startsWith(pre)).map(k => k.slice(pre.length)).filter(Boolean);
+  }
 
   function openUsScanModal(market) {
     // 「＋ 加入觀察 / ✓ 已在觀察中」要靠 alogAll 判斷，先確保它載入過再畫結果
@@ -28966,9 +29010,23 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (cust) cust.placeholder = m === 'tw' ? '2330, 2454, 0050（逗號分隔）' : 'AAPL, NVDA, TSLA（逗號分隔）';
     const sel = document.getElementById('usScanScope');
     if (sel) {
-      sel.innerHTML = US_SCAN_SCOPES[m].map(o => `<option value="${escape(o.v)}">${escape(o.t)}</option>`).join('');
-      sel.value = US_SCAN_SCOPES[m][0].v;
-      try { renderUsScanScopeHint(sel.value); } catch (e) {}
+      // 「本機已累積」那一項的檔數要是真的數字 → 先畫一版（標「計算中」），算完再補上。
+      // ⚠ 本機一檔都沒有時**不要把它設成預設**，不然一按下去就是空結果。
+      const paint = () => {
+        const n = scanLocalCount[m];
+        sel.innerHTML = US_SCAN_SCOPES[m].map(o => {
+          const t = o.local
+            ? (n == null ? o.t + '（計算中…）' : (n > 0 ? `${o.t}（${n.toLocaleString('en-US')} 檔 · 不連網）` : o.t + '（還沒累積任何資料）'))
+            : o.t;
+          return `<option value="${escape(o.v)}"${o.local && !n ? ' disabled' : ''}>${escape(t)}</option>`;
+        }).join('');
+        const want = (scanLocalCount[m] > 0) ? US_SCAN_SCOPES[m][0].v : US_SCAN_SCOPES[m][1].v;
+        sel.value = want;
+        try { renderUsScanScopeHint(sel.value); } catch (e) {}
+        try { onUsScanScopeChange(); } catch (e) {}
+      };
+      paint();
+      refreshScanLocalCount().then(paint).catch(() => {});
     }
     const btn = document.getElementById('usScanRunBtn');
     if (btn) btn.textContent = '▶ 開始掃描';
@@ -29092,16 +29150,33 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function renderUsScanScopeHint(v) {
     const el = document.getElementById('usScanScopeHint');
     if (!el) return;
+    const mkt = usScanMarket === 'tw' ? 'tw' : 'us';
+    const n = scanLocalCount[mkt];
+    const localTip = (n == null)
+      ? '正在數本機有幾檔…'
+      : (n > 0
+        ? `掃你已經存在這台電腦上的 <strong>${n.toLocaleString('en-US')} 檔</strong>，<strong>完全不連網</strong>，幾秒鐘就跑完，也不會用掉任何免費額度。`
+          + '<br><span style="color:var(--ink-muted);">※ 只掃本機真的有資料的。要涵蓋更多，先按右邊「📥 累積資料」把日 K 抓下來（可以隨時停、下次接著跑）。</span>'
+        : '<strong style="color:var(--danger);">本機還沒有任何日 K 資料</strong>，這個範圍是空的。'
+          + '<br>按右邊「📥 累積資料」開始下載（台股全部約 3 分鐘、美股全部約 20 分鐘，可以隨時停）。');
     const tip = {
+      us_local: localTip,
+      tw_local: localTip,
       cap100: '依市值排序的前 100 大美股，大約 10 秒。名單每天更新一次。',
       cap250: '依市值排序的前 250 大美股，大約 20 秒。<strong style="color:var(--accent-warm);">這會用掉接近一小時份的免費資料額度</strong>，掃完再掃別的可能會被擋，等一小時就好。',
       builtin: '內建的 42 檔熱門股，最省額度。',
       wide: '內建 42 檔 ＋ 擴充 28 檔波段常見標的。',
+      tw_major: '內建清單裡的 40 檔權值與熱門股。',
+      tw_all: '<strong>這是「內建寫死的清單」，不是全市場</strong>——只有 152 檔，而且一檔上櫃都沒有。要掃全部請用上面的「本機已累積的全部」。',
+      tw_etf: '內建清單裡的 ETF。',
       mine: '只掃你自己持有的，最快也最省。',
       custom: '自己打代號，逗號分隔。'
     }[v] || '';
+    // ⚠ 這裡原本寫「沒有『掃全部美股』這個選項…一檔一檔抓要 33 小時，做不到」。
+    //   那句話在 v16.16 做出本機日 K 資料庫之後就過期了——**現在做得到**，
+    //   而且是「先累積、再離線掃」，掃的時候一次連網都不用。過期的結論比沒有結論更糟。
     const why = (v === 'cap100' || v === 'cap250')
-      ? '<br><span style="color:var(--ink-muted);">※ 沒有「掃全部美股」這個選項：免費資料來源不給整批下載，一檔一檔抓要 33 小時，做不到。市值前 250 大已經涵蓋絕大多數會交易的標的。</span>'
+      ? '<br><span style="color:var(--ink-muted);">※ 想掃更多請用「本機已累積的全部」——先把日 K 抓下來存著，之後掃描完全不連網、也不吃額度。</span>'
       : '';
     el.innerHTML = tip ? tip + why : '';
   }
@@ -29187,6 +29262,26 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         return { symbol: s, name: (ref && ref.name) || s, zh: tw ? '' : ((ref && ref.zh) || '') };
       });
     }
+    // 本機已累積的全部（v16.42）——這是唯一「掃得動全市場」的範圍，因為資料就在這台電腦上。
+    // ⚠ 只掃本機有的，**不連網去補**：18,409 檔逐檔連網要好幾小時，那不是功能是災難。
+    if (scope === 'tw_local' || scope === 'us_local') {
+      const mkt = scope === 'tw_local' ? 'tw' : 'us';
+      const syms = await scanLocalSymbols(mkt);
+      if (mkt === 'tw') {
+        return syms.map(sym => {
+          const ref = (typeof twFindStock === 'function' ? twFindStock(sym) : null) || lookup(sym);
+          return { symbol: sym, name: (ref && ref.name) || sym, zh: '' };
+        });
+      }
+      let cap = [];
+      try { const c = await readJson(US_UNIVERSE_KEY, null); cap = (c && Array.isArray(c.list)) ? c.list : []; }
+      catch (e) { cap = []; }   // 只用本機已有的那份補名字；查不到就顯示代號，**絕不為了名字連網**
+      const byCap = new Map(cap.map(x => [x.symbol, x]));
+      return syms.map(sym => {
+        const ref = byCap.get(sym) || lookup(sym);
+        return { symbol: sym, name: (ref && ref.name) || sym, zh: (ref && ref.zh) || '', cap: ref && ref.cap };
+      });
+    }
     if (tw) {
       const all = twScanList();
       if (scope === 'tw_etf') return all.filter(twIsEtf);
@@ -29244,6 +29339,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     usScanRunning = true;
     usScanBlocked = null;
+    // 「本機已累積的全部」＝ 離線掃描；其他範圍照舊會連網補
+    scanLocalOnly = /^(us|tw)_local$/.test(document.getElementById('usScanScope').value || '');
     // 條件模式看開關；策略模式只要選到含基本面的策略就要抓
     const needFund = usScanMode === 'strategy' ? usScanStrategyNeedsFund() : usScanUseFund;
     const btn = document.getElementById('usScanRunBtn');
@@ -29301,7 +29398,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         step(item.symbol);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(8, universe.length) }, worker));
+    // 離線掃描時併發開大一點——瓶頸是 IndexedDB 讀取與計算，不是網路，也不吃任何額度
+    const lanes = scanLocalOnly ? Math.min(24, universe.length) : Math.min(8, universe.length);
+    await Promise.all(Array.from({ length: lanes }, worker));
+    scanLocalOnly = false;
     usScanRows = rows;
     usScanRunning = false;
     if (btn) { btn.disabled = false; btn.textContent = '▶ 重新掃描'; }
