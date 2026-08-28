@@ -9309,7 +9309,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.39 · ϛϛ</div>
+    <div>v 16.40 · ϙϙ</div>
   </footer>
 </div>
 
@@ -10919,6 +10919,67 @@ alter publication supabase_realtime add table party_locations;</pre>
       }
     } catch (e) {}
 
+    // 1f) 快出發的旅程（v16.40）
+    //     首頁的「今日提醒」本來一項旅遊都不管——它檢查停損、租約、會費、定存、備份…
+    //     但**九寨溝 8 天後出發、行前清單 0/32、緊急電話一支沒填**，在首頁一個字都看不到。
+    //     而空狀態那句「今天沒有需要處理的事」在出發前一週看到，會讓人放心得太早。
+    // ⚠ 這一段**只講「從儲存資料直接數得出來」的事實**（清單幾項沒打勾、名單幾位、電話填了幾支），
+    //   **不重算任何既有的判斷**（證件效期夠不夠、集合過期沒…那些留給旅遊模組自己講）——
+    //   算兩份一定會分岔，而這個專案已經為此付過好幾次代價。
+    try {
+      const trips = [];
+      try {
+        Object.keys(ITINERARIES || {}).forEach(id => {
+          const it = ITINERARIES[id];
+          if (it && it.startDate) trips.push({ id, title: it.title || id, start: it.startDate,
+            end: it.endDate || ((it.days || []).slice(-1)[0] || {}).date || it.startDate });
+        });
+      } catch (e) {}
+      const today = todayISO();
+      // 進行中的優先，其次是「最近一個還沒出發的」
+      const live = trips.filter(t => t.start <= today && today <= t.end)
+        .sort((a, b) => a.start.localeCompare(b.start))[0];
+      const soon = trips.filter(t => t.start > today).sort((a, b) => a.start.localeCompare(b.start))[0];
+      const T = live || soon;
+      const dToStart = T ? daysBetweenToday(T.start) : null;
+      if (T && dToStart != null && dToStart <= 30) {
+        const K = suf => `travel_${T.id}_${suf}`;
+        const chk = await readJson(K('checklist'), null);
+        const ros = await readJson(K('roster'), null);
+        const sos = await readJson(K('sos'), null);
+        const todo = [];
+        // 行前清單：沒存過 ＝ 還沒開始（畫面會用預設清單，但那不代表他打過勾）
+        if (!Array.isArray(chk) || !chk.length) todo.push('行前清單<strong>還沒開始打勾</strong>');
+        else {
+          const undone = chk.filter(x => x && !x.done).length;
+          if (undone > 0) todo.push(`行前清單還有 <strong>${undone} 項</strong>沒打勾`);
+        }
+        // 團員名單／證件效期：只數「填了沒」，夠不夠是旅遊模組的事
+        const people = (ros && Array.isArray(ros.people)) ? ros.people : [];
+        if (!people.length) todo.push('<strong>還沒建立團員名單</strong>（點名、房間、緊急聯絡都要用）');
+        else {
+          const noDoc = people.filter(x => !String((x && x.passport) || '').trim()).length;
+          const noEc = people.filter(x => !String((x && x.ecPhone) || '').trim()).length;
+          if (noDoc) todo.push(`<strong>${noDoc} 位</strong>還沒填證件效期`);
+          if (noEc) todo.push(`<strong>${noEc} 位</strong>沒留緊急聯絡人`);
+        }
+        // 緊急電話：只數填了幾支
+        const c = (sos && sos.c && typeof sos.c === 'object') ? sos.c : {};
+        const gotPhones = ['guidePhone', 'localPhone', 'insurerPhone', 'hotelPhone']
+          .filter(k => String(c[k] || '').trim()).length;
+        if (!gotPhones) todo.push('<strong>緊急電話一支都還沒填</strong>（領隊、地陪、保險、飯店）');
+        const when = dToStart === 0 ? '<strong>今天出發</strong>'
+          : (dToStart > 0 ? `<strong>${dToStart} 天後出發</strong>` : '<strong>旅程進行中</strong>');
+        if (todo.length) {
+          // 剩不到一週、而且還有事沒做 → 該急了
+          push(dToStart >= 0 && dToStart <= 7 ? 'warn' : 'info', '✈',
+            `「${escape(String(T.title).split('·')[0].trim() || T.title)}」${when}：` + todo.join('、') +
+            `<span style="color:var(--ink-tertiary);"> · 證件效期夠不夠、集合幾點，到旅遊那一頁看</span>`,
+            'tripsView', 'trip');
+        }
+      }
+    } catch (e) {}
+
     // 2) 租約快到期
     try {
       for (const [k, v, label] of [['re_rental_props_v1', 'rentalView', '出租'], ['re_com_props_v1', 'commercialView', '商業']]) {
@@ -11079,7 +11140,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       : '';
     if (!list.length) {
       el.innerHTML = `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:10px 14px; margin-bottom:18px; font-size:12.5px; color:var(--ink-secondary);">
-        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查下單計畫的停損／停利、現價新不新、租約、會費、活動、定存到期、備份狀態）</span>
+        ✓ 今天沒有需要處理的事。<span style="color:var(--ink-tertiary); font-size:11.5px;">（會自動檢查下單計畫的停損／停利、現價新不新、租約、會費、活動、定存到期、備份狀態，以及<strong>快出發的旅程</strong>）</span>
         ${mutedBar}
       </div>`;
       return;
