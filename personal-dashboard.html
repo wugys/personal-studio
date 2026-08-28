@@ -9337,7 +9337,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.44 · ϦϦ</div>
+    <div>v 16.45 · ϨϨ</div>
   </footer>
 </div>
 
@@ -29305,7 +29305,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       if (mkt === 'tw') {
         return syms.map(sym => {
           const ref = (typeof twFindStock === 'function' ? twFindStock(sym) : null) || lookup(sym);
-          return { symbol: sym, name: (ref && ref.name) || sym, zh: '' };
+          // market 帶著（TWSE / TPEx / 興櫃）——掃全市場之後興櫃股會混進來，卡片上要標
+          return { symbol: sym, name: (ref && ref.name) || sym, zh: '', market: (ref && ref.market) || '' };
         });
       }
       let cap = [];
@@ -29345,9 +29346,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const sw60 = usSwing(bars, 60);
     const pctB = (sig.boll && sig.boll.upper > sig.boll.lower)
       ? (price - sig.boll.lower) / (sig.boll.upper - sig.boll.lower) * 100 : null;
+    // 日均成交金額（近 20 日，收盤×股數）——冷門股買得進出不掉，這個數字是流動性判讀的底
+    const amt20 = bars.slice(-20).map(b => (Number(b.close) || 0) * (Number(b.volume) || 0));
     return {
       symbol: item.symbol, name: item.name || item.symbol, zh: item.zh || '',
       sig, bars, price, lv, sw60, pctB,
+      market: usScanMarket,                      // 判讀流動性門檻要知道是台股還美股；render 時讀全域會在切市場後拿錯
+      board: item.market || '',                  // 台股的 上市/上櫃/興櫃（twFindStock 給的；美股與查不到的為空）
+      turnover20: amt20.length ? avg(amt20) : null,
       volRatio: v20 > 0 ? v5 / v20 : null,
       fromHigh60: (sw60 && sw60.high > 0) ? (price - sw60.high) / sw60.high * 100 : null,
       lastDate: bars[bars.length - 1] && bars[bars.length - 1].time
@@ -29529,12 +29535,20 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const fund = c.fund
       ? `　基本面：本益比 ${n(c.fund.pe)}／股價淨值比 ${n(c.fund.pb)}／ROE ${n(c.fund.roe, 1)}%／殖利率 ${n(c.fund.dy, 2)}%`
       : '　基本面：這次沒有抓（掃描時沒勾「同時檢查基本面」）';
+    // 上下限判讀與流動性：跟卡片吃同一份 scanBandText / scanTurnoverInfo——
+    // AI 看到的一定要跟畫面上講的是同一句話（算兩份一定會分岔）
+    const band = scanBandText(c, v => cur + n(v));
+    const liq = scanTurnoverInfo(c);
+    const liqLine = liq
+      ? `　流動性：日均成交金額約 ${liq.amt}${liq.emg ? '（興櫃股：流動性差、無漲跌幅限制）' : ''}${liq.low ? '（⚠ 冷門，滑價風險）' : ''}`
+      : '';
     return `${i + 1}. ${c.symbol}${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? '（' + (c.zh || c.name) + '）' : ''}
 　收盤 ${cur}${n(c.price)}（資料日期 ${c.lastDate || '不明'}）　綜合研判：${g.overall || '—'}（分數 ${g.score == null ? '—' : g.score}）
 　${why}
 　均線：MA5 ${n(g.ma5)}／MA20 ${n(g.ma20)}／MA60 ${n(g.ma60)}　RSI ${n(g.rsi, 1)}　MACD柱 ${g.macd ? n(g.macd.hist, 3) : '—'}　KD ${g.kd ? n(g.kd.k, 1) + '/' + n(g.kd.d, 1) : '—'}
 　布林位置 %B ${n(c.pctB, 1)}　量比(5日/20日) ${n(c.volRatio, 2)}　距 60 日高 ${n(c.fromHigh60, 1)}%
-　停損參考 ${stop ? cur + n(stop.v) + '（' + n(stop.pct, 1) + '%）' : '—'}　2:1 目標 ${stop ? cur + n(stop.target2r) + '（+' + n(stop.target2rPct, 1) + '%）' : '—'}${fund}`;
+　停損參考 ${stop ? cur + n(stop.v) + '（' + n(stop.pct, 1) + '%）' : '—'}　2:1 目標 ${stop ? cur + n(stop.target2r) + '（+' + n(stop.target2rPct, 1) + '%）' : '—'}${band ? `
+　上檔判讀：${band}` : ''}${liqLine}${fund}`;
   }
 
   // 兩個 renderer（條件模式／策略模式）長得一模一樣，按鈕只寫一份共用——
@@ -29542,6 +29556,99 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function scanAiBtnHtml() {
     return `<button class="btn btn-sm btn-primary" type="button" style="margin-left:auto;"
       onclick="openScanAiModal()" title="把畫面上排好的前 30 檔整批交給 AI，請它挑前 5 名">🤖 讓 AI 挑前 5 名</button>`;
+  }
+
+  // ===== 上下限判讀（v16.45）：上檔第一關在哪、第一段賠率夠不夠 =====
+  // 以前卡片把「目標(2:1)」與「上方壓力」並排放著，兩個數字的關係從來沒講——
+  // 而壓力比目標近的時候，2:1 是要先突破那道壓力才看得到的（兩個數字並排必說明差別，v13.0）。
+  // 一份共用：條件模式卡片、策略模式卡片、AI 提示詞三個消費者都吃這一份（算兩份一定會分岔）。
+  // ⚠ 只認「前波高點」（近 20 日高／近 60 日高／52 週高）當第一道壓力：
+  //   布林上軌與均線是每天會動的參考線，拿來當關卡會把幾乎每一檔都標成被擋住——
+  //   會誤報的保護比沒保護糟（v12.1b）。
+  // ⚠ 「壓力比 2:1 目標近」跟「rr1 < 2」是同一件事（target2r ＝ 現價 + 2×風險），不要各算一份；
+  //   門檻一律跟四捨五入後的顯示值比（v9.4：206/200 剛好 3% 的教訓）。
+  function scanBandInfo(c) {
+    const stop = c.lv && c.lv.stops && c.lv.stops[0];
+    if (!stop) return null;
+    const risk = c.price - stop.v;
+    if (!(risk > 0)) return null;
+    const STRUCT = ['近 20 日高', '近 60 日高', '52 週高'];
+    const ceil = ((c.lv && c.lv.resists) || []).find(r => STRUCT.includes(r.label)) || null;
+    if (!ceil) return { kind: 'sky', stop, ceil: null, rr1: null, upPct: null };
+    const upPct = Number(((ceil.v - c.price) / c.price * 100).toFixed(1));
+    const rr1 = Number(((ceil.v - c.price) / risk).toFixed(1));
+    // 貼著前波高點（2% 內）＝突破區，不是「被壓力擋住」——正在創高的股票天天都貼著高點，
+    // 把它標成 ⚠ 就是狼來了
+    const kind = upPct <= 2 ? 'edge' : rr1 < 1.5 ? 'tight' : rr1 < 2 ? 'mid' : 'ok';
+    return { kind, stop, ceil, rr1, upPct };
+  }
+  // 同一句話給卡片與 AI 提示詞用（fmt = 價格格式器）。文字只在這裡生一次。
+  function scanBandText(c, fmt) {
+    const b = scanBandInfo(c);
+    if (!b) return '';
+    if (b.kind === 'sky') return '上方沒有前波高點可當壓力（創高區）——上檔用 2:1 目標當參考，下檔守停損';
+    const at = `${b.ceil.label} ${fmt(b.ceil.v)}（+${b.upPct}%）`;
+    if (b.kind === 'edge') return `貼著前波高點（${at}）：突破就進創高區；還沒突破前，到它的空間對停損只有 1 : ${b.rr1}`;
+    if (b.kind === 'tight') return `⚠ 上檔 ${at} 就有前波高點壓著：到它的空間對停損只有 1 : ${b.rr1}，2:1 目標要先突破這道壓力才看得到`;
+    if (b.kind === 'mid') return `上檔第一關是 ${at}，第一段賠率 1 : ${b.rr1}——2:1 目標在壓力之上，要先過這一關`;
+    return `2:1 目標會在第一道壓力（${at}）之前先到，上檔空間足夠`;
+  }
+
+  // ===== 流動性（v16.45）：日均成交金額（近 20 日）=====
+  // 掃描範圍擴到全市場（含興櫃 535 檔）之後，冷門股會混進結果——買得進出不掉，
+  // 滑價會把停損的精度整個吃掉。門檻（台股 < NT$3,000 萬/日、美股 < US$500 萬/日）是
+  // 保守的常用參考值，標出來讓人自己判斷，不直接把股票藏掉（只提醒、不自動改）。
+  function scanTurnoverInfo(c) {
+    const t = c.turnover20;
+    if (t == null || !(t > 0)) return null;
+    const tw = c.market === 'tw';
+    const amt = tw
+      ? (t >= 1e8 ? 'NT$' + (t / 1e8).toFixed(1) + ' 億' : 'NT$' + Math.round(t / 1e4).toLocaleString('en-US') + ' 萬')
+      : (t >= 1e9 ? 'US$' + (t / 1e9).toFixed(1) + 'B' : t >= 1e6 ? 'US$' + (t / 1e6).toFixed(1) + 'M' : 'US$' + Math.round(t / 1e3).toLocaleString('en-US') + 'K');
+    return { low: tw ? t < 3e7 : t < 5e6, amt, emg: c.board === '興櫃' };
+  }
+
+  // ===== 價位四格 ＋ 流動性格 ＋ 上下限判讀——兩個 renderer 的卡片共用這一份 =====
+  //（以前條件模式與策略模式各寫一份一模一樣的 grid，改的時候漏一邊就分岔，v9.9 同族）
+  function scanLevelCardsHtml(c, f) {
+    const stop = c.lv && c.lv.stops[0];
+    const sup = c.lv && c.lv.supports[0];
+    const res = c.lv && c.lv.resists[0];
+    const liq = scanTurnoverInfo(c);
+    const band = scanBandText(c, f);
+    const b = scanBandInfo(c);
+    const bandColor = b && b.kind === 'tight' ? 'var(--danger)'
+      : b && (b.kind === 'mid' || b.kind === 'edge') ? 'var(--accent-warm)'
+      : b && b.kind === 'ok' ? 'var(--accent)' : 'var(--ink-tertiary)';
+    const liqWarn = liq && (liq.low || liq.emg);
+    return `
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; margin-bottom:8px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目前價（收盤）</div>
+              <div style="font-family:var(--serif); font-size:15px;">${f(c.price)}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損參考</div>
+              <div style="font-family:var(--serif); font-size:15px; color:var(--danger);">${stop ? f(stop.v) : '—'}</div>
+              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? stop.pct.toFixed(1) + '%' : ''}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目標（賠率2:1）</div>
+              <div style="font-family:var(--serif); font-size:15px; color:var(--accent);">${stop ? f(stop.target2r) : '—'}</div>
+              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? '+' + stop.target2rPct.toFixed(1) + '%' : ''}</div>
+            </div>
+            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">下方支撐 / 上方壓力</div>
+              <div style="font-family:var(--mono); font-size:12px;">${sup ? f(sup.v) : '—'} / ${res ? f(res.v) : '—'}</div>
+            </div>
+            ${liq ? `<div style="background:var(--bg-elevated); border:1px solid ${liqWarn ? 'var(--danger)' : 'var(--line)'}; border-radius:3px; padding:6px 9px;">
+              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">日均成交金額(20日)</div>
+              <div style="font-family:var(--mono); font-size:12px; color:${liqWarn ? 'var(--danger)' : 'var(--ink-primary)'};">${liq.amt}</div>
+              ${liqWarn ? `<div style="font-family:var(--mono); font-size:9.5px; color:var(--danger);">${liq.emg ? '興櫃' : ''}${liq.emg && liq.low ? ' · ' : ''}${liq.low ? '⚠ 冷門' : ''}</div>` : ''}
+            </div>` : ''}
+          </div>
+          ${band ? `<div style="font-size:11px; color:var(--ink-secondary); line-height:1.6; margin-bottom:8px; padding:5px 9px; background:var(--bg-elevated); border-left:2px solid ${bandColor}; border-radius:3px;">📏 ${escape(band)}</div>` : ''}
+          ${liqWarn ? `<div style="font-size:10.5px; color:var(--danger); margin-bottom:8px;">${liq.emg ? '⚠ 興櫃股：流動性差、波動大、沒有漲跌幅限制。' : ''}${liq.low ? '⚠ 日均成交金額偏低（台股 < 3,000 萬／美股 < US$5M）：買得進不一定出得掉，滑價會吃掉停損的精度。' : ''}</div>` : ''}`;
   }
   function buildScanAiPrompt() {
     if (!usScanScored || !usScanScored.list || !usScanScored.list.length) return '';
@@ -29563,7 +29670,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 掃描母體共 ${usScanRows.length} 檔，通過 ${total} 檔，以下列出前 ${rows.length} 檔。
 
 【⚠ 你看得到的資料只有下面這些】
-· 只有技術指標、停損／目標參考價，以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
+· 只有技術指標、停損／目標參考價、上檔第一道壓力的判讀、流動性（日均成交金額），以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
+· 挑選時請把流動性當一回事：標了「冷門」或「興櫃」的，就算指標再漂亮也要講出這個風險。
 · **你沒有新聞、沒有財報全文、沒有法說會、沒有產業或競爭對手的資料，也沒有今天盤中的價格。**
 · ${dateNote}——如果現在距離那天已經有一段時間，請在回答裡提醒我這件事。
 · **請不要假裝知道你沒看到的東西。** 需要查證才敢講的，就寫進最後一段叫我自己去查，不要用推測填空。
@@ -29684,9 +29792,6 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
         ${scanAiBtnHtml()}
       </div>` + scored.map((r, i) => {
       const c = r.ctx;
-      const stop = c.lv && c.lv.stops[0];
-      const sup = c.lv && c.lv.supports[0];
-      const res = c.lv && c.lv.resists[0];
       const pct = r.matched.length / usScanPicked.length * 100;
       const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
       return `
@@ -29698,26 +29803,7 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
             <span class="${cls}" style="font-family:var(--mono); font-size:11px;">${escape(c.sig.overall)}</span>
             <span style="margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--accent);">符合 ${r.matched.length}/${usScanPicked.length}</span>
           </div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; margin-bottom:8px;">
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目前價（收盤）</div>
-              <div style="font-family:var(--serif); font-size:15px;">${f(c.price)}</div>
-            </div>
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損參考</div>
-              <div style="font-family:var(--serif); font-size:15px; color:var(--danger);">${stop ? f(stop.v) : '—'}</div>
-              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? stop.pct.toFixed(1) + '%' : ''}</div>
-            </div>
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目標（賠率2:1）</div>
-              <div style="font-family:var(--serif); font-size:15px; color:var(--accent);">${stop ? f(stop.target2r) : '—'}</div>
-              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? '+' + stop.target2rPct.toFixed(1) + '%' : ''}</div>
-            </div>
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">下方支撐 / 上方壓力</div>
-              <div style="font-family:var(--mono); font-size:12px;">${sup ? f(sup.v) : '—'} / ${res ? f(res.v) : '—'}</div>
-            </div>
-          </div>
+          ${scanLevelCardsHtml(c, f)}
           ${(() => {
             if (!usScanUseFund) return '';
             const fd = c.fund;
@@ -29790,9 +29876,6 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
         ${scanAiBtnHtml()}
       </div>` + scored.map((r, i) => {
       const c = r.ctx;
-      const stop = c.lv && c.lv.stops[0];
-      const sup = c.lv && c.lv.supports[0];
-      const res = c.lv && c.lv.resists[0];
       const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
       const many = r.passed.length >= 2;
       return `
@@ -29808,26 +29891,7 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
             ${r.passed.map(h => `<span style="font-family:var(--mono); font-size:11px; color:var(--bg-base); background:${h.s.fund ? 'var(--accent-warm)' : 'var(--accent)'}; border-radius:2px; padding:3px 9px;">${h.s.icon} ${escape(h.s.name)}</span>`).join('')}
             ${r.hits.filter(h => !h.pass && h.hit > 0).map(h => `<span style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); border:1px solid var(--line); border-radius:2px; padding:3px 8px;" title="還差：${escape(h.missing.join('、'))}">${h.s.icon} ${escape(h.s.name)} ${h.hit}/${h.total}</span>`).join('')}
           </div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; margin-bottom:8px;">
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目前價（收盤）</div>
-              <div style="font-family:var(--serif); font-size:15px;">${f(c.price)}</div>
-            </div>
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">停損參考</div>
-              <div style="font-family:var(--serif); font-size:15px; color:var(--danger);">${stop ? f(stop.v) : '—'}</div>
-              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? stop.pct.toFixed(1) + '%' : ''}</div>
-            </div>
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">目標（賠率2:1）</div>
-              <div style="font-family:var(--serif); font-size:15px; color:var(--accent);">${stop ? f(stop.target2r) : '—'}</div>
-              <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${stop ? '+' + stop.target2rPct.toFixed(1) + '%' : ''}</div>
-            </div>
-            <div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:6px 9px;">
-              <div style="font-family:var(--mono); font-size:9px; color:var(--ink-tertiary);">下方支撐 / 上方壓力</div>
-              <div style="font-family:var(--mono); font-size:12px;">${sup ? f(sup.v) : '—'} / ${res ? f(res.v) : '—'}</div>
-            </div>
-          </div>
+          ${scanLevelCardsHtml(c, f)}
           ${c.fund ? `<div style="display:flex; flex-wrap:wrap; gap:4px 14px; font-family:var(--mono); font-size:10.5px; margin-bottom:7px; padding:5px 9px; background:rgba(232,184,138,0.07); border-left:2px solid var(--accent-warm); border-radius:3px;">
             <span style="color:var(--accent-warm);">◆ 基本面</span>
             <span style="color:var(--ink-tertiary);">本益比</span> <strong>${c.fund.pe == null ? '—' : c.fund.pe.toFixed(2)}</strong>
