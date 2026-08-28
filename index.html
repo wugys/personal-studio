@@ -9309,7 +9309,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.40 · ϙϙ</div>
+    <div>v 16.41 · ϡϡ</div>
   </footer>
 </div>
 
@@ -37506,6 +37506,15 @@ ${daysBrief}${butlerPartyBlock()}
   }
 
   // ===== 資料匯出/匯入 =====
+  // ⚠ 這份備份**漏了整個模組最值錢的東西**（v16.41 才發現）：
+  //   原本只匯出 清單／花費／購物／管家／集合／設定／零用金／LINE 群，
+  //   **團員名單（飲食禁忌、身體狀況、緊急聯絡人、證件效期、房號、座位）、
+  //   緊急電話（領隊／地陪／保險／館處／飯店 ＋ 目的地國家）、這趟的匯率、整團順延、歷次集合
+  //   一個都沒有**——而匯入預覽只寫「清單 N 項 · 花費 N 筆 · 購物 N 筆」，
+  //   所以使用者**沒有任何方法看得出來少了什麼**，直到還原之後才發現名單不見了。
+  //   （全站備份 BACKUP_PREFIXES 含 `travel_` 所以一直是完整的；壞的只有旅遊模組自己這一顆按鈕。）
+  // ⚠ 新增 per-trip 鍵時，這裡要跟著加——`TRAVEL_STORAGE` 的每一個 getter 都要問一次「要不要備份」。
+  //   刻意不含：`wx`（天氣快取，六小時就過期）、`field`（現場模式的進入時間，是這台裝置的狀態）。
   async function exportTravelData() {
     const data = exportPayload('travel', {
       tripId: activeTripId || 'default',
@@ -37517,7 +37526,12 @@ ${daysBrief}${butlerPartyBlock()}
       gather: trvGather,
       settings: trvSettings,
       budgetTotal: trvBudgetTotal,
-      lineGroup: trvLineGroup
+      lineGroup: trvLineGroup,
+      roster: (typeof trvRoster !== 'undefined') ? trvRoster : null,
+      sos: (typeof trvSos !== 'undefined') ? trvSos : null,
+      fx: (typeof trvFx !== 'undefined') ? trvFx : null,
+      delays: (typeof trvDelays !== 'undefined') ? trvDelays : null,
+      gatherLog: (typeof trvGatherLog !== 'undefined') ? trvGatherLog : null
     });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -37534,13 +37548,33 @@ ${daysBrief}${butlerPartyBlock()}
       try {
         const d = JSON.parse(ev.target.result);
         const here = (typeof ITINERARY !== 'undefined' && ITINERARY) ? ITINERARY.title : '這一趟';
-        let summary = `清單 ${(d.checklist || []).length} 項 · 花費 ${(d.expenses || []).length} 筆 · 購物 ${(d.shopping || []).length} 筆`;
+        // ⚠ 摘要要把**檔案裡真的有什麼**講出來——原本只講清單／花費／購物三樣，
+        //   於是「這份備份根本沒有團員名單」這件事，使用者要到還原之後才會發現。
+        const impPeople = (d.roster && Array.isArray(d.roster.people)) ? d.roster.people.length : null;
+        const impPhones = (d.sos && d.sos.c && typeof d.sos.c === 'object')
+          ? ['guidePhone', 'localPhone', 'insurerPhone', 'embassyPhone', 'hotelPhone']
+              .filter(k => String(d.sos.c[k] || '').trim()).length : null;
+        let summary = `清單 ${(d.checklist || []).length} 項 · 花費 ${(d.expenses || []).length} 筆 · 購物 ${(d.shopping || []).length} 筆`
+          + (impPeople != null ? ` · 團員 ${impPeople} 位` : '')
+          + (impPhones != null ? ` · 緊急電話 ${impPhones} 支` : '');
+        // 舊版匯出的檔案沒有這幾樣 → 明講，並保證不會把現有的洗掉（只寫檔案裡有的東西）
+        const missOld = [impPeople == null && '團員名單', impPhones == null && '緊急電話',
+          (d.fx === undefined) && '這趟的匯率'].filter(Boolean);
+        if (missOld.length) {
+          summary += `\n\n⚠ 這份備份裡**沒有${missOld.join('、')}**（v16.41 以前匯出的檔案不含這些）。\n`
+                   + '匯入不會動到你現在的這幾樣——它們會原封不動留著。';
+        }
         // ⚠ 不同趟旅遊的資料是分開存的（tripKey），匯錯趟會把這一趟的花費整批換掉
         if (d.tripId && d.tripId !== (activeTripId || 'default')) {
           summary += `\n\n⚠ 這份備份是【${d.tripTitle || d.tripId}】的，你現在打開的是【${here}】。\n`
                    + '每一趟的清單、花費、購物是分開存的——匯進來會把【' + here + '】的整批換掉。';
         }
-        const curNow = `清單 ${trvChecklist.length} 項 · 花費 ${trvExpenses.length} 筆 · 購物 ${trvShopping.length} 筆`;
+        const curPeople = (trvRoster && Array.isArray(trvRoster.people)) ? trvRoster.people.length : 0;
+        const curPhones = (() => { try { const c = (sosNorm().c) || {};
+          return ['guidePhone', 'localPhone', 'insurerPhone', 'embassyPhone', 'hotelPhone']
+            .filter(k => String(c[k] || '').trim()).length; } catch (e) { return 0; } })();
+        const curNow = `清單 ${trvChecklist.length} 項 · 花費 ${trvExpenses.length} 筆 · 購物 ${trvShopping.length} 筆`
+          + ` · 團員 ${curPeople} 位 · 緊急電話 ${curPhones} 支`;
         if (!importAsk('travel', d, summary, curNow, false)) return;
         // 形狀不對的欄位直接跳過（不然存進去之後每次開都要靠 loadTravel 的防護救）
         const isArr = Array.isArray, isObj = o => o && typeof o === 'object' && !Array.isArray(o);
@@ -37552,6 +37586,16 @@ ${daysBrief}${butlerPartyBlock()}
         if (isObj(d.settings)) trvSettings = { ...trvSettings, ...d.settings };
         if (d.budgetTotal) trvBudgetTotal = d.budgetTotal;
         if (d.lineGroup) trvLineGroup = d.lineGroup;
+        // ⚠ 只寫「檔案裡真的有」的欄位——舊備份沒有這幾樣時，現有的要原封不動留著
+        //   （跟全站還原同一條規矩，v16.30b）。
+        if (isObj(d.roster) && Array.isArray(d.roster.people)) {
+          trvRoster = d.roster;
+          await saveTravelKey(TRAVEL_STORAGE.roster, trvRoster);
+        }
+        if (isObj(d.sos)) { trvSos = d.sos; sosNorm(); await saveTravelKey(TRAVEL_STORAGE.sos, trvSos); }
+        if (isObj(d.fx)) { trvFx = d.fx; fxNorm(); await saveTravelKey(TRAVEL_STORAGE.fx, trvFx); }
+        if (isObj(d.delays)) { trvDelays = d.delays; await saveTravelKey(TRAVEL_STORAGE.delays, trvDelays); }
+        if (isArr(d.gatherLog)) { trvGatherLog = d.gatherLog; await saveTravelKey(TRAVEL_STORAGE.gatherLog, trvGatherLog); }
         await saveTravelKey(TRAVEL_STORAGE.checklist, trvChecklist);
         await saveTravelKey(TRAVEL_STORAGE.expenses, trvExpenses);
         await saveTravelKey(TRAVEL_STORAGE.shopping, trvShopping);
