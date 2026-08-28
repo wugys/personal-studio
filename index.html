@@ -1815,6 +1815,8 @@
     padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink-secondary);
   }
   .wx-badge.rain { color: var(--accent-warm); border-color: rgba(232, 184, 138, 0.5); }
+  /* 一天只抓一個點的天氣 → 一定要把「是哪一個點」寫在數字旁邊 */
+  .wx-at { color: var(--ink-muted); margin-left: 5px; font-size: 8.5px; letter-spacing: 0; }
   .rs-front { font-family: var(--mono); font-size: 9.5px; color: var(--ink-tertiary); letter-spacing: 0.2em; text-align: center; padding-bottom: 9px; border-bottom: 1px dashed var(--line); margin-bottom: 11px; }
   /* ===== 現場模式 =====
      在馬路上、太陽底下、一隻手拿著手機的時候用的。所以：字大、按鈕大、東西少。
@@ -8043,7 +8045,7 @@
         <button class="btn btn-primary" onclick="openShopModal()">+ 記錄購物</button>
         <button class="btn" onclick="exportShoppingList()">↓ 匯出購物清單</button>
         <div style="margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">
-          總購物 NT$<span id="shopTotal">0</span> · <span id="shopCount">0</span> 件
+          總購物 NT$<span id="shopTotal">0</span> · <span id="shopCount">0 件</span>
         </div>
       </div>
       <div id="shopUnbilledBox"></div>
@@ -9307,7 +9309,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.33 · υυ</div>
+    <div>v 16.34 · φφ</div>
   </footer>
 </div>
 
@@ -31293,7 +31295,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     `).join('');
     return `
       <div class="print-section" style="page-break-before:always;">
-        <h2>購物 <em>記錄</em> · ${trvShopping.length} 件 · NT$${total.toLocaleString()}</h2>
+        <h2>購物 <em>記錄</em> · ${shopCountText(trvShopping)} · NT$${total.toLocaleString()}</h2>
         ${rows}
       </div>
     `;
@@ -31873,7 +31875,7 @@ ${baseSchema}
     // 購物
     const shopTotal = trvShopping.reduce((s, x) => s + Number(x.amount || 0) * (Number(x.qty)||1), 0);
     document.getElementById('hc-shop').textContent = trvShopping.length > 0
-      ? `${trvShopping.length} 件 · NT$${shopTotal.toLocaleString()}`
+      ? `${shopCountText(trvShopping)} · NT$${shopTotal.toLocaleString()}`
       : '0 件';
     // 行前清單
     const done = trvChecklist.filter(x => x.done).length;
@@ -34358,7 +34360,7 @@ ${baseSchema}
         ? `<span class="alt-badge lv${altLevel(da.max)}" title="最高點：${escape(da.maxName)}">▲ 最高 ${escape(altText(da.max))}</span>` : '';
       const wxD = wxOf(d.date);
       const wxBadge = wxD
-        ? `<span class="wx-badge${wxD.pp >= 40 ? ' rain' : ''}" title="${escape(wxInfo(wxD.code).t)}${wxD.pp ? ' · 降雨機率 ' + wxD.pp + '%' : ''}">${wxInfo(wxD.code).e} ${Math.round(wxD.tmin)}~${Math.round(wxD.tmax)}°${wxD.pp >= 40 ? ' ☂' + wxD.pp + '%' : ''}</span>` : '';
+        ? `<span class="wx-badge${wxD.pp >= 40 ? ' rain' : ''}" title="${escape(wxInfo(wxD.code).t)}${wxD.pp ? ' · 降雨機率 ' + wxD.pp + '%' : ''}${(() => { const w = wxWhere(d.date); return w ? ' · ' + w : ''; })()}">${wxInfo(wxD.code).e} ${Math.round(wxD.tmin)}~${Math.round(wxD.tmax)}°${wxD.pp >= 40 ? ' ☂' + wxD.pp + '%' : ''}${wxD.spot ? `<span class="wx-at">${escape(wxD.from && wxD.from !== d.date ? '⚠ 前一天的位置' : '@' + wxSpotShort(wxD.spot))}</span>` : ''}</span>` : '';
       // 自建行程才有「加一站／✎／✕」——內建行程是 const 常數，改了存不住，不給編輯是誠實
       const editable = !!ITINERARY._userCreated;
       const spotEditBtns = (i) => editable
@@ -34534,6 +34536,36 @@ ${baseSchema}
     const d = trvWx && trvWx.days && trvWx.days[dateStr];
     return (d && isFinite(d.tmax) && isFinite(d.tmin)) ? d : null;
   }
+  // 「這一格天氣是哪裡的」——時間軸徽章、管家提醒、貼 LINE 的「今天的重點」三處共用。
+  // ⚠ 舊快取沒有 spot/from 欄位 → 一個字都不講（不要憑空掰一個地點出來）。
+  // ⚠ 只講資料裡本來就有的事實：地點名、那個點的海拔、今天最高會上到幾米。
+  //   **不要自己用遞減率去推「山上大概幾度」**——那是編的。
+  // 徽章塞不下整個景點名（「九寨溝自然保護區（含景區公共巴士）」16 個字）——
+  // 括號裡的補充先拿掉，還是太長就截斷並加「…」，完整名字留在 hover 的 title 裡。
+  function wxSpotShort(name, max) {
+    const m = max || 7;
+    let t = String(name || '').replace(/[（(][^）)]*[）)]/g, '').trim();
+    if (!t) t = String(name || '').trim();
+    return t.length > m ? t.slice(0, m) + '…' : t;
+  }
+  function wxWhere(dateStr, opt) {
+    const w = wxOf(dateStr);
+    if (!w || !w.spot) return '';
+    const brief = !!(opt && opt.brief);
+    const other = w.from && w.from !== dateStr;
+    const altTxt = isFinite(w.alt) && w.alt != null ? `，海拔 ${Math.round(w.alt).toLocaleString('en-US')} m` : '';
+    const nm = wxSpotShort(w.spot, 16);   // 徽章塞不下才截 7 個字；這裡是整句話，可以長一點
+    let t = other
+      ? `這是 ${w.from} 那天「${nm}」的預報${altTxt}——今天的行程表上沒有座標，只能沿用`
+      : `測站在「${nm}」${altTxt}`;
+    // 同一天爬升很多（例如第 5 天多 1,292 m）→ 講出來，讓他知道山上不是這個溫度
+    if (!brief && isFinite(w.alt) && w.alt != null && isFinite(w.dayAltMax) && w.dayAltMax != null
+        && w.dayAltMax - w.alt >= 500) {
+      t += `。今天最高會上到 ${Math.round(w.dayAltMax).toLocaleString('en-US')} m，比這個測站高 ` +
+           `${Math.round(w.dayAltMax - w.alt).toLocaleString('en-US')} m，山上一定更冷`;
+    }
+    return t;
+  }
   // 管家與「今天的重點」共用的一句話（不各寫一份——v10.9 的老規矩）
   function wxLine(dateStr, who) {
     const w = wxOf(dateStr);
@@ -34544,6 +34576,10 @@ ${baseSchema}
     if (w.pp >= 40) txt += `，降雨機率 ${w.pp}% — <strong>帶傘或雨衣</strong>`;
     if (span >= 10) txt += `。早晚差 ${span} 度，洋蔥式穿法`;
     txt += '。';
+    // ⚠ 一天只抓一個點，所以一定要講是哪一個點——不講的話，第 5 天的「2~5°」
+    //   會被當成黃龍(3,550m)的，第 8 天的數字則根本是前一天成都的。
+    const where = wxWhere(dateStr);
+    if (where) txt += `<span style="color:var(--ink-tertiary);">（${escape(where)}）</span>`;
     return { icon: info.e, text: txt, tone: w.pp >= 60 ? 'warn' : '' };
   }
   async function maybeFetchTripWeather() {
@@ -34568,12 +34604,21 @@ ${baseSchema}
     // 只抓「今天起、預報範圍內（15 天）」的行程日
     const today = todayISO();
     const maxDate = trvDateOffset(15);
-    let lastCoords = null;
+    // ⚠ 一定要連「這是哪一個點的天氣」一起記下來。
+    //   一天只抓一個點，而這趟第 5 天是 茂縣(1,590m) → **黃龍(3,550m)** → 九寨溝(2,000m)，
+    //   抓到的卻是途經的疊溪海子(2,258m)；使用者看到「2~5°」會以為那是黃龍的。
+    //   更糟的是第 8 天（成都 → 澳門 → 高雄）**一個座標都沒有**，於是靜靜沿用前一天的成都——
+    //   畫面上一個字都沒說。**「用預設值填空」不可以被當成「這一天的答案」**（v16.24 同一條）。
+    let last = null;
     const jobs = [];
     ITINERARY.days.forEach(d => {
       const spot = (d.spots || []).find(s => Array.isArray(s.gps) && isFinite(s.gps[0]) && isFinite(s.gps[1]));
-      if (spot) lastCoords = spot.gps;
-      if (d.date >= today && d.date <= maxDate && lastCoords) jobs.push({ date: d.date, gps: lastCoords });
+      if (spot) last = { gps: spot.gps, name: spot.name || '', alt: isFinite(spot.alt) ? Number(spot.alt) : null, from: d.date };
+      if (d.date >= today && d.date <= maxDate && last) {
+        const alts = (d.spots || []).map(x => x.alt).filter(a => isFinite(a)).map(Number);
+        jobs.push({ date: d.date, gps: last.gps, spot: last.name, alt: last.alt, from: last.from,
+                    dayAltMax: alts.length ? Math.max(...alts) : null });
+      }
     });
     if (!jobs.length) return false;
     const days = {};
@@ -34591,7 +34636,8 @@ ${baseSchema}
             code: Number(dl.weather_code[0]),
             tmax: Number(dl.temperature_2m_max[0]),
             tmin: Number(dl.temperature_2m_min[0]),
-            pp: Number(dl.precipitation_probability_max[0]) || 0
+            pp: Number(dl.precipitation_probability_max[0]) || 0,
+            spot: j.spot, alt: j.alt, from: j.from, dayAltMax: j.dayAltMax
           };
         }
       } catch (e) {}   // 單日失敗就沒那天的徽章，不影響其他天
@@ -36502,7 +36548,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function renderShopping() {
     const total = trvShopping.reduce((s, x) => s + Number(x.amount || 0) * (Number(x.qty) || 1), 0);
     document.getElementById('shopTotal').textContent = total.toLocaleString();
-    document.getElementById('shopCount').textContent = trvShopping.length;
+    document.getElementById('shopCount').textContent = shopCountText(trvShopping);
     const html = trvShopping.slice().sort((a,b) => b.createdAt - a.createdAt).map(x => `
       <div class="shop-card">
         ${x.photo
@@ -36618,6 +36664,19 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   // CAUTION 不能直接把購物總額加到「已用」——花費本來就有「購物」分類，
   //   記在那邊的人會被算兩次。所以做成一筆一筆連動（存 expId），並且把「還沒連動的」講出來。
   function shopSum(x) { return Number(x && x.amount || 0) * (Number(x && x.qty) || 1); }
+  // ⚠ 「幾件」跟「幾筆」不是同一件事，而金額**一直都有乘 qty**：
+  //   買 10 盒牛肉乾記成一筆（× 10），金額算對了 NT$2,200，旁邊卻寫「1 件」。
+  //   五個地方（購物分頁、首頁卡、列印那張紙、匯出的 txt、備份預覽）全用筆數當件數。
+  //   海關申報、行李規劃看的是「幾件」——**數字旁邊那個字要對得起那個數字**。
+  function shopQtyTotal(list) {
+    return (Array.isArray(list) ? list : []).reduce((n, x) => n + (Number(x && x.qty) || 1), 0);
+  }
+  // 「12 件（5 筆）」；沒有任何一筆填數量>1 時就只寫「5 件」，不要多餘的括號
+  function shopCountText(list) {
+    const arr = Array.isArray(list) ? list : [];
+    const q = shopQtyTotal(arr);
+    return q === arr.length ? `${arr.length} 件` : `${q} 件（${arr.length} 筆記錄）`;
+  }
   // 「CN¥200 × 3 × 4.4」——原幣單價 × 件數 × 匯率；只有用外幣記的才有
   function shopFxText(x) {
     if (!x || !x.oc) return '';
@@ -36855,7 +36914,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       if (x.note) txt += `\n   備註：${x.note}`;
       txt += '\n';
     });
-    txt += `\n${'='.repeat(40)}\n總計：NT$${total.toLocaleString()} · ${trvShopping.length} 件`;
+    txt += `\n${'='.repeat(40)}\n總計：NT$${total.toLocaleString()} · ${shopCountText(trvShopping)}`;
     const blob = new Blob([txt], { type: 'text/plain; charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -37211,7 +37270,7 @@ ${daysBrief}${butlerPartyBlock()}
           summary += `\n\n⚠ 這份備份是【${d.tripTitle || d.tripId}】的，你現在打開的是【${here}】。\n`
                    + '每一趟的清單、花費、購物是分開存的——匯進來會把【' + here + '】的整批換掉。';
         }
-        const curNow = `清單 ${trvChecklist.length} 項 · 花費 ${trvExpenses.length} 筆 · 購物 ${trvShopping.length} 件`;
+        const curNow = `清單 ${trvChecklist.length} 項 · 花費 ${trvExpenses.length} 筆 · 購物 ${trvShopping.length} 筆`;
         if (!importAsk('travel', d, summary, curNow, false)) return;
         // 形狀不對的欄位直接跳過（不然存進去之後每次開都要靠 loadTravel 的防護救）
         const isArr = Array.isArray, isObj = o => o && typeof o === 'object' && !Array.isArray(o);
