@@ -8596,7 +8596,7 @@ alter publication supabase_realtime add table party_locations;</pre>
         <label class="pdf-opt"><input type="checkbox" id="pdfOptChecklist"> <span>行前清單（含勾選狀態）</span></label>
         <label class="pdf-opt"><input type="checkbox" id="pdfOptBudget"> <span>預算明細（零用金、各類別、花費清單）</span></label>
         <label class="pdf-opt"><input type="checkbox" id="pdfOptShopping"> <span>購物記錄（金額、店家、備註）</span></label>
-        <label class="pdf-opt"><input type="checkbox" id="pdfOptEmergency" checked> <span>緊急聯絡 + 行前必備</span></label>
+        <label class="pdf-opt"><input type="checkbox" id="pdfOptEmergency" checked> <span>緊急聯絡 + 行前必備 + <strong>團員緊急資料</strong>（含身體狀況與家人電話，印出來請收好）</span></label>
       </div>
       <div class="form-actions" style="justify-content:flex-end;">
         <div class="form-actions-right">
@@ -9309,7 +9309,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.34 · φφ</div>
+    <div>v 16.37 · ωω</div>
   </footer>
 </div>
 
@@ -30450,6 +30450,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     get shopping()    { return tripKey('shopping'); },
     get butler()      { return tripKey('butler'); },
     get gather()      { return tripKey('gather'); },
+    get gatherLog()   { return tripKey('gatherlog'); },  // 歷次集合（含當時點名到齊幾位）
     get budgetTotal() { return tripKey('budget'); },
     get roster()      { return tripKey('roster'); },   // 點名名單
     get delays()      { return tripKey('delays'); },   // 每天整團順延幾分鐘
@@ -30891,7 +30892,8 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   let trvExpenses = [];
   let trvShopping = [];
   let trvButlerHistory = [];
-  let trvGather = null; // { date, time, desc, warn, warn2 }
+  let trvGather = null;
+  let trvGatherLog = [];   // 歷次集合（新的在前） // { date, time, desc, warn, warn2 }
   let trvSettings = {
     senior: false, tts: true, ttsRate: 1.0, notify: false, popup: true, sound: true,
     // 語音引擎設定
@@ -31086,6 +31088,51 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const printHotel = printC.hotelName
       ? [printC.hotelName, printC.hotelAddr, printC.hotelPhone].filter(Boolean).join('　')
       : '';
+    // 團員的緊急資料（v16.37）。
+    // ⚠ 又是同一條規矩：**印出來的那張紙必須跟 App 上的一模一樣**（v14.9 是電話、v16.29 是集合）。
+    //   App 的 🆘「生病 · 受傷 · 送醫」第 3 步白紙黑字寫著
+    //   「**把他的身體狀況和吃什麼藥講出來**——這是醫生最先問的。資料在『集合 → 團員檔案』」，
+    //   第 6 步寫「**通知他的緊急聯絡人**」——**但紙上一個字都沒有**。
+    //   而紙的存在意義正是「手機沒電／沒訊號的時候唯一還在的東西」：
+    //   最需要它的那一刻，它偏偏沒有救護車來時要立刻講得出來的那幾行。
+    // ⚠ 這一段有個資（身體狀況、家人電話），所以紙上要自己講一句「請自己收好」。
+    // ⚠ 沒有團員資料就整段不出現（跟集合那一格同一個規矩），不要印一個空表格。
+    let printRoster = [];
+    let printDocName = printDoc.name;
+    try {
+      const rr = trvRosterNorm();
+      printRoster = (rr.people || []).map(x => {
+        const ps = (typeof passportStatus === 'function') ? passportStatus(x) : null;
+        return {
+          name: x.name || '',
+          room: (x.room || '').trim(),
+          phone: (x.phone || '').trim(),
+          diet: (x.diet || '').trim(),
+          health: String(x.health || '').trim(),
+          ec: [(x.ecName || '').trim(), (x.ecPhone || '').trim()].filter(Boolean).join('　'),
+          doc: (x.passport || '').trim(),
+          docBad: !!(ps && (ps.level === 'bad' || ps.level === 'warn'))
+        };
+      });
+    } catch (e) { printRoster = []; }
+    const rosterHtml = printRoster.length ? `
+        <div class="print-emergency-card">
+          <div class="label">團員 · 救護車來的時候要立刻講得出來的（共 ${printRoster.length} 位）</div>
+          <div style="font-size:10pt; line-height:1.65;">
+            ${printRoster.map((x, i) => `
+              <div style="padding:3px 0; border-bottom:1px dotted #ddd; page-break-inside:avoid;">
+                <strong>${i + 1}. ${escape(x.name)}</strong>${x.room ? `　${escape(x.room)} 房` : ''}${x.phone ? `　${escape(x.phone)}` : ''}
+                ${x.diet ? `<br><span style="color:#666 !important;">飲食</span>　${escape(x.diet)}` : ''}
+                ${x.health ? `<br><span style="color:#666 !important;">身體</span>　<strong>${escape(x.health.replace(/\n/g, '；'))}</strong>` : ''}
+                <br><span style="color:#666 !important;">緊急聯絡</span>　${x.ec ? escape(x.ec) : '<span style="color:#888 !important;">（未填）</span>'}
+                ${x.doc ? `<br><span style="color:#666 !important;">${escape(printDocName)}效期</span>　${escape(x.doc)}${x.docBad ? '　⚠' : ''}` : ''}
+              </div>`).join('')}
+          </div>
+          <div style="font-size:9pt; color:#888 !important; line-height:1.6; margin-top:6px;">
+            這一格有個人資料（身體狀況、家人電話）——<strong>印出來請自己收好</strong>。
+            沒填的欄位不會憑空生出來，要補到 App 的「集合 → 團員檔案」再重印。
+          </div>
+        </div>` : '';
     const emergencyHtml = options.emergency ? `
       <div class="print-section print-emergency">
         <h2>緊急 <em>聯絡 & 注意事項</em></h2>
@@ -31118,6 +31165,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
             （${escape(printMissing.join('、'))}的電話還沒填，所以這張紙上沒有——到 App 的「🆘 狀況」分頁補上，下次匯出就會印出來。）
           </div>` : ''}
         </div>
+        ${rosterHtml}
         ${printHotel ? `
         <div class="print-emergency-card">
           <div class="label">飯店（你在 🆘 那頁填的那一間 · 可以直接給計程車看）</div>
@@ -31755,6 +31803,7 @@ ${baseSchema}
       const go = trvJsonObj(await readKey(TRAVEL_STORAGE.gather), null);
       trvGather = (go && typeof go.date === 'string' && typeof go.time === 'string') ? go : null;
     }
+    trvGatherLog = trvJsonArr(await readKey(TRAVEL_STORAGE.gatherLog), []);
     trvRoster = trvJsonObj(await readKey(TRAVEL_STORAGE.roster), { people: [], present: {} });   // 內層形狀由 trvRosterNorm 補
     trvDelays = trvJsonObj(await readKey(TRAVEL_STORAGE.delays), {});
     trvSos = trvJsonObj(await readKey(TRAVEL_STORAGE.sos), null);
@@ -32644,9 +32693,26 @@ ${baseSchema}
     await saveRoster();
     renderRollCall();
   }
+  // ⚠ 「全部到齊」原本**完全不問就直接蓋掉**，而它就排在「重新點名」旁邊、
+  //   在現場模式還是兩顆並排的大按鈕。點到一半（8/10）誤按一下，
+  //   那兩個還沒到的人會**瞬間變成已到**，畫面顯示 10/10，然後車就開走了。
+  //   規矩（v16.32）：確認訊息要把**真正會失去的東西連數量、連名字**講出來；
+  //   反過來，還沒開始點名時按「全部到齊」是最自然的用法，這時候不要多問一句。
   async function markAllRoll(allHere) {
     const r = trvRosterNorm();
-    if (!allHere && Object.keys(r.present).length && !confirm('把所有人重設成「還沒到」，重新點一次名？')) return;
+    const total = r.people.length;
+    const here = r.people.filter(p => r.present[p.id]).length;
+    const miss = r.people.filter(p => !r.present[p.id]);
+    if (allHere) {
+      if (here > 0 && here < total) {
+        const names = miss.slice(0, 5).map(p => p.name).join('、') + (miss.length > 5 ? ` 等 ${miss.length} 位` : '');
+        if (!confirm(`現在是 ${here} / ${total}，還有 ${miss.length} 位沒打勾：\n${names}\n\n` +
+                     `要把他們全部標成「已到」嗎？\n（等於宣布這 ${miss.length} 位也到了）`)) return;
+      }
+    } else {
+      if (here > 0 && !confirm(`把已經打勾的 ${here} 位全部歸零，重新點一次名？\n\n` +
+                               `（打勾的時間也會一起清掉，不能復原）`)) return;
+    }
     r.present = {};
     if (allHere) r.people.forEach(p => { r.present[p.id] = Date.now(); });
     await saveRoster();
@@ -35152,12 +35218,14 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
         if (next) {
           const d = haversine(trvGpsCurrent, next.spot.gps);
           const eta = gpsEtaText(d);
-          document.getElementById('gpsNext').innerHTML = `下一站 <em>${escape(next.spot.name)}</em> · 直線 ${d > 1 ? d.toFixed(1) + ' km' : Math.round(d*1000) + ' m'}` +
-            (eta.text !== '—' ? ` · ${escape(eta.label)} ${escape(eta.text)}` : '');
+          const note = nextSpotNote(next);
+          document.getElementById('gpsNext').innerHTML =
+            `下一站 <em>${escape(nextSpotWhen(next) + (next.spot.time ? next.spot.time + ' ' : '') + next.spot.name)}</em>` +
+            ` · 直線 ${d > 1 ? d.toFixed(1) + ' km' : Math.round(d*1000) + ' m'}` +
+            (eta.text !== '—' ? ` · ${escape(eta.label)} ${escape(eta.text)}` : '') +
+            (note ? `<br><span style="color:var(--ink-tertiary);">${escape(note)}</span>` : '');
         } else {
-          document.getElementById('gpsNext').textContent = tripHasGps()
-            ? '行程已完成 / 沒有下一站'
-            : '這趟行程沒有填座標，所以算不出距離（景點的 GPS 在行程資料裡）';
+          document.getElementById('gpsNext').innerHTML = noNextSpotText();
         }
       },
       (err) => {
@@ -35175,11 +35243,22 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   //   15:10 時行程分頁說「下一個 抵達成都（15:40）」、地圖卻說「下一站 黃龍溪古鎮」——
   //   兩個畫面對同一件事給不同答案，在現場會直接造成誤判（v16.5 實測抓到）。
   //   差別只有一個：這裡只看**有座標**的景點（沒有座標算不出距離），所以下一項沒座標時會往後找。
+  // 🔴 v16.35：這裡「往後找有座標的」可以一路找到**明天**。
+  //   實測第 6 天傍晚 18:00 人在九寨溝，這裡回的是「D7 15:00 成都大熊貓繁殖基地」——
+  //   **明天下午、450 公里外**，而畫面上只寫兩個字「下一站」。
+  //   第 5 天中午也一樣：行程分頁說「13:00 午餐」，地圖說「18:00 抵達九寨溝」。
+  //   → 往後找沒有錯（沒座標算不出距離），錯的是**沒有把「往後找了」這件事說出來**。
+  //   所以多回報 date / sameDay / skipped / nextRealName，讓畫面講得出實話。
   function findNextSpot() {
     if (!ITINERARY || !Array.isArray(ITINERARY.days)) return null;
     const todayStr = todayISO();
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
+    // 今天還沒到、但沒有座標的那幾項（就是被跳過的那些）
+    const dToday = trvDayByDate(todayStr);
+    const restToday = dToday ? delayRestSpots(dToday) : [];
+    const noGpsToday = restToday.filter(x => !(x.s && x.s.gps));
+    const firstRest = restToday.length ? restToday[0].s : null;
     for (const d of ITINERARY.days) {
       if (!d || !d.date || d.date < todayStr) continue;
       const list = (Array.isArray(d.spots) ? d.spots : [])
@@ -35187,11 +35266,52 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
         .filter(x => x.s && x.s.gps && x.min != null)
         .sort((a, b) => a.min - b.min);
       if (!list.length) continue;
-      if (d.date > todayStr) return { day: d.day, spot: list[0].s };
+      const mk = (spot) => ({
+        day: d.day, date: d.date, spot, sameDay: d.date === todayStr,
+        // 今天還沒到、卻沒座標而被跳過的項數（含今天剩下全部沒座標、只好指向別天的情形）
+        skipped: d.date === todayStr
+          ? restToday.filter(x => !(x.s && x.s.gps) && x.base < (trvSpotMin(d.date, spot.time) || 0)).length
+          : noGpsToday.length,
+        nextRealName: firstRest && firstRest !== spot ? (firstRest.name || '') : '',
+        nextRealTime: firstRest && firstRest !== spot ? (firstRest.time || '') : ''
+      });
+      if (d.date > todayStr) return mk(list[0].s);
       const hit = list.find(x => x.min >= nowMin);
-      if (hit) return { day: d.day, spot: hit.s };
+      if (hit) return mk(hit.s);
     }
     return null;
+  }
+  // 「下一站」那一行要講的實話——地圖狀態列與時間軸 GPS 卡兩處共用。
+  // ⚠ 兩個消費者，所以只准算一份（v16.5／v16.33 同一條）。
+  function nextSpotWhen(next) {
+    if (!next || next.sameDay) return '';
+    const tmr = trvDateOffset(1);
+    return next.date === tmr ? '明天 ' : (String(next.date).slice(5).replace('-', '/') + ' ');
+  }
+  function nextSpotNote(next) {
+    if (!next) return '';
+    if (!next.sameDay) {
+      return next.skipped > 0
+        ? `今天剩下的 ${next.skipped} 項都沒有座標，所以這裡指的是${nextSpotWhen(next).trim()}的行程`
+        : `今天已經沒有行程了，這裡指的是${nextSpotWhen(next).trim()}的第一站`;
+    }
+    return next.skipped > 0
+      ? `中間還有 ${next.skipped} 項沒有座標算不出距離` +
+        (next.nextRealName ? `（下一項其實是 ${next.nextRealTime} ${next.nextRealName}）` : '')
+      : '';
+  }
+  // 「找不到下一站」有三種完全不同的原因，不能都寫「行程已完成」——
+  // ⚠ 最後一天實測：12:00 整理行李、16:05 班機、23:15 到高雄都還沒到，
+  //   但那幾項都沒有座標，畫面卻寫「行程已完成」。那是假話，而且就發生在要趕飛機的那天。
+  function noNextSpotText() {
+    const d = trvDayByDate(todayISO());
+    const rest = d ? delayRestSpots(d) : [];
+    if (rest.length) {
+      return `今天剩下的 ${rest.length} 項都沒有座標，算不出距離` +
+        (rest[0] && rest[0].s ? `（下一項是 ${escape(rest[0].s.time || '')} ${escape(rest[0].s.name || '')}）` : '');
+    }
+    return tripHasGps() ? '行程已完成 / 沒有下一站'
+                        : '這趟行程沒有填座標，所以算不出距離（景點的 GPS 在行程資料裡）';
   }
   // 這趟到底有沒有座標資料——沒有的話「行程已完成」是假話（自建行程常常一個座標都沒填）
   function tripHasGps() {
@@ -35423,14 +35543,25 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     if (next && trvGpsCurrent) {
       const d = haversine(trvGpsCurrent, next.spot.gps);
       const eta = gpsEtaText(d);
-      document.getElementById('gpsNextSpot').textContent = next.spot.name.length > 8 ? next.spot.name.slice(0, 8) + '…' : next.spot.name;
+      // ⚠ 狀態列很窄，但「這是明天的」不能因為窄就不講——寧可名字截短也要留下那三個字
+      const when = nextSpotWhen(next);
+      const nm = next.spot.name.length > 8 ? next.spot.name.slice(0, 8) + '…' : next.spot.name;
+      const el = document.getElementById('gpsNextSpot');
+      el.textContent = when + nm;
+      el.title = when + (next.spot.time ? next.spot.time + ' ' : '') + next.spot.name +
+        (nextSpotNote(next) ? ' — ' + nextSpotNote(next) : '');
+      el.style.color = next.sameDay ? '' : 'var(--danger)';
       document.getElementById('gpsNextDistance').textContent = d > 1 ? d.toFixed(1) + ' km' : Math.round(d * 1000) + ' m';
       if (lab) lab.textContent = eta.label;
       document.getElementById('gpsNextEta').textContent = eta.text;
     } else {
-      // ⚠ 沒有下一站有兩種完全不同的原因，不能都說「行程已完成」——
-      //   自建行程一個座標都沒填時說「已完成」是假話。
-      document.getElementById('gpsNextSpot').textContent = tripHasGps() ? '行程已完成' : '這趟沒填座標';
+      // ⚠ 「沒有下一站」有三種完全不同的原因（今天剩下的沒座標／真的跑完了／這趟沒填座標），
+      //   全部寫成「行程已完成」在最後一天就是假話——見 noNextSpotText()。
+      const t = noNextSpotText().replace(/<[^>]+>/g, '');
+      const el2 = document.getElementById('gpsNextSpot');
+      el2.textContent = t.length > 10 ? t.slice(0, 10) + '…' : t;
+      el2.title = t;
+      el2.style.color = '';
       document.getElementById('gpsNextDistance').textContent = '—';
       if (lab) lab.textContent = '抵達';
       document.getElementById('gpsNextEta').textContent = '—';
@@ -36049,6 +36180,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const latStr = document.getElementById('gatherLat').value.trim();
     const lngStr = document.getElementById('gatherLng').value.trim();
     const photo = document.getElementById('gatherPhotoData').value || '';
+    const prev = trvGather;   // 覆寫前先留著——要收進「歷次集合」
     trvGather = {
       date: document.getElementById('gatherDate').value,
       time: document.getElementById('gatherTime').value,
@@ -36061,6 +36193,10 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       warned1: false, warned2: false
     };
     trvShownGatherPopup = false;
+    // ⚠ 「新的一次集合＝新的一次點名」會把上一次誰到了整組清掉——那份資料就這樣消失了，
+    //   而畫面上「04 歷次集合」那一格從第一天就掛在那裡、**卻從來沒有任何程式寫過它**（永遠空白）。
+    //   收進歷史之後，領隊回頭查得到「昨天 06:30 停車場，當時到齊 10/10」。
+    await archiveGather(prev, trvGather);
     await saveTravelKey(TRAVEL_STORAGE.gather, trvGather);
     // 新的一次集合＝新的一次點名。上一次誰到了跟這次無關，留著只會害人看錯。
     const r = trvRosterNorm();
@@ -36076,9 +36212,28 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   }
   async function clearGather() {
     if (!confirm('清除目前的集合倒數？')) return;
+    // 清掉也一樣要留紀錄——不然「昨天那次到底幾點、到齊幾位」就真的不見了
+    await archiveGather(trvGather);
     trvGather = null;
     await saveTravelKey(TRAVEL_STORAGE.gather, null);
     renderGather();
+  }
+  // 把「上一次的集合」連同當時的點名結果收進歷史。saveGather 與 clearGather 共用一份。
+  async function archiveGather(prev, next) {
+    if (!prev || !prev.date || !prev.time) return;
+    if (next && prev.date === next.date && prev.time === next.time && prev.desc === next.desc) return;
+    const rr = trvRosterNorm();
+    const total = rr.people.length;
+    const here = rr.people.filter(x => rr.present[x.id]).length;
+    if (!Array.isArray(trvGatherLog)) trvGatherLog = [];
+    trvGatherLog.unshift({
+      date: prev.date, time: prev.time, desc: prev.desc || '集合點',
+      // 點名結果只有「真的點過」才記——沒點過就是沒點過，不要記成「到齊 0 位」
+      total: total || null, here: (total && Object.keys(rr.present).length) ? here : null,
+      closedAt: Date.now()
+    });
+    trvGatherLog = trvGatherLog.slice(0, 30);
+    await saveTravelKey(TRAVEL_STORAGE.gatherLog, trvGatherLog);
   }
   // ⚠ 集合時間過了之後永遠停在紅字「集合時間到」：昨天早上 08:00 的集合，隔天中午打開還在閃紅，
   //   領隊瞄一眼會以為現在要集合——跟 v15.9「點名結果永不過期」是同一條病，那輪沒掃到集合卡片本身。
@@ -36123,8 +36278,44 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const pop = document.getElementById('gatherPopupLabel');
     if (pop) pop.textContent = `${m.warn2} 分鐘倒數彈窗`;
   }
+  // 「04 歷次集合」——這一格在 HTML 裡掛了很久，但**從來沒有任何程式寫過它**，
+  // 所以永遠是一片空白（連「還沒有紀錄」都沒有）。UI 答應的事要會發生（v11.8）。
+  function renderGatherHistory() {
+    const el = document.getElementById('gatherHistory');
+    if (!el) return;
+    const log = Array.isArray(trvGatherLog) ? trvGatherLog : [];
+    if (!log.length) {
+      el.innerHTML = `<div style="color:var(--ink-tertiary); line-height:1.9;">還沒有紀錄。<br>` +
+        `每次你按「⏰ 設定集合時間」設定<strong>新的一次</strong>，上一次就會收到這裡` +
+        `（連同<strong>當時點名到齊幾位</strong>——那份資料本來會被下一次點名蓋掉）。</div>`;
+      return;
+    }
+    el.innerHTML = log.map((g, i) => {
+      const roll = (g.here != null && g.total)
+        ? `到齊 ${g.here} / ${g.total}` + (g.here < g.total ? `（缺 ${g.total - g.here} 位）` : ' ✓')
+        : '當時沒有點名';
+      return `<div style="display:flex; gap:10px; align-items:baseline; padding:5px 0; border-bottom:1px solid var(--line);">
+        <span style="color:var(--ink-primary);">${escape(g.date)} ${escape(g.time)}</span>
+        <span>${escape(g.desc || '集合點')}</span>
+        <span style="color:${g.here != null && g.total && g.here < g.total ? 'var(--danger)' : 'var(--ink-tertiary)'};">${escape(roll)}</span>
+        <button class="btn btn-sm" data-tap style="margin-left:auto;" onclick="reuseGather(${i})">再設一次</button>
+      </div>`;
+    }).join('') +
+      `<div style="color:var(--ink-muted); font-size:10px; margin-top:8px;">只留最近 30 次 · 只存在這台裝置上</div>`;
+  }
+  // 「再設一次」：把地點帶進設定視窗，日期給今天、時間沿用上次（最常見的就是同一個地點同一個時間）
+  function reuseGather(i) {
+    const g = (Array.isArray(trvGatherLog) ? trvGatherLog : [])[i];
+    if (!g) return;
+    openGatherModal();
+    document.getElementById('gatherDate').value = todayISO();
+    document.getElementById('gatherTime').value = g.time || '07:00';
+    document.getElementById('gatherDesc').value = g.desc || '集合點';
+    showToast('已帶入「' + (g.desc || '集合點') + '」，日期改成今天了，確認後按儲存');
+  }
   function renderGather() {
     renderGatherWarnLabels();
+    renderGatherHistory();
     const card = document.getElementById('gatherCard');
     const photoDisplay = document.getElementById('gatherPhotoDisplay');
     const navBtn = document.getElementById('gatherNavBtn');
