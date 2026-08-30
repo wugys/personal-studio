@@ -9478,7 +9478,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.67 · АА</div>
+    <div>v 16.68 · ББ</div>
   </footer>
 </div>
 
@@ -27834,6 +27834,24 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const out = { holdings: [], stats: null, plans: [], ctx: {}, meta: {}, bad: [], errs: [],
                   noPrice: [], adjOld: [], buildError: '' };
     await loadUsStock().catch(() => {});
+    await loadAdviceCfg().catch(() => {});
+    // 全站別的地方填過的「錢」——只讀對照，明講系統不會互相扣。
+    // ⚠ us_check_v1[sym].budget 的單位是**台幣**（stop 卻是美元，同一個物件裡兩種幣別），
+    //   所以標籤一定要把 NT$ 寫出來，不可以跟上面的 US$ 混在一起。
+    out.otherMoney = [];
+    try {
+      const ck = await readJson('us_check_v1', {}) || {};
+      let bsum = 0, bn = 0;
+      Object.keys(ck).forEach(k => { const v = Number(ck[k] && ck[k].budget); if (v > 0) { bsum += v; bn++; } });
+      if (bn) out.otherMoney.push(`新手體檢裡你替 ${bn} 檔各填過投入金額，合計 NT$${Math.round(bsum).toLocaleString('en-US')}`);
+      const cfg = await readJson(ALLOC_STORAGE, null);
+      if (cfg && Number(cfg.cash) > 0) out.otherMoney.push(`資產配置頁的「現金／活存」是 NT$${Math.round(Number(cfg.cash)).toLocaleString('en-US')}（那是**資產**，不是可動用現金，兩格不是同一件事）`);
+      const plans = await readJson(DCA_STORAGE.plans, []);
+      if (Array.isArray(plans)) {
+        const m = plans.filter(x => x && x.active !== false).reduce((a, x) => a + (Number(x.amount) || 0), 0);
+        if (m > 0) out.otherMoney.push(`定期定額每月會自動扣 NT$${Math.round(m).toLocaleString('en-US')}`);
+      }
+    } catch (e) {}
     const hs = (usHoldings || []).filter(h => Number(h.shares) > 0);
     out.holdings = hs;
     out.watchN = (typeof usWatchSymbols === 'function' ? usWatchSymbols() : []).length;
@@ -28223,13 +28241,272 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       <div id="adviceSimOut" style="margin-top:12px; padding-top:11px; border-top:1px solid var(--line);">${adviceSimRows(d)}</div>`);
   }
 
+  // ============================================================
+  // 資金池與部位大小（v16.68）
+  //
+  // 🔴 資金池**一定要新增一個欄位，不可以借用現成的任何一個數字**。
+  //   全站已經有四份「跟錢有關」的數字，沒有一份是「我現在可以拿去買股票的錢」：
+  //     · alloc_config_v1.cash    ← 資產配置用的「現金／活存」，是**資產**不是可動用現金
+  //     · us_check_v1[sym].budget ← 新手體檢裡替單一檔填的投入金額（而且**那是台幣**）
+  //     · 定期定額的每月扣款      ← 已經排定的，不是額外可動用的
+  //     · 挑戰目標的每月投入      ← 假設值
+  //   借用任何一個，都會在「你現在有多少錢」這件事上騙他。
+  //   → 新的鍵，而且畫面上要把那四份當**只讀對照**列出來，明講「系統不會互相扣，要你自己對」。
+  //
+  // 🔴 riskPct **不給預設值**。隱形的預設值 = 隱形的建議
+  //   （「這個工具覺得 1% 是對的」），而那是他自己要決定的事。
+  // 🔴 maxPosPct 有預設（20%），但畫面一定要標「這是工具內建的一般門檻，**不是你設的**，可以改」。
+  // ============================================================
+  const ADVICE_CFG_KEY = 'studio_advice_cfg_v1';
+  const ADVICE_CFG_DEFAULT = { pool: 0, ccy: 'USD', poolAt: 0, riskPct: null, maxPosPct: 20, updatedAt: 0 };
+  let adviceCfg = { ...ADVICE_CFG_DEFAULT };
+  async function loadAdviceCfg() {
+    const o = await readJson(ADVICE_CFG_KEY, null);
+    adviceCfg = { ...ADVICE_CFG_DEFAULT };            // 先重設再套用（壞值不要沿用記憶體裡的舊設定）
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      if (Number(o.pool) > 0) adviceCfg.pool = Number(o.pool);
+      if (o.ccy === 'USD' || o.ccy === 'TWD') adviceCfg.ccy = o.ccy;
+      if (Number(o.poolAt) > 0) adviceCfg.poolAt = Number(o.poolAt);
+      // ⚠ riskPct 只認「真的填過的數字」；填 0 或沒填都當成沒填（不可以變成隱形預設）
+      if (Number(o.riskPct) > 0) adviceCfg.riskPct = Number(o.riskPct);
+      if (Number(o.maxPosPct) > 0) adviceCfg.maxPosPct = Number(o.maxPosPct);
+      if (Number(o.updatedAt) > 0) adviceCfg.updatedAt = Number(o.updatedAt);
+    }
+    return adviceCfg;
+  }
+  async function saveAdviceCfg() {
+    adviceCfg.updatedAt = Date.now();
+    await writeKey(ADVICE_CFG_KEY, JSON.stringify(adviceCfg));
+  }
+
+  // ============================================================
+  // 部位大小：四道上限，最小的生效，**而且一定要說出是哪一道夾的**
+  //
+  // ① 風險上限        N₁ = floor( pool × riskPct% / R )      R = 進場價 − 停損價
+  // ② 新單金額上限    N₂ = floor( pool × m / P )
+  // ③ 加完後佔比上限  N₃ = floor( (m×V − Vs) / (P × (1−m)) ) ← 已經有部位時**真正會夾人的那一道**
+  // ④ 買得起          N₄ = floor( pool / P )
+  //
+  // ⚠ ③ 在原始構想裡不存在，而少了它「說出是哪一道生效」根本說不出口：
+  //   ④ 在 m ≤ 100% 時**永遠 ≥ ②**，所以四道只會剩兩道有意義。
+  // ⚠ 一律 floor（不做碎股，也不 round up——湊到 1 股就是多冒一份風險）。
+  // ⚠ pool 與 P 必須同幣別。這一行是整段最容易把股數算成 32 倍或 1/32 的地方。
+  // ============================================================
+  function positionSize(opt) {
+    const P = Number(opt && opt.price) || 0;          // 進場價
+    const L = Number(opt && opt.stop) || 0;           // 停損價
+    const pool = Number(opt && opt.pool) || 0;
+    const riskPct = Number(opt && opt.riskPct) || 0;
+    const V = Number(opt && opt.portfolioValue) || 0; // 你這幾檔的市值合計（同幣別）
+    const Vs = Number(opt && opt.thisValue) || 0;     // 這一檔目前的市值
+    const m = (Number(opt && opt.maxPosPct) || 0) / 100;
+    if (!(P > 0)) return { n: 0, why: 'noPrice' };
+    if (!(pool > 0)) return { n: 0, why: 'noPool' };
+    const caps = [];
+    if (L > 0 && L < P && riskPct > 0) {
+      caps.push({ key: 'risk', label: '風險上限', n: Math.floor(pool * (riskPct / 100) / (P - L)) });
+    }
+    if (m > 0) {
+      caps.push({ key: 'amount', label: '新單金額上限', n: Math.floor(pool * m / P) });
+      // 加完之後這一檔會佔「加完後的總市值」多少 → 解出最多能加幾股
+      if (V > 0 && m < 1) caps.push({ key: 'weight', label: '加完後佔比上限', n: Math.max(0, Math.floor((m * V - Vs) / (P * (1 - m)))) });
+    }
+    caps.push({ key: 'afford', label: '買得起', n: Math.floor(pool / P) });
+    const usable = caps.filter(c => isFinite(c.n));
+    if (!usable.length) return { n: 0, why: 'nocap' };
+    const min = usable.reduce((a, c) => c.n < a.n ? c : a, usable[0]);
+    return { n: Math.max(0, min.n), binding: min, caps: usable,
+             money: Math.max(0, min.n) * P,
+             riskEach: (L > 0 && L < P) ? (P - L) : null,
+             riskTotal: (L > 0 && L < P) ? Math.max(0, min.n) * (P - L) : null };
+  }
+
+  // ── 區 07：你能拿出來的錢 ────────────────────────────────────
+  //
+  // 🔴 標籤要把語意寫死。「資金池」三個字每個人的理解都不一樣，
+  //   而這個數字會被拿去乘出「你可以買幾股」——理解錯，答案就錯 32 倍。
+  function adviceSec7(d) {
+    const H = adviceH('07', '你能拿出來的錢', '這一格<strong>系統裡本來沒有</strong>，只有你知道。填了下面那一區才算得出來。');
+    const c = adviceCfg;
+    const poolAge = c.poolAt ? Math.abs(daysBetweenToday(todayISO(c.poolAt))) : null;
+    const stale = poolAge != null && poolAge > 30;
+    const other = (d.otherMoney || []);
+    return H + adviceBox(`
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px;">
+        <div>
+          <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-bottom:3px;">可以拿出來的錢</div>
+          <div style="display:flex; gap:5px;">
+            <select class="form-input" onchange="setAdviceCfg('ccy', this.value)" style="width:76px; padding:5px 7px; font-size:12px;">
+              <option value="USD"${c.ccy === 'USD' ? ' selected' : ''}>US$</option>
+              <option value="TWD"${c.ccy === 'TWD' ? ' selected' : ''}>NT$</option>
+            </select>
+            <input type="number" class="form-input" value="${c.pool || ''}" placeholder="例如 20000"
+                   oninput="setAdviceCfg('pool', this.value)" style="width:126px; padding:5px 8px; font-size:12px;">
+          </div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-bottom:3px;">一次最多願意賠幾 %</div>
+          <input type="number" class="form-input" value="${c.riskPct == null ? '' : c.riskPct}" placeholder="你自己決定" step="0.5"
+                 oninput="setAdviceCfg('riskPct', this.value)" style="width:112px; padding:5px 8px; font-size:12px;">
+        </div>
+        <div>
+          <div style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary); margin-bottom:3px;">單一檔最多佔幾 %</div>
+          <input type="number" class="form-input" value="${c.maxPosPct}" oninput="setAdviceCfg('maxPosPct', this.value)"
+                 style="width:112px; padding:5px 8px; font-size:12px;">
+        </div>
+      </div>
+      <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.8;">
+        <strong style="color:var(--ink-primary);">「可以拿出來的錢」的意思是：</strong>
+        現在真的拿得出來買股票、而且<strong>全部賠光也不影響你生活</strong>的錢。<br>
+        <span style="color:var(--ink-tertiary);">不是總資產，不是活存餘額，也不是「理論上調得出來的」。</span><br>
+        ${c.riskPct > 0 && c.pool > 0
+          ? `<span style="color:var(--ink-secondary);">你填 ${c.riskPct}% 的意思是：<strong>如果停損被打到，你會賠掉 ${adviceCcy(c.pool * c.riskPct / 100)}</strong>。連錯 10 次賠掉 ${(c.riskPct * 10).toFixed(0)}%。</span>`
+          : '<span style="color:var(--accent-warm);">「一次最多願意賠幾 %」<strong>沒有預設值</strong>——這是你自己要決定的事，不是這個工具該替你決定的。填 1% 的意思是：停損被打到就賠掉資金池的 1%。</span>'}<br>
+        <span style="color:var(--ink-tertiary);">「單一檔最多佔幾 %」預設 ${ADVICE_CFG_DEFAULT.maxPosPct}%，<strong>那是工具內建的一般門檻，不是你設的</strong>，你可以改。</span>
+        ${poolAge != null ? `<br><span style="color:${stale ? 'var(--accent-warm)' : 'var(--ink-tertiary)'};">你是 ${poolAge} 天前填的${stale ? '，<strong>這個數字可能已經不對了</strong>' : ''}。</span>` : ''}
+      </div>
+      ${other.length ? `<div style="margin-top:10px; padding-top:9px; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-tertiary); line-height:1.8;">
+        ※ 你在別的地方也填過幾個「錢」的數字。<strong>系統不會互相扣，要你自己對</strong>：<br>
+        ${other.map(x => '　· ' + escape(x)).join('<br>')}<br>
+        <span style="color:var(--ink-muted);">上面那一格<strong>不會</strong>寫回資產配置，也不會被算進 60-10-30 的任何一格。</span>
+      </div>` : ''}`);
+  }
+  function adviceCcy(n) {
+    return (adviceCfg.ccy === 'TWD' ? 'NT$' : 'US$') + Math.round(Number(n) || 0).toLocaleString('en-US');
+  }
+  async function setAdviceCfg(k, v) {
+    const n = Number(v);
+    if (k === 'ccy') adviceCfg.ccy = (v === 'TWD' ? 'TWD' : 'USD');
+    else if (k === 'riskPct') adviceCfg.riskPct = (isFinite(n) && n > 0) ? n : null;
+    else if (k === 'pool') { adviceCfg.pool = isFinite(n) && n > 0 ? n : 0; adviceCfg.poolAt = Date.now(); }
+    else if (k === 'maxPosPct') adviceCfg.maxPosPct = (isFinite(n) && n > 0) ? n : ADVICE_CFG_DEFAULT.maxPosPct;
+    await saveAdviceCfg();
+    const b1 = document.getElementById('adviceSizeOut');
+    if (b1 && usAdviceData) b1.innerHTML = adviceSizeRows(usAdviceData);
+    const b2 = document.getElementById('adviceSec7Note');
+    if (b2 && usAdviceData) b2.innerHTML = adviceRiskNote();
+  }
+  function adviceRiskNote() {
+    const c = adviceCfg;
+    if (!(c.pool > 0) || !(c.riskPct > 0)) return '';
+    return `你填 ${c.riskPct}% 的意思是：<strong>停損被打到就賠掉 ${adviceCcy(c.pool * c.riskPct / 100)}</strong>。`;
+  }
+
+  // ── 區 08：還沒買的，可以買多少 ─────────────────────────────
+  //
+  // 🔴 這是整頁**唯一**會被讀成「叫我買」的一區，所以每一句都要把主詞換成他：
+  //   不寫「你可以買 9 股」，寫「照**你填的**資金池、**你設的**風險 → 這三個數字算出來是 9 股」。
+  // 🔴 算出 0 股時，原因要歸給**他的門檻**，不是評價那檔股票。
+  function adviceSec8(d) {
+    const H = adviceH('08', '還沒買的，可以買多少', '從你上次的「🎯 機會掃描」結果裡挑。<strong>它只算數字，不判斷好壞。</strong>');
+    return H + adviceBox(`<div id="adviceSizeOut">${adviceSizeRows(d)}</div>`);
+  }
+
+  const ADVICE_SCAN_STALE_DAYS = 3;
+  function adviceSizeRows(d) {
+    const sc = usScanScored;
+    const btn = (t, fn) => `<div style="margin-top:9px;"><button class="btn btn-sm" onclick="${fn}">${t}</button></div>`;
+    const note = (txt, b) => `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.85;">${txt}</div>${b || ''}`;
+    // 🔴 三種狀態的 list 都可能是 []，要分開判斷——
+    //   「掃過但一檔都沒過」跟「從來沒掃過」的下一步完全不同（前者要調條件，後者要先掃）。
+    if (!sc) return note('你還沒跑過機會掃描，所以這一區沒有東西。', btn('🎯 去掃描', "closeUsAdvice(); openUsScanModal('us');"));
+    if (sc.mkt === 'tw') return note('你上次掃的是<strong>台股</strong>，這一區只看美股。', btn('🎯 掃美股', "closeUsAdvice(); openUsScanModal('us');"));
+    if (!Array.isArray(sc.list) || !sc.list.length)
+      return note('你上次掃完<strong>一檔都沒有符合</strong>你勾的條件（不是沒掃，是掃了沒中）。', btn('🎯 調條件重掃', "closeUsAdvice(); openUsScanModal('us');"));
+    const age = sc.at ? (Date.now() - sc.at) / 86400000 : null;
+    if (age != null && age > ADVICE_SCAN_STALE_DAYS)
+      return note(`這份掃描是 <strong>${Math.round(age)} 天前</strong>跑的，裡面的進場價<strong>已經不是現在的價格</strong>。<br>用舊價算出來的股數會騙你，所以<strong>我不算</strong>。`,
+        btn('🎯 重新掃描', "closeUsAdvice(); openUsScanModal('us');"));
+
+    const held = new Set(d.holdings.map(h => String(h.symbol).toUpperCase()));
+    const fresh = sc.list.filter(r => !held.has(String(r.ctx.symbol).toUpperCase()));
+    if (!fresh.length)
+      return note(`你上次掃出來的 ${sc.list.length} 檔<strong>你都已經有了</strong>，所以這一區沒有新的標的。`,
+        btn('🎯 換個範圍重掃', "closeUsAdvice(); openUsScanModal('us');"));
+
+    const c = adviceCfg;
+    const lack = [];
+    if (!(c.pool > 0)) lack.push('你能拿出來的錢');
+    if (!(c.riskPct > 0)) lack.push('一次最多願意賠幾 %');
+    // ⚠ 幣別不同就不算——這一行是整段最容易把股數算成 32 倍的地方
+    const ccyBad = c.ccy !== 'USD';
+    const top = fresh.slice(0, 2);
+    const listOnly = top.map(r => {
+      const x = r.ctx;
+      return `<div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px;">
+          <strong style="font-family:var(--mono); color:var(--accent);">${escape(x.symbol)}</strong>
+          <span style="color:var(--ink-tertiary);"> ${escape(x.name || '')}</span>
+          <span style="font-family:var(--mono); font-size:11.5px;">　${usMoney(x.price)}</span>
+          <span style="color:var(--ink-tertiary); font-size:11px;">（${escape(x.lastDate || '')} 收盤）</span>
+        </div>`;
+    }).join('');
+    const headTxt = `<div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.75; margin-bottom:8px;">
+        這是你上次掃描結果的<strong>前 2 名</strong>（${escape(todayISO(sc.at))} 掃的，排序跟掃描視窗一模一樣，這裡沒有重排）。
+        <strong>「排在前面」的意思只是「符合的條件比較多」，不是「比較好」。</strong></div>`;
+    if (lack.length || ccyBad) {
+      return headTxt + listOnly + `<div style="margin-top:10px; font-size:12px; color:var(--accent-warm); line-height:1.85;">
+        ${ccyBad ? '上面那一格你選的是 <strong>NT$</strong>，但美股的價格是美元 —— <strong>幣別不一樣不能直接除</strong>，所以我不算股數。把幣別改成 US$ 就會算。'
+                 : `還不能算股數：你還沒填「<strong>${escape(lack.join('</strong>」與「<strong>'))}</strong>」。<br>
+        <span style="color:var(--ink-tertiary);">這兩個數字系統裡沒有，只有你知道。填在上面那一區。</span>`}</div>`;
+    }
+
+    const V = d.stats ? d.stats.val : 0;
+    const rows = top.map(r => {
+      const x = r.ctx;
+      const stop = x.lv && x.lv.stops && x.lv.stops[0];
+      const res = positionSize({ price: x.price, stop: stop ? stop.v : 0, pool: c.pool, riskPct: c.riskPct,
+        portfolioValue: V, thisValue: 0, maxPosPct: c.maxPosPct });
+      const capLines = (res.caps || []).map(cp =>
+        `<div style="display:flex; justify-content:space-between; font-size:11.5px; color:${cp.key === (res.binding && res.binding.key) ? 'var(--ink-primary)' : 'var(--ink-tertiary)'};">
+           <span>${cp.key === (res.binding && res.binding.key) ? '▸ ' : '　'}${escape(cp.label)}</span><span style="font-family:var(--mono);">${cp.n} 股</span></div>`).join('');
+      const zero = res.n <= 0;
+      return `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:11px 13px; margin-bottom:9px;">
+        <div style="font-size:13px; margin-bottom:6px;">
+          <strong style="font-family:var(--mono); color:var(--accent);">${escape(x.symbol)}</strong>
+          <span style="color:var(--ink-tertiary); font-size:11.5px;"> ${escape(x.name || '')}</span>
+        </div>
+        <div style="font-size:12px; color:var(--ink-secondary); line-height:1.9;">
+          照<strong>你填的</strong> ${adviceCcy(c.pool)}、<strong>你設的</strong>單筆風險 ${c.riskPct}%、
+          停損 ${stop ? usMoney(stop.v) : '—'}<span style="color:var(--ink-tertiary);">（${stop ? '程式用 ATR 算的，你還沒設過' : '算不出來'}）</span><br>
+          → 這幾個數字算出來是
+          <strong style="font-family:var(--serif); font-size:17px; color:${zero ? 'var(--ink-tertiary)' : 'var(--accent)'};">${res.n}</strong> 股${res.n > 0 ? `，${usMoney(res.money)}` : ''}
+        </div>
+        <div style="margin-top:7px; padding-top:6px; border-top:1px solid var(--line);">${capLines}</div>
+        <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.75; margin-top:6px;">
+          ${zero
+            ? `算出來 <strong>0 股</strong>。<strong style="color:var(--ink-primary);">不是因為這一檔不好</strong> —— 是「${escape((res.binding && res.binding.label) || '')}」這一道夾住了。
+               ${res.binding && res.binding.key === 'weight' ? '（你設的單一檔上限是 ' + c.maxPosPct + '%，而這一筆會超過。）' : ''}`
+            : `生效的是「<strong>${escape((res.binding && res.binding.label) || '')}</strong>」那一道。<strong>改掉上面任何一個數字，這裡就會變。</strong>`}
+          ${res.riskTotal ? `<br>如果停損被打到，這一筆會賠 <strong>${usMoney(res.riskTotal)}</strong>（佔你填的錢 ${(res.riskTotal / c.pool * 100).toFixed(2)}%）。` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    // 組合層級的總風險：兩檔都走到停損會賠多少 —— **要現算，而且要指回相關性那一區**
+    const totRisk = top.reduce((a, r) => {
+      const stop = r.ctx.lv && r.ctx.lv.stops && r.ctx.lv.stops[0];
+      const res = positionSize({ price: r.ctx.price, stop: stop ? stop.v : 0, pool: c.pool, riskPct: c.riskPct,
+        portfolioValue: V, thisValue: 0, maxPosPct: c.maxPosPct });
+      return a + (res.riskTotal || 0);
+    }, 0);
+    return headTxt + rows + `
+      <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.85; padding-top:9px; border-top:1px solid var(--line);">
+        ${totRisk > 0 ? `兩檔都走到停損，你會賠 <strong>${usMoney(totRisk)}</strong>，佔你填的錢 ${(totRisk / c.pool * 100).toFixed(2)}%。<br>
+        <span style="color:var(--ink-tertiary);">⚠ 這個算法<strong>假設兩檔各走各的</strong>。如果它們是同一種生意，比較可能同一天一起被打到 —— 上面「你以為買了幾種生意」那一區有算相關係數。</span><br>` : ''}
+        <span style="color:var(--ink-tertiary);">
+        ⚠ 股數一律<strong>無條件捨去</strong>（不做碎股）。這裡<strong>沒有算手續費</strong>，也<strong>沒有算匯率</strong>。<br>
+        ⚠ 這幾個數字是你填的參數算出來的<strong>算術結果</strong>，不是這個工具覺得你該買。要不要買、買不買得到，都是你的事。</span>
+      </div>`;
+  }
+
   // ⚠ 主函式：一個 return 都沒有。每一區各自處理自己的空狀態。
   function renderUsAdvice() {
     const box = document.getElementById('usAdviceBody');
     if (!box) return;
     const d = usAdviceData || { holdings: [], ctx: {}, meta: {}, bad: [], errs: [], noPrice: [], adjOld: [], plans: [] };
     adviceSim = {};   // 每次重畫都清掉模擬，不要沿用上一輪的數字
-    box.innerHTML = adviceSec0(d) + adviceSec1(d) + adviceSec2(d) + adviceSec3(d) + adviceSec4(d) + adviceSec6(d) + adviceFoot();
+    box.innerHTML = adviceSec0(d) + adviceSec1(d) + adviceSec2(d) + adviceSec3(d) + adviceSec4(d)
+      + adviceSec6(d) + adviceSec7(d) + adviceSec8(d) + adviceFoot();
   }
   const adviceH = (n, t, sub) => `<div style="margin:18px 0 9px;">
       <div style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.18em; color:var(--ink-tertiary);">${n}</div>
@@ -32512,7 +32789,10 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
         || b.ctx.sig.score - a.ctx.sig.score);
     // ⚠ 存下「畫面上真的排好的這一份」給 AI 用——**不要在別的地方重算一次**，
     //   不然 AI 看到的排名跟畫面上的會不一樣（本專案付過好幾次代價的那一條）。
-    usScanScored = { mode: 'cond', need, list: scored };
+    // at/mkt/scope：別的地方（例如「我的部位」的部位大小）要判斷這份名單新不新、是哪個市場的。
+    // ⚠ 沒有這幾個欄位的話，會拿五天前的台股掃描結果去算美股的股數，而畫面上完全看不出來。
+    usScanScored = { mode: 'cond', need, list: scored, at: Date.now(), mkt: usScanMarket,
+                     scope: (document.getElementById('usScanScope') || {}).value || '' };
     if (!scored.length) {
       box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
         掃了 ${scanTriedN()} 檔，<strong>沒有一檔符合到 ${need} 項</strong>。<br>
@@ -32581,7 +32861,8 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
       .sort((a, b) => b.passed.length - a.passed.length
         || scanRiskFlags(a.ctx).length - scanRiskFlags(b.ctx).length
         || b.ctx.sig.score - a.ctx.sig.score);
-    usScanScored = { mode: 'strategy', picked, list: scored };   // 同上：AI 要看的就是這一份
+    usScanScored = { mode: 'strategy', picked, list: scored, at: Date.now(), mkt: usScanMarket,
+                     scope: (document.getElementById('usScanScope') || {}).value || '' };   // 同上：AI 要看的就是這一份
 
     if (!scored.length) {
       // 沒中也要有用：告訴他「差一點就中」的是哪些
