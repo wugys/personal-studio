@@ -3414,6 +3414,7 @@
         <button class="btn btn-sm" type="button" onclick="barsWipe()" style="border-color:var(--danger); color:var(--danger);">🗑 清空本機資料</button>
       </div>
 
+      <div id="barsRangeBox" style="margin-bottom:14px;"></div>
       <div id="barsProgressBox" style="margin-bottom:14px;"></div>
       <div id="barsCheckOut" style="font-size:11.5px; line-height:1.75; margin-bottom:12px;"></div>
 
@@ -9478,7 +9479,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.69 · ВВ</div>
+    <div>v 16.70 · ГГ</div>
   </footer>
 </div>
 
@@ -27463,9 +27464,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // ⚠ 一定要存下來：Worker v6 之前給的是**原始收盤價**，除息當天會假跌一段，
   //   害 RSI 與「距 60 日高」算錯（實測華南金 RSI 32.2 vs 正確的 37.8）。
   //   舊資料與新資料混在同一個資料庫裡，**畫面上完全看不出來**，所以要標記才講得出來。
-  async function barsPut(mkt, sym, rows, adj) {
+  async function barsPut(mkt, sym, rows, adj, want) {
     if (!Array.isArray(rows) || !rows.length) return false;   // 空的不要存（失敗的抓取不要快取）
+    // bytes：寫入時順手算一次真實大小。⚠ 用「每根固定幾 bytes」估算會差 33%
+    //   （實測 251 根時 40.8 B/根、1,255 根時 30.0 B/根——根數越多壓得越好）。
+    let bytes = 0;
+    try { bytes = JSON.stringify(rows).length; } catch (e) { bytes = rows.length * 40; }
     const rec = { key: barsKeyOf(mkt, sym), mkt, sym: String(sym).toUpperCase(), rows, adj: adj ? 1 : 0,
+                  want: want || barsRangePref, bytes,
                   n: rows.length, from: rows[0][0], to: rows[rows.length - 1][0], updated: Date.now() };
     try { await barsTx('readwrite', st => st.put(rec)); return true; } catch (e) { return false; }
   }
@@ -27477,7 +27483,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   // 只讀 metadata 不讀 rows 會比較快，但 getAll 一次拿全部在幾千筆時還可以接受
   async function barsStats() {
-    const out = { total: 0, us: 0, tw: 0, bytes: 0, oldest: '', newest: '', quotaMB: 0, usedMB: 0, raw: 0, rawTw: 0, rawUs: 0 };
+    const out = { total: 0, us: 0, tw: 0, bytes: 0, oldest: '', newest: '', quotaMB: 0, usedMB: 0, raw: 0, rawTw: 0, rawUs: 0, otherRange: 0 };
     try {
       const all = (await barsTx('readonly', st => st.getAll())) || [];
       all.forEach(r => {
@@ -27486,10 +27492,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         if (r.mkt === 'us') out.us++; else if (r.mkt === 'tw') out.tw++;
         // 沒有 adj 旗標＝Worker v6 以前存的，收盤價沒有還原除息
         if (!r.adj) { out.raw++; if (r.mkt === 'tw') out.rawTw++; else if (r.mkt === 'us') out.rawUs++; }
-        // ⚠ 不要 JSON.stringify(r.rows)——21,500 檔時等於每次呼叫序列化 265 MB。
-        //   一根 K 是 ["2026-08-30",1234.5,1240,1230,1238,12345678] ≈ 51 bytes，估算就夠了
-        //   （這個數字只拿來顯示「佔用幾 MB」，不需要精準到位元組）。
-        out.bytes += (r.n || r.rows.length) * 51;
+        // ⚠ 不要在這裡 JSON.stringify(r.rows)——21,500 檔時等於每次呼叫序列化幾百 MB
+        //   （那正是 v16.65 修掉的效能 bug）。大小在 barsPut 寫入時就算好存起來了；
+        //   舊紀錄沒有這個欄位才退回估算。
+        out.bytes += Number(r.bytes) || ((r.n || r.rows.length) * 40);
+        if (r.want && r.want !== barsRangePref) out.otherRange++;
         const d = r.updated ? todayISO(r.updated) : '';
         if (d && (!out.oldest || d < out.oldest)) out.oldest = d;
         if (d && (!out.newest || d > out.newest)) out.newest = d;
@@ -27586,17 +27593,57 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // ⚠ 為什麼是 1mo 不是 5d：Worker 的 BARS_RANGES 白名單裡**沒有 5d**，
   //   傳 5d 它會**默默改成 1y**（實測回 244 根 208KB，而且不會報錯）。
   //   → 只准用白名單裡真的有的值，而且回應會回報實際用的 range，可以驗。
+  // ===== 要存幾年的日 K（v16.70）=====
+  //
+  // 實測（各自用全新瀏覽器量 IndexedDB 真實用量，不受回收延遲汙染）：
+  //   1 年 251 根 → 10.0 KB／檔　2 年 501 根 → 18.2 KB／檔　5 年 1,255 根 → 36.7 KB／檔
+  //   （根數越多壓縮率越好：40.8 → 37.2 → 30.0 bytes／根）
+  //   台股 3,142 ＋ 美股 18,409 全抓 5 年 = **773 MB，佔配額 7.5%**（配額實測 10,251 MB）
+  // ⚠ **下載時間幾乎不變**：20 檔一批，1y 920ms／5y 759ms——瓶頸是往返次數不是資料量。
+  //   所以「抓 5 年」的代價**只有硬碟空間，沒有時間**。
+  const BARS_RANGE_OPTS = [
+    { v: '1y', label: '1 年', bars: 251, kb: 10.0 },
+    { v: '2y', label: '2 年', bars: 501, kb: 18.2 },
+    { v: '5y', label: '5 年', bars: 1255, kb: 36.7 }
+  ];
+  const BARS_RANGE_KEY = 'studio_bars_range_v1';
+  let barsRangePref = '1y';                 // ⚠ 預設維持 1 年——不問過就把使用者的硬碟從 211MB 灌到 773MB 是不對的
+  const barsRangeOpt = v => BARS_RANGE_OPTS.find(x => x.v === (v || barsRangePref)) || BARS_RANGE_OPTS[0];
+  // 留幾根才夠：目標根數 ＋ 10% 餘裕（合併時多留一點，免得剛好卡在邊界）
+  const barsKeepN = () => Math.round(barsRangeOpt().bars * 1.1);
+  async function loadBarsRange() {
+    let v = '';
+    try { v = String((await readKey(BARS_RANGE_KEY)) || ''); } catch (e) { v = ''; }
+    barsRangePref = BARS_RANGE_OPTS.some(x => x.v === v) ? v : '1y';
+    return barsRangePref;
+  }
+  async function setBarsRange(v) {
+    if (!BARS_RANGE_OPTS.some(x => x.v === v)) return;
+    barsRangePref = v;
+    await writeKey(BARS_RANGE_KEY, v);
+    renderBarsPanel().catch(() => {});
+  }
+
   const BARS_DELTA_RANGE = '1mo';
   const BARS_DELTA_MAX_GAP = 20;     // 缺超過 20 個交易日就退回抓一整年（1mo 只有 ~22 根，補不回來）
 
   // 這一檔要抓一整年，還是只補最近一個月？
   function barsFetchRange(rec, wantAdj) {
-    if (!rec || !Array.isArray(rec.rows) || rec.rows.length < 60) return '1y';   // 沒有底、或底太薄
-    if (wantAdj && !rec.adj) return '1y';   // 🔴 舊格式是原始價，跟還原價**不能接在一起**（尺度不同）
+    const target = barsRangePref;
+    if (!rec || !Array.isArray(rec.rows) || rec.rows.length < 60) return target;   // 沒有底、或底太薄
+    if (wantAdj && !rec.adj) return target;   // 🔴 舊格式是原始價，跟還原價**不能接在一起**（尺度不同）
+    // 🔴 使用者改成「要 5 年」時，只有 1 年的那幾筆要整段重抓。
+    // ⚠ 但**不可以每次都重抓**：上市才兩年的股票永遠拿不到 5 年，
+    //   只看根數的話它會每一輪都被重抓一次，而且畫面上看不出來。
+    //   → 記住「上次是用哪個 range 抓的」（rec.want），一樣就代表**上游只有這麼多**。
+    // ⚠ 舊紀錄沒有 want 欄位——但 v16.70 之前**只抓得到 1 年**，所以把它當成 '1y'。
+    //   不補這個預設值的話，使用者現有的幾千檔會在下一輪**全部被當成「長度不對」重抓一次**，
+    //   而他根本沒有改過設定（也不會知道為什麼突然要跑很久）。
+    if ((rec.want || '1y') !== target) return target;
     const last = String(rec.to || (rec.rows[rec.rows.length - 1] || [])[0] || '');
-    if (!last) return '1y';
+    if (!last) return target;
     const lag = daysBetweenToday(last);     // 負數 = 幾天前
-    if (lag == null || Math.abs(lag) > BARS_DELTA_MAX_GAP * 1.6) return '1y';    // 缺太多，補不回來
+    if (lag == null || Math.abs(lag) > BARS_DELTA_MAX_GAP * 1.6) return target;    // 缺太多，補不回來
     return BARS_DELTA_RANGE;
   }
 
@@ -27614,7 +27661,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     a.forEach(r => { if (Array.isArray(r) && r[0]) m.set(String(r[0]), r); });
     b.forEach(r => { if (Array.isArray(r) && r[0]) m.set(String(r[0]), r); });   // 新的蓋舊的
     const out = Array.from(m.values()).sort((x, y) => String(x[0]) < String(y[0]) ? -1 : 1);
-    return out.length > 300 ? out.slice(-300) : out;   // 只留最近 300 根（掃描只用得到 252）
+    // 🔴 上限一定要跟著「你選了幾年」走。原本寫死 300 根——
+    //   改抓 5 年（1,255 根）之後，**第一次 delta 更新就會把 5 年砍成 300 根**，
+    //   而且畫面上完全看不出來（它還是一份「有資料」的紀錄）。
+    const keep = barsKeepN();
+    return out.length > keep ? out.slice(-keep) : out;
   }
 
   // ===== 這一筆資料還算不算新（v16.65 改成看「有沒有拿到最近一個收盤日」）=====
@@ -27711,14 +27762,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           const sym = p.list[p.idx];
           const cur = await barsGet(p.mkt, sym);
           if (barsIsFresh(cur, wantAdj, p.mkt)) { p.idx++; skipped++; continue; }   // 已經有最近收盤日了，不浪費請求
-          const rg = p.range === '1y' || !p.range ? barsFetchRange(cur, wantAdj) : p.range;
+          // p.range 是這份清單建立時選的長度（1y/2y/5y）。delta 與否交給 barsFetchRange 決定。
+          const rg = barsFetchRange(cur, wantAdj);
           if (!batchRange) batchRange = rg;
           else if (rg !== batchRange) break;         // 模式不同 → 這一批到此為止，**不動游標**
           p.idx++;
           prev[sym] = cur;
           chunk.push(sym);
         }
-        if (!batchRange) batchRange = p.range || '1y';
+        if (!batchRange) batchRange = p.range || barsRangePref;
         if (!chunk.length) { if (onTick) onTick({ ...p, done, skipped, failed }); continue; }
         const url = new URL(base + '/bars');
         url.searchParams.set(p.mkt === 'tw' ? 'tw' : 'us', chunk.join(','));
@@ -27752,7 +27804,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         }
         // ⚠ Worker 的 range 白名單擋掉不認得的值時會**默默改成 1y**——
         //   回應會回報它實際用的 range，對不上就講出來（不完整/不是你要的東西不可以不報）。
-        if (body.range && batchRange !== '1y' && body.range !== batchRange) {
+        if (body.range && body.range !== batchRange) {
           p.lastError = `你的 Worker 不支援 range=${batchRange}（它用了 ${body.range}），`
             + '所以每天更新會抓一整年、比較慢也比較耗流量。重貼一次 worker/news-rss.js 就好（網址不用改）。';
         }
@@ -27768,7 +27820,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             }
           }
           if (Array.isArray(rows) && rows.length) {
-            await barsPut(p.mkt, sym, rows, body.adj);
+            await barsPut(p.mkt, sym, rows, body.adj, batchRange === BARS_DELTA_RANGE ? (prev[sym] && prev[sym].want) || barsRangePref : batchRange);
             done++;
             const at = p.failed.indexOf(sym);
             if (at !== -1) p.failed.splice(at, 1);          // 之前失敗、這次成功了 → 從名單移除
@@ -28918,6 +28970,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   async function openBarsModal(mkt) {
     openModalOnTop('barsModal');
+    await loadBarsRange();
     if (mkt === 'tw' || mkt === 'us') {
       const sel = document.getElementById('barsMarket');
       if (sel) sel.value = mkt;
@@ -29050,6 +29103,52 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     trvCopy(cmd, '已複製 · 貼到 PowerShell 執行一次');
   }
 
+  // 資料長度選擇器。
+  // 🔴 用字規矩：**空間與影響都要講出來**，而且要講「多了會怎樣」不是只講「幾 MB」。
+  //   使用者不知道「年線」需要 200 根，也不知道 1 年只有 244 根 —— 那正是他選錯的原因。
+  function barsRangeNote(st) {
+    if (!st || !st.otherRange) return '';
+    return `<div style="margin-top:9px; padding-top:9px; border-top:1px solid var(--line); font-size:11.5px; color:var(--accent-warm); line-height:1.75;">
+        ⚠ 其中 <strong>${st.otherRange} 檔</strong>的長度<strong>跟你現在選的不一樣</strong>（以前用別的長度抓的）。<br>
+        <span style="color:var(--ink-secondary);">按「▶ 開始／繼續累積」會把它們補齊。
+        <strong>上市時間不夠久的股票拿不到那麼長</strong>，那幾檔會維持現有長度，不會一直重抓。</span>
+      </div>`;
+  }
+  function barsRangePicker() {
+    const cur = barsRangeOpt();
+    // 台股 3,142 ＋ 美股 18,409（全抓）與 ＋ 美股 6,000 兩種投影
+    const proj = (n, kb) => (n * kb / 1024).toFixed(0);
+    return `<div style="border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; padding:11px 14px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
+          <strong style="font-size:13px;">📏 要存幾年的日 K</strong>
+          <select class="form-input" onchange="setBarsRange(this.value)" style="width:96px; padding:4px 8px; font-size:12px;">
+            ${BARS_RANGE_OPTS.map(o => `<option value="${o.v}"${o.v === barsRangePref ? ' selected' : ''}>${o.label}</option>`).join('')}
+          </select>
+          <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">
+            每檔約 ${cur.kb} KB · 約 ${cur.bars} 根
+          </span>
+        </div>
+        <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.8;">
+          <strong style="color:var(--accent-warm);">抓越久，時間幾乎不會變，只有硬碟變大。</strong>
+          實測 20 檔一批：1 年 920ms、5 年 759ms——<strong>瓶頸是往返次數，不是資料量</strong>。<br>
+          <span style="color:var(--ink-tertiary);">
+          台股全部 ＋ 美股前 6,000：${proj(9142, cur.kb)} MB　·　台股全部 ＋ 美股全部：${proj(21551, cur.kb)} MB
+          ${st_quota()}</span>
+        </div>
+        <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-secondary); line-height:1.8;">
+          <strong>選 1 年會怎樣：</strong>「站上年線」「年線比一個月前高」這幾條<strong>只有 44 根歷史可以算</strong>（一年只有 244 根，扣掉 200 根均線本身），
+          「一年最高最低」剛好卡在邊界。這幾條會顯示成「<strong>算不出來</strong>」，不是「不符合」。<br>
+          <strong>選 5 年會怎樣：</strong>年線有 1,000 根歷史、一年高低是真的一年、趨勢範本那套策略才真的做得到。
+        </div>
+      </div>`;
+  }
+  function st_quota() {
+    try {
+      const q = (window.__barsQuotaMB || 0);
+      return q ? `　（你的瀏覽器配額 ${q.toLocaleString('en-US')} MB）` : '';
+    } catch (e) { return ''; }
+  }
+
   async function renderBarsPanel() {
     const st = await barsStats();
     const p = await barsLoadProgress();
@@ -29085,7 +29184,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           </div>
           ${st.total ? `<div style="font-size:11px; color:var(--ink-tertiary); margin-top:6px;">最舊一筆更新於 ${escape(st.oldest)}　·　最新 ${escape(st.newest)}</div>`
             : '<div style="font-size:11.5px; color:var(--accent-warm); margin-top:6px;">還沒有任何資料。選好範圍後按「開始累積」。</div>'}
-          ${barsRawNote(st)}
+          ${barsRawNote(st)}${barsRangeNote(st)}
         </div>`;
     }
 
@@ -29110,6 +29209,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             </div>` : ''}`;
       }
     }
+    const rb = document.getElementById('barsRangeBox');
+    if (rb) { window.__barsQuotaMB = st.quotaMB || 0; rb.innerHTML = barsRangePicker(); }
     renderBarsAutoBox().catch(() => {});
   }
 
@@ -29165,7 +29266,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (btn) { btn.disabled = true; btn.textContent = '◌ 建立清單中…'; }
     try {
       const list = await barsBuildWorklist(mkt, topN);
-      await barsSaveProgress({ mkt, range: '1y', topN, list, idx: 0, startedAt: Date.now(), updatedAt: Date.now(), lastError: '' });
+      await barsSaveProgress({ mkt, range: barsRangePref, topN, list, idx: 0, startedAt: Date.now(), updatedAt: Date.now(), lastError: '' });
       showToast(`✓ 工作清單建好了 · ${list.length} 檔`);
     } catch (e) {
       showToast('☒ ' + (e && e.message || e));
@@ -29263,7 +29364,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       let p = await barsLoadProgress();
       if (!p || p.mkt !== mkt || (mkt === 'us' && p.topN !== topN)) {
         const list = await barsBuildWorklist(mkt, topN);
-        await barsSaveProgress({ mkt, range: '1y', topN, list, idx: 0,
+        await barsSaveProgress({ mkt, range: barsRangePref, topN, list, idx: 0,
           startedAt: Date.now(), updatedAt: Date.now(), lastError: '', failed: (p && p.failed) || [] });
         p = await barsLoadProgress();
       }
@@ -42921,7 +43022,7 @@ ${daysBrief}${butlerPartyBlock()}
 
   initPWA();
   loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam()).then(() => applyBarsAutoParam())
-           .then(() => { renderInstallHint(); twWarmUniverse(); startBarsAutoTimer(); return maybeAutoRefreshPrices(); });
+           .then(() => { renderInstallHint(); twWarmUniverse(); loadBarsRange(); startBarsAutoTimer(); return maybeAutoRefreshPrices(); });
 </script>
 
 </body>
