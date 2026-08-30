@@ -3409,11 +3409,13 @@
         <button class="btn btn-primary" id="barsRunBtn" type="button" onclick="barsStartRun()">▶ 開始 / 繼續累積</button>
         <button class="btn btn-sm" id="barsStopBtn" type="button" onclick="barsStop()" style="display:none;">■ 停止</button>
         <button class="btn btn-sm" type="button" onclick="barsResetList()">↻ 重建工作清單</button>
+        <button class="btn btn-sm" type="button" onclick="barsCheckWorker()" title="中斷時先按這個，分得出是 Worker 的問題還是上游暫時擋住">🩺 檢查 Worker</button>
         <span style="flex:1;"></span>
         <button class="btn btn-sm" type="button" onclick="barsWipe()" style="border-color:var(--danger); color:var(--danger);">🗑 清空本機資料</button>
       </div>
 
       <div id="barsProgressBox" style="margin-bottom:14px;"></div>
+      <div id="barsCheckOut" style="font-size:11.5px; line-height:1.75; margin-bottom:12px;"></div>
 
       <div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; padding:10px 14px; font-size:11.5px; color:var(--ink-secondary); line-height:1.7;">
         <strong>可以隨時關掉。</strong>進度會記住，下次按「繼續累積」接著跑。<br>
@@ -9445,7 +9447,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.61 · ЊЊ</div>
+    <div>v 16.62 · ЋЋ</div>
   </footer>
 </div>
 
@@ -27524,16 +27526,31 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         const url = new URL(base + '/bars');
         url.searchParams.set(p.mkt === 'tw' ? 'tw' : 'us', chunk.join(','));
         url.searchParams.set('range', p.range || '1y');
-        let body = null;
+        // ⚠ v16.62：以前不管哪一種失敗都印同一句「連不到 Worker 或上游擋住」——
+        //   那是猜的。實測使用者的 Worker 完全健康（20 檔 1 秒、CORS 正常、壞代號也不會拖垮整批），
+        //   但畫面照樣說「連不到 Worker」，害人去查根本沒壞的東西。
+        //   **失敗要講真原因**（v11.4/v11.6 同一條）：狀態碼、回應內容、是哪一種失敗，都要記下來。
+        let body = null, why = '';
         try {
           const resp = await fetch(url.toString(), { cache: 'no-store' });
-          body = await resp.json();
-        } catch (e) { body = null; }
+          if (!resp.ok) {
+            const txt = (await resp.text().catch(() => '')).slice(0, 160);
+            why = `Worker 回 HTTP ${resp.status}${txt ? '：' + txt : ''}`;
+          } else {
+            try { body = await resp.json(); }
+            catch (e) { why = 'Worker 回的不是 JSON（可能是舊版 Worker，或中間有東西擋著）'; }
+            if (body && body.error) { why = `Worker 說：${String(body.error).slice(0, 160)}`; body = null; }
+            else if (body && !body.bars) { why = `Worker 回了 JSON 但沒有 bars 欄位——多半是舊版 Worker，請重貼一次程式碼（網址不用改）`; body = null; }
+          }
+        } catch (e) {
+          // fetch 直接丟＝連不到／被擋／斷線。瀏覽器不會告訴我們是哪一種（v16.13 同一條）
+          why = `連不到（${(e && e.message) || 'Failed to fetch'}）——可能是網路斷了、Worker 掛了，或這一瞬間被上游擋住`;
+        }
         if (!body || !body.bars) {
           // 整批失敗 → 把游標退回去，下次重跑這一批（不要當成「已處理」跳過）
           p.idx -= chunk.length;
           failed += chunk.length;
-          p.lastError = '連不到 Worker 或上游擋住，稍後再試';
+          p.lastError = `${why}（已經抓到 ${p.idx} 檔，按「繼續累積」會從這裡接著跑）`;
           break;
         }
         for (const sym of chunk) {
@@ -27613,6 +27630,53 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   // ===== 累積歷史資料 Modal =====
   // mkt 可指定預選市場（從台股頁的「📥 下載台股資料」進來就直接選台股，v16.60）
+  // 中斷之後，讓使用者自己分得出「是 Worker 壞了」還是「剛才那一瞬間被上游擋住」（v16.62）。
+  // ⚠ 真的打一次，而且是**累積器實際在用的那個批次大小（20 檔）**——
+  //   只打一檔會過、20 檔才失敗的話，用一檔去問等於問錯問題（v16.21）。
+  async function barsCheckWorker() {
+    const el = document.getElementById('barsPanel') || document.getElementById('barsStatus');
+    const base = await quoteWorkerBase();   // ⚠ 這是 async，忘了 await 會拿到 Promise 物件
+    const say = html => { const box = document.getElementById('barsCheckOut'); if (box) box.innerHTML = html; };
+    if (!base) { say('<span style="color:var(--danger);">還沒設定 Worker 網址（現金流頁「⚙ 即時報價」）。</span>'); return; }
+    say('<span style="color:var(--ink-tertiary);">◌ 檢查中…</span>');
+    const lines = [];
+    // ① 能力
+    try {
+      const r = await fetch(base + '/quote?ping=1', { cache: 'no-store' });
+      const j = await r.json();
+      const hasBars = Array.isArray(j.routes) ? j.routes.includes('bars') : (Number(j.ver) >= 3);
+      lines.push(hasBars
+        ? `<span style="color:var(--accent);">✓ Worker 活著（ver ${escape(String(j.ver))}），支援 /bars</span>`
+        : `<span style="color:var(--danger);">✗ 這個 Worker 沒有 /bars 這條路——是舊版，請重貼一次程式碼（<strong>網址不用改</strong>）</span>`);
+    } catch (e) {
+      say(`<span style="color:var(--danger);">✗ 連不到 Worker：${escape((e && e.message) || '')}</span>
+        <div style="color:var(--ink-tertiary); margin-top:4px;">網路斷了、Worker 掛了、或網址錯了。網址在現金流頁「⚙ 即時報價」。</div>`);
+      return;
+    }
+    // ② 真的抓一批 20 檔（跟累積器一樣）
+    const probe = ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','AVGO','LLY','JPM',
+                   'V','UNH','XOM','MA','COST','HD','PG','NFLX','JNJ','ABBV'];
+    const t0 = Date.now();
+    try {
+      const r = await fetch(base + '/bars?us=' + probe.join(',') + '&range=1y', { cache: 'no-store' });
+      const sec = ((Date.now() - t0) / 1000).toFixed(1);
+      if (!r.ok) {
+        lines.push(`<span style="color:var(--danger);">✗ 抓 20 檔回 HTTP ${r.status}（${sec} 秒）</span>`);
+      } else {
+        const j = await r.json();
+        const got = j && j.bars ? Object.keys(j.bars).length : 0;
+        lines.push(got >= 15
+          ? `<span style="color:var(--accent);">✓ 一批 20 檔抓回 ${got} 檔（${sec} 秒）——這條路是通的</span>
+             <div style="color:var(--ink-tertiary); margin-top:3px;">那剛才的中斷多半是<strong>上游那一瞬間擋住</strong>，直接按「繼續累積」就好。</div>`
+          : `<span style="color:var(--accent-warm);">⚠ 一批 20 檔只抓回 ${got} 檔（${sec} 秒）——上游在限流，等幾分鐘再繼續</span>`);
+      }
+    } catch (e) {
+      lines.push(`<span style="color:var(--danger);">✗ 抓 20 檔失敗：${escape((e && e.message) || '')}</span>
+        <div style="color:var(--ink-tertiary); margin-top:3px;">單檔可能沒事、20 檔才失敗——那是上游限流或逾時，等幾分鐘再按「繼續累積」。</div>`);
+    }
+    say(lines.join('<br>'));
+  }
+
   async function openBarsModal(mkt) {
     openModalOnTop('barsModal');
     if (mkt === 'tw' || mkt === 'us') {
