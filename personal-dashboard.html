@@ -9414,7 +9414,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.58 · ІІ</div>
+    <div>v 16.59 · ЈЈ</div>
   </footer>
 </div>
 
@@ -12756,9 +12756,41 @@ alter publication supabase_realtime add table party_locations;</pre>
     try {
       const t0 = Date.now();
       const r = await aiChat({ messages: [{ role: 'user', content: '請只回覆兩個字：成功' }], maxTokens: 32 });
-      box.innerHTML = note + `<span style="color:var(--accent);">✓ 接通了（${Date.now() - t0} ms）</span>
+      const ms1 = Date.now() - t0;
+      box.innerHTML = note + `<span style="color:var(--accent);">✓ 接通了（${ms1} ms）</span>
         <div style="color:var(--ink-secondary); margin-top:4px;">它回答：「${escape(String(r.text).slice(0, 80))}」</div>
-        <div style="color:var(--ink-tertiary); margin-top:4px;">按「儲存」之後，全站 AI 功能就會走這個服務。</div>`;
+        <div style="color:var(--ink-tertiary); margin-top:6px;">◌ 再測一次「長提示詞」…（真功能會送很長的內容，短句測不出來）</div>`;
+      // ⚠ 第二段測試：只送一句短話測不出「模型吃不吃得下真正的提示詞」（v16.59）。
+      //   本機模型的 context 常常只有 2048/4096，而掃描挑前 5 名要送 ~13,000 字。
+      //   **超過就默默截斷、不會報錯**——App 這端 100% 看不出來，答案會怪怪的但看起來很正常。
+      //   這正是 v16.21 那條「健檢自己也會騙人——如果它問的不是正式流程真的在用的那個東西」。
+      const filler = ('這是一段用來測試長度的假資料，內容不重要。').repeat(280);   // 約 6,000 字
+      const probe = `下面是一段測試資料，請看完之後只回答最後那個問題。\n\n${filler}\n\n`
+                  + `【問題】上面那段資料的第一個字是什麼？只回一個字，不要解釋。`;
+      const t1 = Date.now();
+      let longNote = '';
+      try {
+        const r2 = await aiChat({ messages: [{ role: 'user', content: probe }], maxTokens: 32 });
+        const ms2 = Date.now() - t1;
+        const ok = String(r2.text || '').includes('這');
+        longNote = ok
+          ? `<span style="color:var(--accent);">✓ 長提示詞也 OK（${Math.round(ms2 / 1000)} 秒）</span>
+             <div style="color:var(--ink-tertiary); margin-top:3px;">送了約 6,000 字它還讀得到開頭——真功能應該吃得下。</div>`
+          : `<span style="color:var(--accent-warm);">⚠ 長提示詞可能被截斷了</span>
+             <div style="color:var(--ink-secondary); margin-top:3px; line-height:1.75;">
+               送了約 6,000 字問「第一個字是什麼」，它答「${escape(String(r2.text).slice(0, 20))}」——沒答對。
+               <strong>這通常代表模型的記憶體（context）不夠，前面的內容被默默丟掉了</strong>，
+               而且<strong>不會有任何錯誤訊息</strong>。掃描挑前 5 名會送到 13,000 字，那個功能會答得很怪。<br>
+               自架 Ollama 的話：<code>PARAMETER num_ctx 16384</code>（預設常常只有 2048~4096）。
+             </div>`;
+      } catch (e) {
+        longNote = `<span style="color:var(--accent-warm);">⚠ 長提示詞測試失敗：${escape(e.message)}</span>
+          <div style="color:var(--ink-tertiary); margin-top:3px;">短句可以、長的不行——多半是模型記憶體不夠或逾時。真功能會送更長的內容。</div>`;
+      }
+      box.innerHTML = note + `<span style="color:var(--accent);">✓ 接通了（${ms1} ms）</span>
+        <div style="color:var(--ink-secondary); margin-top:4px;">它回答：「${escape(String(r.text).slice(0, 80))}」</div>
+        <div style="margin-top:7px; padding-top:7px; border-top:1px solid var(--line);">${longNote}</div>
+        <div style="color:var(--ink-tertiary); margin-top:6px;">按「儲存」之後，全站 AI 功能就會走這個服務。</div>`;
     } catch (e) {
       box.innerHTML = note + `<span style="color:var(--danger);">✗ 接不通：${escape(e.message)}</span>
         <div style="color:var(--ink-tertiary); margin-top:5px; line-height:1.7;">
@@ -32986,7 +33018,56 @@ ${baseSchema}
     if (!json.title || !json.startDate || !json.endDate || !Array.isArray(json.days)) {
       throw new Error('JSON 結構不符合：缺少 title / startDate / endDate / days');
     }
+    json.__warn = tripGenWarnings(json);   // 生得出來、但有問題的地方（不擋，只講）
     return json;
+  }
+
+  // AI 生成的行程「看起來成功、其實半殘」的三種情況（v16.59）。
+  // ⚠ 為什麼要單獨檢查：程式只 parse 得過就收下，但——
+  //   ① 被截斷時 `text.slice(第一個{, 最後一個})` 有機會湊出一個**合法但不完整**的物件
+  //      （endDate 寫 8 天、days 只有 3 天），然後倒數、最後一天判斷、列印那張紙全部吃它；
+  //   ② `type` 只認「景點/餐/住宿/航班」四個字，AI 很容易寫成「交通」「餐廳」「飯店」——
+  //      **一個字寫錯，五個地方靜默變啞巴**（今晚住、班機提醒、景點數、管家的每日清單、現場模式），
+  //      而且看起來像「使用者沒填」不像「壞掉」。
+  //   ③ 座標是 AI 編的機率很高。
+  // 一律**只提醒不刪改**——那是使用者花錢/花時間生出來的資料，該由他決定（v11.5 同一條）。
+  const TRIP_TYPES = ['景點', '餐', '住宿', '航班'];
+  function tripGenWarnings(json) {
+    const w = [];
+    const days = Array.isArray(json.days) ? json.days : [];
+    // ① 天數對不對得起日期區間
+    const d1 = new Date(json.startDate + 'T00:00:00'), d2 = new Date(json.endDate + 'T00:00:00');
+    if (!isNaN(d1) && !isNaN(d2) && d2 >= d1) {
+      const want = Math.round((d2 - d1) / 86400000) + 1;
+      if (days.length !== want) {
+        w.push(`日期是 ${json.startDate} ~ ${json.endDate}（${want} 天），但行程表只有 ${days.length} 天`
+             + (days.length < want ? '——很可能是 AI 寫到一半被截斷了' : ''));
+      }
+    }
+    // ② 類型有沒有寫成系統看不懂的字
+    const bad = {};
+    let spots = 0;
+    days.forEach(d => (d && Array.isArray(d.spots) ? d.spots : []).forEach(s => {
+      spots++;
+      const t = s && s.type;
+      if (t && !TRIP_TYPES.includes(t)) bad[t] = (bad[t] || 0) + 1;
+    }));
+    const badList = Object.keys(bad);
+    if (badList.length) {
+      w.push(`有 ${badList.reduce((a, k) => a + bad[k], 0)} 個項目的「類型」系統看不懂（${badList.map(k => `「${k}」`).join('、')}）——`
+           + `只認得 ${TRIP_TYPES.map(t => `「${t}」`).join('、')}。這幾項不會出現在「今晚住哪」與班機提醒裡，要自己進去改`);
+    }
+    // ③ 座標形狀
+    let badGps = 0;
+    days.forEach(d => (d && Array.isArray(d.spots) ? d.spots : []).forEach(s => {
+      if (!s || s.gps == null) return;
+      const g = s.gps;
+      if (!Array.isArray(g) || g.length !== 2 || !isFinite(g[0]) || !isFinite(g[1])
+          || Math.abs(g[0]) > 90 || Math.abs(g[1]) > 180) badGps++;
+    }));
+    if (badGps) w.push(`有 ${badGps} 個座標格式不對，地圖上會找不到`);
+    if (spots === 0) w.push('整份行程一個景點都沒有——多半是 AI 只生了骨架');
+    return w;
   }
 
   async function acceptGeneratedTrip(trip, label) {
@@ -33007,7 +33088,14 @@ ${baseSchema}
     await saveCustomTrips();
     loadTrips();
     renderTripsList();
-    setWizStatus(`✓ ${escape(label)}成功 · ${escape(trip.title)} · ${trip.days.length} 天`, 'ok');
+    // ⚠ 有問題也要收下（那是使用者的資料），但一定要當場講——
+    //   不講的話，他要到出發前才發現「今晚住」永遠是空的（v16.59）
+    const gw = (trip.__warn && trip.__warn.length) ? trip.__warn : null;
+    setWizStatus(`✓ ${escape(label)}成功 · ${escape(trip.title)} · ${trip.days.length} 天`
+      + (gw ? `<div style="margin-top:7px; padding:8px 10px; background:rgba(201,123,106,0.1); border-left:2px solid var(--danger); border-radius:3px; font-size:11.5px; line-height:1.75; color:var(--ink-secondary);">
+          <strong>⚠ AI 生出來的內容有這幾個問題，行程已經存下來了，但要自己進去改：</strong><br>
+          ${gw.map(x => '· ' + escape(x)).join('<br>')}
+        </div>` : ''), 'ok');
     setTimeout(() => {
       closeNewTripModal();
       openTrip(trip.id);
