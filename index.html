@@ -9338,7 +9338,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.47 · ϬϬ</div>
+    <div>v 16.48 · ϮϮ</div>
   </footer>
 </div>
 
@@ -14406,18 +14406,91 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     return data;
   }
 
+  // 估值帶（v16.48）：這檔股票過去三年市場願意給幾倍本益比 → 分位數 × 現在的 EPS
+  // ＝ 便宜價/合理價/昂貴價。就是俗稱「本益比河流圖」的數字版。
+  // ⚠ 河會流動：獲利衰退時整條帶會往下掉，「便宜價」不是保證支撐——畫面一定要講。
+  let twPebCache = {};
+  async function fetchTwPeBand(code) {
+    const c = twPebCache[code];
+    if (c && Date.now() - c.ts < TW_CHIPS_TTL) return c.data;
+    const start = todayISO(Date.now() - 3 * 365 * 864e5);
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPER&data_id=${encodeURIComponent(code)}&start_date=${start}`;
+    const rows = await finmindFetch(url);
+    // PER ≤ 0（虧損期）不能進分位數——那不是「市場給 0 倍」，是「算不出來」
+    const pts = (rows || []).map(x => ({ date: x.date, per: Number(x.PER) })).filter(x => x.per > 0 && x.date);
+    if (!pts.length) { twPebCache[code] = { data: null, ts: Date.now() }; return null; }
+    pts.sort((a, b) => a.date < b.date ? -1 : 1);
+    const latest = pts[pts.length - 1];
+    if (pts.length < 120) {   // 不到約半年：分位數沒有參考性，老實說算不出、不硬給
+      const data = { short: true, n: pts.length, latestPer: latest.per, latestDate: latest.date };
+      twPebCache[code] = { data, ts: Date.now() };
+      return data;
+    }
+    const sorted = pts.map(x => x.per).sort((a, b) => a - b);
+    const pc = p => sorted[Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p)))];
+    const below = sorted.filter(v => v < latest.per).length;
+    const eq = sorted.filter(v => v === latest.per).length;
+    const data = {
+      n: sorted.length, firstDate: pts[0].date, latestDate: latest.date, latestPer: latest.per,
+      p10: pc(0.10), p25: pc(0.25), p50: pc(0.50), p75: pc(0.75), p90: pc(0.90),
+      rankPct: (below + eq / 2) / sorted.length * 100
+    };
+    twPebCache[code] = { data, ts: Date.now() };
+    return data;
+  }
+
+  function renderTwPeBand(pb, price, err) {
+    const head = `<div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin:14px 0 8px;">估值帶 · PE BAND（近 3 年本益比區間）</div>`;
+    const box = inner => `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:11px 13px; margin-bottom:10px;">${inner}</div>`;
+    if (err && (err.finmindQuota || err.finmindBlocked)) {
+      return head + box('<div style="font-size:11.5px; line-height:1.7; color:var(--danger);">拉不到資料（免費額度或斷線）——不是這檔沒有資料，等一下重開這個視窗會重抓。</div>');
+    }
+    if (!pb) return head + box('<div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7;">查無本益比資料——ETF 沒有本益比；一直虧損的公司也算不出來。</div>');
+    if (pb.short) return head + box(`<div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7;">本益比資料只有 ${pb.n} 天（上市未滿半年），分位數沒有參考性，先不硬給便宜/昂貴價。目前本益比 ${pb.latestPer.toFixed(1)} 倍（${escape(pb.latestDate)}）。</div>`);
+    if (!(price > 0) || !(pb.latestPer > 0)) return head + box('<div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.7;">沒有現價，換算不出價格帶。</div>');
+    const eps = price / pb.latestPer;
+    const money = v => 'NT$' + Math.round(v).toLocaleString('en-US');
+    const rel = v => { const p = (v / price - 1) * 100; return (p >= 0 ? '+' : '') + p.toFixed(1) + '%'; };
+    const zone = pb.rankPct <= 25 ? '處於歷史區間<strong style="color:var(--accent);">偏低</strong>'
+      : pb.rankPct >= 75 ? '處於歷史區間<strong style="color:var(--danger);">偏高</strong>' : '處於歷史區間中段';
+    const row = (label, pe, v, color) => `
+      <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:6px 0; border-bottom:1px solid var(--line);">
+        <span style="font-size:12.5px; color:var(--ink-primary); min-width:56px;">${label}</span>
+        <span style="font-family:var(--serif); font-size:15px; color:${color};">${money(v)}</span>
+        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${pe.toFixed(1)} 倍 × EPS</span>
+        <span style="margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${rel(v)}</span>
+      </div>`;
+    return head + box(
+      `<div style="font-size:12px; color:var(--ink-secondary); margin-bottom:6px; line-height:1.6;">
+        目前本益比 <strong style="color:var(--ink-primary);">${pb.latestPer.toFixed(1)} 倍</strong> · 位於近 3 年第 <strong>${Math.round(pb.rankPct)}</strong> 百分位（低→高）· ${zone}
+      </div>`
+      + row('便宜價', pb.p25, pb.p25 * eps, 'var(--accent)')
+      + row('合理價', pb.p50, pb.p50 * eps, 'var(--ink-primary)')
+      + row('昂貴價', pb.p75, pb.p75 * eps, 'var(--danger)')
+      + `<div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:6px;">河的底/頂（P10/P90）：${money(pb.p10 * eps)} ～ ${money(pb.p90 * eps)}</div>`
+      + `<div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:7px; line-height:1.6;">
+          算法＝「過去三年市場願意給的本益比分位數」×「現在的每股盈餘」。<strong>獲利衰退時整條帶會往下掉，「便宜價」不是保證支撐</strong>；
+          成長放緩時，過去的高本益比也不會回來。這是估值座標，<strong>不是預測</strong>。資料到 ${escape(pb.latestDate)}。
+        </div>`);
+  }
+
   const twLots = v => { const n = Math.round(Number(v) / 1000); return (n > 0 ? '+' : '') + n.toLocaleString('en-US'); };   // 股 → 張
   const twRevYi = v => { const n = Number(v) / 1e8; return n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(1); };   // 元 → 億
   const twStreakTxt = s => !s || !s.days ? '' : `${s.dir > 0 ? '連買' : '連賣'} ${s.days} 天`;
 
   // 餵 AI 的那一句——跟畫面吃同一份數字（兩個出口不准分岔）
-  function twChipsAiLine(ch, mr) {
+  function twChipsAiLine(ch, mr, pb, price) {
     const parts = [];
     if (ch) {
       parts.push(`法人動向（資料到 ${ch.lastDate}）：外資 近5日 ${twLots(ch.d5.foreign)} 張／近20日 ${twLots(ch.d20.foreign)} 張${ch.streak.foreign.days ? '／' + twStreakTxt(ch.streak.foreign) : ''}；投信 近5日 ${twLots(ch.d5.trust)} 張／近20日 ${twLots(ch.d20.trust)} 張${ch.streak.trust.days ? '／' + twStreakTxt(ch.streak.trust) : ''}`);
     }
     if (mr && mr.latest) {
       parts.push(`月營收：${mr.latest.y}/${String(mr.latest.m).padStart(2, '0')} 營收 ${twRevYi(mr.latest.rev)} 億${mr.latest.yoy != null ? `、年增 ${mr.latest.yoy.toFixed(1)}%` : ''}${mr.streak >= 2 ? `、已連續 ${mr.streak} 個月年增` : ''}`);
+    }
+    if (pb && !pb.short && pb.latestPer > 0 && price > 0) {
+      const eps = price / pb.latestPer;
+      const m = v => 'NT$' + Math.round(v).toLocaleString('en-US');
+      parts.push(`估值帶（近3年本益比，資料到 ${pb.latestDate}）：P25/P50/P75 = ${pb.p25.toFixed(1)}/${pb.p50.toFixed(1)}/${pb.p75.toFixed(1)} 倍 → 用目前 EPS 換算 便宜約 ${m(pb.p25 * eps)}、合理約 ${m(pb.p50 * eps)}、昂貴約 ${m(pb.p75 * eps)}；目前 ${pb.latestPer.toFixed(1)} 倍、位於歷史第 ${Math.round(pb.rankPct)} 百分位（獲利衰退時整條帶會往下掉，非預測）`);
     }
     return parts.join('\n');
   }
@@ -14534,19 +14607,21 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
         if (l2) l2.innerHTML = renderUsPriceLevels(usPriceLevels(price, null, sig, candles), 'NT$');
       });
 
-      // 法人動向 ＋ 月營收（v16.47）——台股獨有，另外抓，抓不到不影響其他區塊
+      // 法人動向 ＋ 月營收 ＋ 估值帶（v16.47–48）——台股獨有，另外抓，抓不到不影響其他區塊
       const chipsEl = document.getElementById('twChipsPanel');
-      if (chipsEl) chipsEl.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:8px 0;">查法人買賣超與月營收中…</div>';
+      if (chipsEl) chipsEl.innerHTML = '<div style="color:var(--ink-tertiary); font-size:11px; padding:8px 0;">查法人買賣超、月營收與估值帶中…</div>';
       Promise.all([
         fetchTwChips(code).then(d => ({ d })).catch(e => ({ e })),
-        fetchTwMonthRevenue(code).then(d => ({ d })).catch(e => ({ e }))
-      ]).then(([cw, mw]) => {
+        fetchTwMonthRevenue(code).then(d => ({ d })).catch(e => ({ e })),
+        fetchTwPeBand(code).then(d => ({ d })).catch(e => ({ e }))
+      ]).then(([cw, mw, pe]) => {
         // 使用者可能已經切去看別檔——別把 2330 的法人寫進 2317 的畫面
         if (!lastAnalysisSnapshot || lastAnalysisSnapshot.symbol !== code) return;
         const el = document.getElementById('twChipsPanel');
-        if (el) el.innerHTML = renderTwChipsPanel(cw.d || null, mw.d || null, { chips: cw.e, mrev: mw.e });
+        if (el) el.innerHTML = renderTwChipsPanel(cw.d || null, mw.d || null, { chips: cw.e, mrev: mw.e })
+                             + renderTwPeBand(pe.d || null, price, pe.e);
         // 餵 AI：跟畫面同一份數字（twChipsAiLine），拉不到就一個字都不加——不憑空描述
-        const line = twChipsAiLine(cw.d, mw.d);
+        const line = twChipsAiLine(cw.d, mw.d, pe.d, price);
         if (line) tvChartPrompt += '\n' + line;
       });
     } catch (e) {
