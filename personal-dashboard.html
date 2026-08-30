@@ -3851,6 +3851,19 @@
           <button class="btn btn-sm" type="button" data-tap onclick="pasteIntoKeyField('aiProvKey')" title="從剪貼簿貼上金鑰">📋 貼上</button>
         </div>
       </div>
+      <div style="border-top:1px solid var(--line); margin-top:14px; padding-top:12px;">
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-primary); line-height:1.6;">
+          <input type="checkbox" id="aiProvFallback" checked onchange="renderAiFallbackNote()" style="margin-top:3px;">
+          <span>我的 AI 掛掉時，<strong>自動改用 Anthropic 接手</strong>
+            <span style="display:block; font-size:11px; color:var(--ink-tertiary); margin-top:2px;">
+              需要另外填 Anthropic 金鑰（在「投資翻倍 → ✦ AI 評估」那一格）。
+              <strong style="color:var(--accent-warm);">接手會用到 Anthropic 的額度、要花錢</strong>，所以每次接手都會跳訊息告訴你。
+              不想有意外支出就把這個勾拿掉——你的 AI 掛了就直接顯示錯誤。
+            </span>
+          </span>
+        </label>
+        <div id="aiProvFallbackNote" style="font-size:11px; line-height:1.7; margin-top:8px;"></div>
+      </div>
       <div id="aiProvTestResult" style="font-size:11.5px; line-height:1.7; margin-top:6px;"></div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" id="aiProvTestBtn" type="button" onclick="testAiProvider()">🔌 測試連線</button>
@@ -9393,7 +9406,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.51 · ϴϴ</div>
+    <div>v 16.52 · ϺϺ</div>
   </footer>
 </div>
 
@@ -12271,18 +12284,20 @@ alter publication supabase_realtime add table party_locations;</pre>
   // 所以只能用 Anthropic。改成：全部走 aiChat() 這一支，要換供應商只改一個地方。
   // ⚠ 這裡刻意做成「不設定就完全照舊」——沒填自訂服務時，行為跟以前一模一樣（Anthropic）。
   const AI_PROVIDER_STORAGE = 'studio_ai_provider_v1';
-  let aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai' };
+  let aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai', fallback: true };
 
   // ⚠ 一律先重設成預設，再套用讀到的合法值。
   //   不這樣做的話，storage 壞掉或被清空時會**沿用記憶體裡的舊設定**——
   //   使用者以為已經關掉／已經清掉了，AI 卻還在往舊網址送（測試抓到的）。
   async function loadAiProvider() {
-    aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai' };
+    aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai', fallback: true };
     const o = await readJson(AI_PROVIDER_STORAGE, null);
     if (o && typeof o === 'object' && !Array.isArray(o)) {
       aiProvider = {
         enabled: !!o.enabled, url: String(o.url || '').trim(), key: String(o.key || '').trim(),
-        model: String(o.model || '').trim(), format: o.format === 'anthropic' ? 'anthropic' : 'openai'
+        model: String(o.model || '').trim(), format: o.format === 'anthropic' ? 'anthropic' : 'openai',
+        // 舊資料沒有這個欄位 → 預設開（使用者要的就是「掛了有人接手」）
+        fallback: o.fallback === undefined ? true : !!o.fallback
       };
     }
     return aiProvider;
@@ -12312,48 +12327,44 @@ alter publication supabase_realtime add table party_locations;</pre>
   // 共用的 AI 呼叫。回 { text, viaCustom, toolsDropped }
   // ⚠ tools（Anthropic 的 web_search）只有官方 Anthropic 支援；走自訂服務時會被丟掉，
   //   而且一定要回報 toolsDropped，讓呼叫端老實告訴使用者「這次沒有上網查」（v16.43 那條）。
-  async function aiChat({ system, messages, maxTokens, tools, apiKey }) {
-    const msgs = (messages || []).filter(m => m && m.content);
-    if (!msgs.length) throw new Error('沒有要問的內容');
-    const max = Number(maxTokens) || 2000;
-
-    if (aiProviderOn()) {
-      const url = aiEndpointUrl(aiProvider.url, aiProvider.format);
-      const toolsDropped = !!(tools && tools.length);
-      if (aiProvider.format === 'anthropic') {
-        const body = { model: aiProvider.model, max_tokens: max, messages: msgs };
-        if (system) body.system = system;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: Object.assign({ 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
-            aiProvider.key ? { 'x-api-key': aiProvider.key, 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
-          body: JSON.stringify(body)
-        });
-        if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'API error');
-        const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
-        return { text, viaCustom: true, toolsDropped };
-      }
-      // OpenAI 相容（絕大多數自架服務都是這種：Ollama / LM Studio / vLLM / one-api…）
-      const oMsgs = system ? [{ role: 'system', content: system }].concat(msgs) : msgs;
+  // 打「你自己的 AI 服務」。失敗一律 throw，讓上層決定要不要換備援。
+  async function aiCallCustom({ system, msgs, max, tools }) {
+    const url = aiEndpointUrl(aiProvider.url, aiProvider.format);
+    const toolsDropped = !!(tools && tools.length);
+    if (aiProvider.format === 'anthropic') {
+      const body = { model: aiProvider.model, max_tokens: max, messages: msgs };
+      if (system) body.system = system;
       const res = await fetch(url, {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' },
-          aiProvider.key ? { 'Authorization': 'Bearer ' + aiProvider.key } : {}),
-        body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs })
+        headers: Object.assign({ 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
+          aiProvider.key ? { 'x-api-key': aiProvider.key, 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
+        body: JSON.stringify(body)
       });
       if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
       const data = await res.json();
-      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error).slice(0, 200));
-      const text = String(data.choices?.[0]?.message?.content ?? '').trim();
-      if (!text) throw new Error('你的 AI 服務有回應，但取不到內容（預期 choices[0].message.content）。回應開頭：' + JSON.stringify(data).slice(0, 200));
+      if (data.error) throw new Error(data.error.message || 'API error');
+      const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+      if (!text) throw new Error('你的 AI 服務有回應，但內容是空的');
       return { text, viaCustom: true, toolsDropped };
     }
+    // OpenAI 相容（絕大多數自架服務都是這種：Ollama / LM Studio / vLLM / one-api…）
+    const oMsgs = system ? [{ role: 'system', content: system }].concat(msgs) : msgs;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' },
+        aiProvider.key ? { 'Authorization': 'Bearer ' + aiProvider.key } : {}),
+      body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs })
+    });
+    if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error).slice(0, 200));
+    const text = String(data.choices?.[0]?.message?.content ?? '').trim();
+    if (!text) throw new Error('你的 AI 服務有回應，但取不到內容（預期 choices[0].message.content）。回應開頭：' + JSON.stringify(data).slice(0, 200));
+    return { text, viaCustom: true, toolsDropped };
+  }
 
-    // 沒設自訂服務 → 完全照舊走 Anthropic
-    const key = apiKey || await readKey(AI_KEY_STORAGE);
-    if (!key) throw new Error('尚未設定 AI：可在首頁選單「🤖 AI 服務設定」填你自己的 API，或填 Anthropic API Key');
+  // 打 Anthropic 官方（也是備援那一路）
+  async function aiCallAnthropic({ system, msgs, max, tools, key }) {
     const body = { model: 'claude-sonnet-5', max_tokens: max, messages: msgs };
     if (system) body.system = system;
     if (tools && tools.length) body.tools = tools;
@@ -12372,6 +12383,36 @@ alter publication supabase_realtime add table party_locations;</pre>
     return { text, viaCustom: false, toolsDropped: false };
   }
 
+  // 最後一次備援接手的紀錄（設定畫面會顯示，讓使用者知道自己的服務其實掛過）
+  let lastAiFallback = null;
+
+  async function aiChat({ system, messages, maxTokens, tools, apiKey }) {
+    const msgs = (messages || []).filter(m => m && m.content);
+    if (!msgs.length) throw new Error('沒有要問的內容');
+    const max = Number(maxTokens) || 2000;
+
+    if (aiProviderOn()) {
+      try {
+        return await aiCallCustom({ system, msgs, max, tools });
+      } catch (e) {
+        // ⚠ 備援要花錢（Anthropic 是按用量計費），所以：
+        //   ① 使用者沒開「自動接手」就照實把錯誤丟出去，不要偷偷換人
+        //   ② 真的接手了一定要講出來——不然他以為是自己的 AI 回答的，帳單卻在長
+        const key = apiKey || await readKey(AI_KEY_STORAGE);
+        if (!aiProvider.fallback || !key) throw e;
+        lastAiFallback = { at: Date.now(), why: String(e.message || e) };
+        try { showToast('⚠ 你的 AI 沒回應，這次改用 Anthropic 備援（會計費）'); } catch (x) {}
+        const r = await aiCallAnthropic({ system, msgs, max, tools, key });
+        return Object.assign(r, { fellBack: true, fallbackWhy: lastAiFallback.why });
+      }
+    }
+
+    // 沒設自訂服務 → 完全照舊走 Anthropic
+    const key = apiKey || await readKey(AI_KEY_STORAGE);
+    if (!key) throw new Error('尚未設定 AI：可在首頁「🤖 AI 服務設定」填你自己的 API，或填 Anthropic API Key');
+    return await aiCallAnthropic({ system, msgs, max, tools, key });
+  }
+
   // 「現在有沒有 AI 可用」——自訂服務或 Anthropic 金鑰，兩者有一個就算有
   async function aiReady() {
     if (aiProviderOn()) return true;
@@ -12385,10 +12426,36 @@ alter publication supabase_realtime add table party_locations;</pre>
     document.getElementById('aiProvKey').value = aiProvider.key || '';
     document.getElementById('aiProvModel').value = aiProvider.model || '';
     document.getElementById('aiProvFormat').value = aiProvider.format || 'openai';
+    document.getElementById('aiProvFallback').checked = aiProvider.fallback !== false;
+    renderAiFallbackNote();
     document.getElementById('aiProvTestResult').innerHTML = '';
     openModalOnTop('aiProviderModal');
   }
   function closeAiProviderModal() { closeModalRestore('aiProviderModal'); }
+
+  // 備援的現況：有沒有備用金鑰、上次接手是什麼時候為什麼。
+  // ⚠ 勾了「自動接手」卻沒有 Anthropic 金鑰＝這個勾根本不會生效，一定要講出來
+  //   （不講的話，他以為有保險，真的掛掉時才發現沒有）。
+  async function renderAiFallbackNote() {
+    const el = document.getElementById('aiProvFallbackNote');
+    if (!el) return;
+    const on = document.getElementById('aiProvFallback').checked;
+    const key = await readKey(AI_KEY_STORAGE);
+    const bits = [];
+    if (on && !key) {
+      bits.push('<span style="color:var(--danger);">⚠ 你勾了自動接手，但<strong>還沒有 Anthropic 金鑰</strong>——'
+              + '這個勾現在不會生效。到「投資翻倍 → ✦ AI 評估」把金鑰填進去才有備援。</span>');
+    } else if (on && key) {
+      bits.push('<span style="color:var(--ink-tertiary);">✓ 備援金鑰已備妥（' + escape(keyFingerprint(key)) + '）</span>');
+    }
+    if (lastAiFallback) {
+      const d = daysBetweenToday(todayISO(lastAiFallback.at));
+      const when = d === 0 ? '今天' : (d != null ? Math.abs(d) + ' 天前' : '');
+      bits.push('<span style="color:var(--accent-warm);">⚠ ' + escape(when) + '曾經接手過一次，原因：'
+              + escape(String(lastAiFallback.why).slice(0, 120)) + '</span>');
+    }
+    el.innerHTML = bits.join('<br>');
+  }
 
   function readAiProviderForm() {
     return {
@@ -12396,7 +12463,8 @@ alter publication supabase_realtime add table party_locations;</pre>
       url: document.getElementById('aiProvUrl').value.trim(),
       key: document.getElementById('aiProvKey').value.trim(),
       model: document.getElementById('aiProvModel').value.trim(),
-      format: document.getElementById('aiProvFormat').value === 'anthropic' ? 'anthropic' : 'openai'
+      format: document.getElementById('aiProvFormat').value === 'anthropic' ? 'anthropic' : 'openai',
+      fallback: document.getElementById('aiProvFallback').checked
     };
   }
 
@@ -36661,6 +36729,11 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       return '⚠ 這一份是用你自己的 AI 服務產生的，**它沒有上網查資料的能力**——\n'
            + '下面的內容來自它自己的知識，可能過時或有誤，新聞與數字請自行查證。\n'
            + '（要讓 AI 自動上網查，需要用 Anthropic 官方 API。）\n\n' + r.text;
+    }
+    // 備援接手了要講：這份不是你的 AI 出的，而且用掉 Anthropic 的額度
+    if (r.fellBack) {
+      return '⚠ 你自己的 AI 服務這次沒回應（' + String(r.fallbackWhy || '').slice(0, 100) + '），\n'
+           + '**這一份是 Anthropic 接手產生的**（有上網查資料，也會用掉你的 Anthropic 額度）。\n\n' + r.text;
     }
     return r.text;
   }
