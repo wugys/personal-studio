@@ -9478,7 +9478,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.68 · ББ</div>
+    <div>v 16.69 · ВВ</div>
   </footer>
 </div>
 
@@ -27647,6 +27647,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function barsSaveProgress(p) { await writeKey(BARS_PROGRESS_KEY, JSON.stringify(p)); }
 
   let barsWorklistNote = '';   // 建工作清單時發現的問題（例如 Worker 是舊版、給不到那麼多檔）
+  // 三個大盤指數。⚠ 它們一定要在**美股**清單裡（Yahoo 代號、走 us 庫），
+  //   而且要排在最前面——大盤濾網只讀本機，沒有它就整個不生效，
+  //   而使用者不會知道「要先抓指數」這件事。
+  //   （實測 ^TWII 243 根、^GSPC / ^IXIC 251 根，都超過 221 根的門檻。）
+  const REGIME_ALL = ['^TWII', '^GSPC', '^IXIC'];
+
   // 工作清單：美股走 Worker 的市值排序、台股走全代號表
   async function barsBuildWorklist(mkt, topN) {
     if (mkt === 'tw') {
@@ -27666,6 +27672,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!resp.ok) throw new Error('抓不到美股清單（HTTP ' + resp.status + (j && j.error ? '：' + j.error : '') + '）');
     const list = (j && Array.isArray(j.list)) ? j.list.filter(r => Array.isArray(r) && r[0]).map(r => String(r[0])) : [];
     if (!list.length) throw new Error('美股清單是空的');
+    // 指數排最前面：只有 3 檔，但沒有它們大盤濾網整個不生效
+    list.unshift(...REGIME_ALL.filter(x => list.indexOf(x) === -1));
     // ⚠ 舊版 Worker 的 top 上限是 6000。你選「全部」它照樣回 6000 筆、也不會報錯，
     //   於是累積器跑完會說「全部累積完成」——**而其實少了 12,000 多檔，畫面上完全看不出來**。
     //   （v16.17 同一條：要使用者手動更新的外部相依，落後時必須明講。）
@@ -31603,6 +31611,123 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   ];
 
   // 每個條件都要能用白話解釋「這代表什麼」，不然勾了也不知道在勾什麼
+  // ============================================================
+  // 掃描器 · 延伸指標（v16.69）——全部只吃本機日 K，一次網路都不打
+  //
+  // ⚠ 全域規矩：**算不出來一律回 null，不准用短窗湊一個數字充數**。
+  //   「不足一年的 52 週高」跟別人的 52 週高不是同一件事，湊出來會被當成真的拿去比較
+  //   （v16.63「擋掉的東西不可以默默消失」的另一面：算不出來的也不可以偽裝成算得出來）。
+  // ⚠ 這裡**不重算 ATR**——usPriceLevels 剛算過，直接用 lv.atrPct。18,409 檔別算兩遍。
+  // ============================================================
+  const SCAN_YEAR_MIN = 240;   // range=1y 實測台股 244、美股 251 根 → 240 是「還算得上一年」的下限
+
+  function scanMean(a) { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; }
+
+  // 任意天期均線；back = 往回退幾根再算（判斜率用）
+  function scanMA(bars, p, back) {
+    const n = bars.length - (back || 0);
+    if (n < p) return null;
+    let s = 0;
+    for (let i = n - p; i < n; i++) { const c = Number(bars[i].close); if (!(c > 0)) return null; s += c; }
+    return s / p;
+  }
+
+  // 一年高低。⚠ 回傳 n = 真的用了幾根，畫面**必須**印出來：
+  //   只有 244 根時那不是「52 週高」，是「11.6 個月高」（v16.63「有幾根就講幾根」）
+  function scan52w(bars) {
+    if (bars.length < SCAN_YEAR_MIN) return null;
+    const w = bars.slice(-252);
+    let hi = -Infinity, lo = Infinity;
+    for (const b of w) {
+      const h = Number(b.high), l = Number(b.low);
+      if (h > hi) hi = h;
+      if (l > 0 && l < lo) lo = l;
+    }
+    const c = Number(w[w.length - 1].close);
+    if (!(hi > 0) || !(lo > 0) || !(c > 0)) return null;
+    return { n: w.length, months: Math.round(w.length / 21 * 10) / 10, high: hi, low: lo,
+             fromHigh: (c - hi) / hi * 100,     // 負數 = 距一年高幾 %
+             aboveLow: (c - lo) / lo * 100 };   // 正數 = 比一年低高幾 %
+  }
+
+  // 最後一根的量是平常的幾倍。
+  // ⚠ 基準期一定要**排除最後一根**，否則自己跟自己比、倍數永遠被拉低
+  function scanRvol(bars) {
+    if (bars.length < 21) return null;
+    const v = bars.map(b => Number(b.volume) || 0);
+    const last = v[v.length - 1];
+    const base = scanMean(v.slice(-21, -1));
+    return (base > 0 && last > 0) ? last / base : null;
+  }
+
+  // 盤整箱：過去 look 天（不含最後一根）的高低差夠窄 = 在整理；最後一根收盤過箱頂 = 突破
+  // ⚠ widthPct 用「高」當分母，這是我們自己的定義，畫面上要寫清楚
+  function scanBox(bars, look) {
+    const L = look || 30;
+    if (bars.length < L + 1) return null;
+    const w = bars.slice(-L - 1, -1);
+    const hi = Math.max(...w.map(b => Number(b.high)));
+    const lo = Math.min(...w.map(b => Number(b.low)));
+    const c = Number(bars[bars.length - 1].close);
+    if (!(hi > 0) || !(lo > 0) || !(c > 0)) return null;
+    return { hi, lo, widthPct: (hi - lo) / hi * 100, breakout: c > hi, look: L };
+  }
+
+  // 這段漲勢「直不直」：收盤取對數對時間做線性回歸，R² 越高代表越像一條斜直線。
+  // 慢慢一路走高 vs 暴漲暴跌但淨值差不多——兩者的均線排列可能一模一樣，只有這個數字分得開。
+  function scanTrendFit(bars, look) {
+    const L = look || 60;
+    if (bars.length < L) return null;
+    const y = bars.slice(-L).map(b => Math.log(Number(b.close)));
+    if (y.some(v => !isFinite(v))) return null;
+    const n = y.length, mx = (n - 1) / 2, my = scanMean(y);
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = i - mx, dy = y[i] - my;
+      sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+    }
+    if (!(sxx > 0) || !(syy > 0)) return null;
+    return { r2: (sxy * sxy) / (sxx * syy) * 100, up: sxy > 0, look: n };
+  }
+
+  // 乖離率（FinMind 台股實務參數：MA24，−7 進 / +8 出，**刻意不對稱**）
+  // ⚠ 回傳「絕對乖離%」與「乖離 ÷ 單日波動」兩個：−7% 在台股中型股是常態，
+  //   在美股大型股是 2.5σ 以上——**同一個門檻在兩個市場意義差三倍，一定要正規化**。
+  function scanBias(bars, atrPct, p) {
+    const ma = scanMA(bars, p || 24);
+    const c = Number(bars[bars.length - 1].close);
+    if (!(ma > 0) || !(c > 0)) return null;
+    const pct = (c - ma) / ma * 100;
+    return { pct, inAtr: (atrPct > 0) ? pct / atrPct : null };
+  }
+
+  // 最後一根的漲跌幅。台股用來判漲跌停——
+  // ⚠ 漲停鎖死時**量反而萎縮**（沒人賣），而且那個收盤價你**根本買不到**，隔天開盤會差很多。
+  function scanLastChg(bars) {
+    const n = bars.length;
+    if (n < 2) return null;
+    const a = Number(bars[n - 2].close), b = Number(bars[n - 1].close);
+    return (a > 0 && b > 0) ? (b / a - 1) * 100 : null;
+  }
+
+  // 近一年有沒有出現過「不可能的單日漲跌」→ 多半是分割／減資，本機資料沒有還原
+  // ⚠ 台股非興櫃有 10% 漲跌幅限制，超過 40% 必定是事件不是行情
+  function scanSplitSuspect(bars) {
+    for (let i = 1; i < bars.length; i++) {
+      const a = Number(bars[i - 1].close), b = Number(bars[i].close);
+      if (a > 0 && b > 0 && Math.abs(b / a - 1) > 0.4) return bars[i].time;
+    }
+    return '';
+  }
+
+  // 流動性夠不夠（給比率型條件當前置）。
+  // ⚠ 比率型指標（量比、乖離）**分母越小越容易爆**，不加這道會撈出一堆冷門股
+  function scanTurnoverOk(c) {
+    const t = c && c.turnover20;
+    if (t == null || !(t > 0)) return false;
+    return c.market === 'tw' ? t >= 3e7 : t >= 5e6;
+  }
+
   const US_SCAN_CONDS = [
     { key: 'golden',     name: '出現黃金交叉',   hint: '短期均線剛穿過長期均線，通常代表轉強的起點',       test: c => !!(c.sig.cross && c.sig.cross.type === 'golden') },
     { key: 'bull_stack', name: '多頭排列',       hint: '5日>20日>60日均線，三條線由上往下排好，趨勢明確向上', test: c => !!(c.sig.ma5 && c.sig.ma20 && c.sig.ma60 && c.sig.ma5 > c.sig.ma20 && c.sig.ma20 > c.sig.ma60) },
@@ -31616,7 +31741,42 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'boll_low',   name: '靠近布林下軌',   hint: '股價貼近統計上的低位（%B<35），跌深反彈候選',        test: c => c.pctB != null && c.pctB < 35 },
     { key: 'vol_up',     name: '成交量放大',     hint: '近 5 日均量 > 近 20 日均量的 1.2 倍，有人在進場',    test: c => c.volRatio != null && c.volRatio > 1.2 },
     { key: 'near_high',  name: '接近 60 日高',   hint: '距離兩個月來的高點 5% 以內，突破型',                test: c => c.fromHigh60 != null && c.fromHigh60 > -5 },
-    { key: 'pullback',   name: '健康回檔',       hint: '從 60 日高回檔 5%~15%，不是崩盤但有折扣',           test: c => c.fromHigh60 != null && c.fromHigh60 <= -5 && c.fromHigh60 >= -15 }
+    { key: 'pullback',   name: '健康回檔',       hint: '從 60 日高回檔 5%~15%，不是崩盤但有折扣',           test: c => c.fromHigh60 != null && c.fromHigh60 <= -5 && c.fromHigh60 >= -15 },
+
+    // ── 長天期趨勢（v16.69）──────────────────────────────────
+    // ⚠ needBars：這幾條需要比較長的歷史。資料不夠時要顯示「**算不出來**」
+    //   而不是「沒通過」——那是兩件完全不同的事（v16.63 同一條）。
+    { key: 'above_ma200', name: '站上年線', needBars: 200,
+      hint: '股價在「過去 200 個交易日的平均收盤價」之上。⚠ 年線是落後指標，它翻上來時行情通常已經走了一段——它是「篩掉」的工具，不是「買進」訊號',
+      test: c => !!(c.ma200 && c.price > c.ma200) },
+    { key: 'ma200_up', name: '年線比一個月前高', needBars: 221,
+      hint: '200 日均線比 21 個交易日前高。⚠ 它比的是「最近那個月的均價 vs 一年前那個月」——一年前剛好是低點時它會自動成立',
+      test: c => c.ma200Up === true },
+    { key: 'ma_long_stack', name: '長天期均線全部排好', needBars: 200,
+      hint: '股價 > 50日 > 150日 > 200日均線，四層由上往下排好。⚠ 跟「多頭排列」(5>20>60) 很像但不是同一件事：一個講這幾週、一個講這半年',
+      test: c => !!(c.ma50 && c.ma150 && c.ma200 && c.price > c.ma50 && c.ma50 > c.ma150 && c.ma150 > c.ma200) },
+    { key: 'near_52w_high', name: '沒離一年高點太遠（25% 內）', needBars: 240,
+      hint: '距離一年最高價 25% 以內。⚠ 25% **不是「很近」**——這是「排除已經崩掉的」，不是「快創新高」',
+      test: c => !!(c.w52 && c.w52.fromHigh >= -25) },
+    { key: 'above_52w_low', name: '比一年低點高 30% 以上', needBars: 240,
+      hint: '排除還躺在谷底的。⚠ 剛從谷底彈 30% 的殭屍股也會通過——它只排除「還躺在地上的」，不保證「在上升趨勢裡」',
+      test: c => !!(c.w52 && c.w52.aboveLow >= 30) },
+
+    // ── 型態與量能（v16.69）──────────────────────────────────
+    { key: 'trend_smooth', name: '漲得很順', needBars: 60,
+      hint: '近 60 天走勢接近一條往上的直線（R²≥60%），不是暴漲暴跌來回甩。⚠「走得很直」跟「還會繼續走」是兩件事',
+      test: c => !!(c.fit && c.fit.up && c.fit.r2 >= 60) },
+    { key: 'rvol_pop', name: '最後一根量特別大', needBars: 21,
+      hint: '最後一根 K 的量是前 20 天平均的 2.5 倍以上（跟「持續放量」是兩件事）。⚠ 爆量有四種來源：真的有人買、財報日、除權息日、當沖對敲——後三種都不是訊號',
+      // ⚠ 一定要配流動性前置：比率型指標分母越小越容易爆
+      test: c => c.rvol != null && c.rvol >= 2.5 && scanTurnoverOk(c) },
+    { key: 'box_break', name: '悶很久突然衝出去', needBars: 31,
+      // ⚠ 台股中小型股 30 天區間常態 15~30%，寫死 10% 幾乎篩不到東西 → 改成跟自己的波動比
+      hint: '前 30 天在很窄的區間裡整理（區間寬度 < 6 倍單日波動），最後一根收盤衝過上緣。⚠ 假突破率很高，沒有停損就是災難',
+      test: c => !!(c.box && c.atrPct > 0 && c.box.widthPct <= c.atrPct * 6 && c.box.breakout) },
+    { key: 'bias_low', name: '被打得比平常深', needBars: 24,
+      hint: '股價比 24 日均線低超過 2.5 倍的單日波動。⚠ 這一條跟「黃金交叉」「多頭排列」**方向相反**，是找跌過頭的反彈',
+      test: c => !!(c.bias && c.bias.inAtr != null && c.bias.inAtr <= -2.5) }
   ];
   // 基本面條件：要勾「同時檢查基本面」才會出現（因為要多打 API、多花時間）
   // ctx.fund 已被正規化成 { pe, pb, roe, dy }，台美兩邊來源不同但形狀一樣
@@ -31665,24 +31825,45 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       conds: ['f_div', 'f_pe_ok', 'f_pb', 'above_ma60'] },
     { key: 's_turnaround', icon: '🔧', name: '價值＋轉強', fund: true, need: 'all',
       desc: '便宜的好公司，而且技術面剛開始轉多 —— 基本面與技術面同時到位',
-      conds: ['f_profit', 'f_pe_low', 'above_ma60', 'kd_turn'] }
+      conds: ['f_profit', 'f_pe_low', 'above_ma60', 'kd_turn'] },
+
+    // ── v16.69 新增。全部零 API，只吃本機日 K ──────────────────
+    { key: 's_trend_tpl', icon: '🏔', name: '趨勢範本（Minervini）', fund: false, need: 'all',
+      desc: '長短均線四層排好、年線在爬、比一年低點高 30% 以上、離一年高點 25% 內 —— 過去的大漲股在起漲前多半符合這幾項。'
+          + '⚠ 但符合的股票裡**大多數不會大漲**：這幾項彼此高度相關，全中不代表五個獨立證據。'
+          + '⚠ 原版還有一條「相對強弱排名前 30%」，**這裡沒有做**（要先把全市場排名算出來）',
+      conds: ['above_ma200', 'ma200_up', 'ma_long_stack', 'above_52w_low', 'near_52w_high'] },
+    { key: 's_smooth', icon: '📐', name: '穩穩走高', fund: false, need: 'all',
+      desc: '近 60 天走勢像一條往上的直線、年線也在爬、短線還沒過熱 —— 抱起來比較不會心臟病',
+      conds: ['trend_smooth', 'ma200_up', 'above_ma20', 'not_hot'] },
+    { key: 's_box_break', icon: '📦', name: '悶久了衝出去', fund: false, need: 'all',
+      desc: '前 30 天在很窄的區間裡整理，最後一根帶著大量衝過上緣，而且站在季線上。'
+          + '⚠ 這是「幾乎沒有」型的策略，一天 0~3 檔是常態',
+      conds: ['box_break', 'rvol_pop', 'above_ma60'] },
+    { key: 's_bias_back', icon: '🪃', name: '乖離回歸（台股參數）', fund: false, need: 'all',
+      desc: '長期還在上升軌道（站在年線上、年線也在爬），但短線被打到比月線低 2.5 倍單日波動 —— 跌過頭的反彈候選。'
+          + '🔴 這個策略跟「黃金交叉突破」「多頭排列追強」**方向相反**，不要跟它們一起丟給 AI 排名',
+      conds: ['bias_low', 'above_ma200', 'ma200_up'] }
   ];
   let usScanMode = 'cond';       // 'cond' 條件模式 | 'strategy' 策略模式
   let usScanStrategies = ['s_golden', 's_pullback', 's_value'];
 
   // 這支股票符合這個策略嗎
   function usStrategyHit(ctx, st) {
-    let hit = 0, total = 0, missing = [];
+    let hit = 0, total = 0, missing = [], naNames = [];
     st.conds.forEach(k => {
       const c = usScanCondByKey(k);
       if (!c) return;
       total++;
-      let ok = false;
-      try { ok = !!c.test(ctx); } catch (e) { ok = false; }
-      if (ok) hit++; else missing.push(c.name);
+      const s = condState(c, ctx);
+      if (s === 'pass') hit++;
+      else if (s === 'na') naNames.push(c.name);   // 🔴 算不出來 ≠ 沒通過
+      else missing.push(c.name);
     });
     const need = st.need === 'all' ? total : Math.min(st.need, total);
-    return { pass: total > 0 && hit >= need, hit, total, need, missing };
+    // ⚠ 有任何一條算不出來，這個策略就**不算通過**（資料不夠不可以當成符合），
+    //   但畫面上要分開講「差這幾項」與「這幾項算不出來」。
+    return { pass: total > 0 && !naNames.length && hit >= need, hit, total, need, missing, na: naNames };
   }
   // 策略模式需不需要基本面資料
   const usScanStrategyNeedsFund = () =>
@@ -31813,6 +31994,83 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // 「掃了 N 檔」＝ 真的走過的檔數（算出來的 ＋ 資料不合格被擋掉的）。
   // ⚠ 只寫 usScanRows.length 的話，擋掉 200 檔時會寫成「掃了 30 檔」——
   //    讀起來像「範圍本來就只有 30 檔」，把自己漏掉的東西藏起來（v16.32 同一條）。
+  // ============================================================
+  // 大盤濾網（v16.69）—— 六個研究主題裡實證最硬的一條
+  //
+  //   Faber(2007/2013)：指數收在 10 個月 SMA（≈200 日）之上才做多。
+  //   1901–2012 複利年報酬 10.18% vs 買進持有 9.32%，
+  //   **而且標準差、最大回落、最差年度全部下降**，在市場裡的時間約 70%。
+  //   ⚠ 它的價值是「**降低回撤**」不是「提高勝率」——文案不可以寫「勝率比較差」。
+  //
+  // ⚠ 四條界線，缺一條就會出事：
+  //  ① **絕對不連網**。掃「本機已累積的全部」承諾「一次網路都不打」（v16.42），
+  //     那支測試的核心就是「毒化 fetch 之後計數器必須維持 0」。
+  //     → 指數 K 棒存進同一個 bars 庫，掃描時**只讀本機**；
+  //       沒有就明講「濾門沒有生效」，**不准臨時去抓**。
+  //  ② **只提醒不擋**——不藏任何一檔（v11.5／v13.9／v16.63）。
+  //  ③ 台股用 ^TWII、美股用 ^GSPC，各自判斷。
+  //  ④ 🔴 **指數不可以被當成股票掃進去**。scanLocalSymbols 是無差別 prefix 過濾，
+  //     ^TWII 會混進「本機已累積的全部」名單裡，拿到停損與 2:1 目標，看起來像一檔股票。
+  // ============================================================
+  const REGIME_SYM = { tw: '^TWII', us: '^GSPC' };
+  const REGIME_BUFFER = 2;      // %：貼著均線來回時不要一天翻一次臉。⚠ 這個 2 沒有出處，是工程參數
+  const REGIME_MIN_BARS = 221;  // 200 日均線 ＋ 21 天斜率
+  let scanRegimeInfo = null;    // 這一輪掃描算出來的，兩個 renderer 與 AI 提示詞共用
+
+  async function scanRegime(mkt) {
+    const sym = REGIME_SYM[mkt === 'tw' ? 'tw' : 'us'];
+    let bars = [];
+    try {
+      const rec = await barsGet('us', sym);     // 指數一律存 us 庫（用 Yahoo 代號）
+      if (rec && Array.isArray(rec.rows)) bars = barsToOhlc(rec.rows);
+    } catch (e) {}
+    if (bars.length < REGIME_MIN_BARS) return { sym, why: 'nodata', n: bars.length };
+    const price = Number(bars[bars.length - 1].close);
+    const ma200 = scanMA(bars, 200);
+    if (!(ma200 > 0) || !(price > 0)) return { sym, why: 'nodata', n: bars.length };
+    const prev = scanMA(bars, 200, 21);
+    const dist = (price - ma200) / ma200 * 100;
+    const lastDate = bars[bars.length - 1].time;
+    return {
+      sym, price, ma200, dist, n: bars.length, lastDate,
+      // null = 貼著均線（±2% 內），這時候**不給結論**
+      ok: dist >= REGIME_BUFFER ? true : dist <= -REGIME_BUFFER ? false : null,
+      ma200Up: prev != null ? ma200 > prev : null,
+      lag: daysBetweenToday(lastDate)
+    };
+  }
+
+  // 一句話，畫面與 AI 提示詞**逐字共用**。
+  // 🔴 只畫在畫面上就是 v16.63「顯示 ≠ 使用」原地復發 —— 一定要進提示詞。
+  function scanRegimeText(r) {
+    if (!r) return '';
+    const nm = r.sym === '^TWII' ? '台股加權指數' : 'S&P 500';
+    if (r.why === 'nodata')
+      return `這次沒有大盤資料，大盤濾門沒有生效（本機只有 ${r.n} 根 ${r.sym} 日 K，要 ${REGIME_MIN_BARS} 根）。`;
+    const n = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const when = `資料日 ${r.lastDate}${r.lag != null && Math.abs(r.lag) > 3 ? `（${Math.abs(r.lag)} 天前）` : ''}`;
+    if (r.ok === false)
+      return `⚠ 大盤在年線之下：${nm} ${n(r.price)}，年線 ${n(r.ma200)}，低了 ${Math.abs(r.dist).toFixed(1)}%（${when}）。`
+        + `歷史研究顯示這種環境下做多的**回撤明顯較大**（不是勝率較低）。`
+        + `下面這些標的還是符合技術條件，**我沒有把任何一檔藏起來** —— 要不要縮小部位、或這一輪不進場，你自己決定。`;
+    if (r.ok === null)
+      return `大盤正貼著年線來回（${nm} ${n(r.price)}，年線 ${n(r.ma200)}，差 ${r.dist.toFixed(1)}%，${when}），現在說不準是多是空。`
+        + `這一格要偏離 ${REGIME_BUFFER}% 以上才給結論——貼著均線時天天翻臉的濾門只會訓練你忽略它。`;
+    return `✔ 大盤在年線之上：${nm} ${n(r.price)}，年線 ${n(r.ma200)}，高了 ${r.dist.toFixed(1)}%`
+      + `${r.ma200Up === true ? '，年線也在往上' : r.ma200Up === false ? '，但年線還在往下' : ''}（${when}）。`
+      + `這只代表**環境對做多沒有明顯逆風**，不代表下面這幾檔會漲。`;
+  }
+  function scanRegimeHtml() {
+    const r = scanRegimeInfo;
+    if (!r) return '';
+    const color = r.why === 'nodata' ? 'var(--ink-tertiary)'
+      : r.ok === false ? 'var(--danger)' : r.ok === null ? 'var(--accent-warm)' : 'var(--accent)';
+    const txt = escape(scanRegimeText(r)).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    return `<div style="margin-top:8px; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid ${color}; border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.75;">
+        ${txt}${r.why === 'nodata' ? ` <button class="btn btn-sm" style="margin-left:6px;" onclick="openBarsModal('${usScanMarket === 'tw' ? 'tw' : 'us'}')">📥 抓大盤資料</button>` : ''}
+      </div>`;
+  }
+
   function scanTriedN() { return usScanRows.length + scanSkippedN; }
   function scanSkipNote() {
     if (!scanSkippedN) return '';
@@ -31867,6 +32125,22 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         : { key: 'stop', label: '停損太寬',
             why: `${stop.label} 距現價 ${Math.abs(stop.pct).toFixed(1)}%——2:1 目標要漲 ${(Math.abs(stop.pct) * 2).toFixed(0)}% 才划算` });
     }
+    // ── v16.69 三個純日 K 就算得出來、而且價值很高的旗標 ──────────
+    // 🔴 漲停鎖死時**量反而萎縮**（沒人賣），所以「量特別大」那一條會系統性錯過最強的那天；
+    //    更重要的是**那個收盤價你根本買不到**，隔天開盤會差很多。
+    if (!held && c.market === 'tw' && c.board !== '興櫃' && c.lastChg != null && c.lastChg >= 9.5) {
+      out.push({ key: 'limitup', label: '接近漲停',
+                 why: `最後一根漲 ${c.lastChg.toFixed(1)}%（台股漲跌幅上限 10%）——**這個價格你買不到**，明天開盤會差很多` });
+    }
+    if (!held && c.market === 'tw' && c.board !== '興櫃' && c.lastChg != null && c.lastChg <= -9.5) {
+      out.push({ key: 'limitdn', label: '接近跌停',
+                 why: `最後一根跌 ${Math.abs(c.lastChg).toFixed(1)}%——跌停鎖死時**賣不掉**，停損會失效` });
+    }
+    // 台股非興櫃有 10% 限制，一年內出現 >40% 的單日變動 → 必定是分割／減資，本機資料沒有還原
+    if (c.splitAt) {
+      out.push({ key: 'split', label: '可能有分割或減資', neutral: true,
+                 why: `${c.splitAt} 那天的價格跳了超過 40%，多半是分割或減資 —— **本機資料沒有還原它**，所以年線、一年高低這些長天期數字不要信` });
+    }
     const cr = c.sig && c.sig.cross;
     if (cr && cr.type === 'golden' && cr.daysAgo >= SCAN_STALE_CROSS_DAYS) {
       out.push(held
@@ -31897,7 +32171,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
         <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${inner}</span>
         ${scanAiBtnHtml()}
-      </div>` + scanSkipNote();
+      </div>` + scanRegimeHtml() + scanSkipNote();
   }
   // 台股清單有重複（2308/3661/6669… 出現兩次），一律去重
   function twScanList() {
@@ -31952,7 +32226,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function scanLocalSymbols(mkt) {
     const keys = await barsAllKeys();
     const pre = mkt + ':';
-    return keys.map(String).filter(k => k.startsWith(pre)).map(k => k.slice(pre.length)).filter(Boolean);
+    // 🔴 指數（^TWII、^GSPC、^IXIC）跟股票存在同一個庫裡，而這裡是無差別 prefix 過濾。
+    //   不濾掉的話，指數會混進「本機已累積的全部」名單，拿到停損與 2:1 目標，**看起來就像一檔股票**。
+    return keys.map(String).filter(k => k.startsWith(pre)).map(k => k.slice(pre.length))
+      .filter(x => x && x.charAt(0) !== '^');
   }
 
   function openUsScanModal(market) {
@@ -32273,9 +32550,24 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       ? (price - sig.boll.lower) / (sig.boll.upper - sig.boll.lower) * 100 : null;
     // 日均成交金額（近 20 日，收盤×股數）——冷門股買得進出不掉，這個數字是流動性判讀的底
     const amt20 = bars.slice(-20).map(b => (Number(b.close) || 0) * (Number(b.volume) || 0));
+    // v16.69 的延伸指標。⚠ 全部只吃 bars，一次網路都不打；算不出來一律 null
+    const atrPct = (lv && lv.atrPct) || null;
+    const ma200 = scanMA(bars, 200);
+    const ma200Prev = scanMA(bars, 200, 21);
     return {
       symbol: item.symbol, name: item.name || item.symbol, zh: item.zh || '',
       sig, bars, price, lv, sw60, pctB,
+      atrPct,
+      ma50: scanMA(bars, 50), ma150: scanMA(bars, 150), ma200,
+      ma200Up: (ma200 != null && ma200Prev != null) ? ma200 > ma200Prev : null,
+      w52: scan52w(bars),
+      rvol: scanRvol(bars),
+      box: scanBox(bars, 30),
+      fit: scanTrendFit(bars, 60),
+      bias: scanBias(bars, atrPct, 24),
+      lastChg: scanLastChg(bars),
+      splitAt: scanSplitSuspect(bars),
+      nBars: bars.length,
       market: usScanMarket,                      // 判讀流動性門檻要知道是台股還美股；render 時讀全域會在切市場後拿錯
       board: item.market || '',                  // 台股的 上市/上櫃/興櫃（twFindStock 給的；美股與查不到的為空）
       turnover20: amt20.length ? avg(amt20) : null,
@@ -32326,6 +32618,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     usScanRunning = true;
     scanSkipped = []; scanSkippedN = 0;   // 每次掃描重來（不然上一輪的會一直累積）
+    // 大盤濾網：⚠ 只讀本機，**絕對不連網**（「本機已累積的全部」承諾一次網路都不打，v16.42）
+    try { scanRegimeInfo = await scanRegime(usScanMarket); } catch (e) { scanRegimeInfo = null; }
     usScanBlocked = null;
     // 「本機已累積的全部」＝ 離線掃描；其他範圍照舊會連網補
     scanLocalOnly = /^(us|tw)_local$/.test(document.getElementById('usScanScope').value || '');
@@ -32476,15 +32770,24 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     box.insertAdjacentHTML('afterbegin', html);
   }
 
+  // 🔴 三態，不是兩態：通過／沒通過／**算不出來**。
+  //   `needBars` 的條件在資料不夠時，`test()` 會回 false——而 false 的意思是「**沒通過**」，
+  //   跟「我根本算不出來」**完全是兩件事**。混在一起的話，一檔只有 60 根日 K 的新股
+  //   會被寫成「不符合『站上年線』」，讀起來像「它在年線之下」，而真相是「沒有年線可以比」。
+  //   （v16.63 同一條：擋掉／算不出來的東西不可以偽裝成「不符合條件」。）
+  function condState(c, ctx) {
+    const need = Number(c && c.needBars) || 0;
+    if (need > 0 && (Number(ctx && ctx.nBars) || 0) < need) return 'na';
+    try { return c.test(ctx) ? 'pass' : 'fail'; } catch (e) { return 'na'; }
+  }
   function usScanEvaluate(ctx) {
-    const matched = [], missed = [];
+    const matched = [], missed = [], na = [];
     usScanAllConds().forEach(c => {
       if (!usScanPicked.includes(c.key)) return;
-      let ok = false;
-      try { ok = !!c.test(ctx); } catch (e) { ok = false; }
-      (ok ? matched : missed).push(c);
+      const st = condState(c, ctx);
+      (st === 'pass' ? matched : st === 'na' ? na : missed).push(c);
     });
-    return { matched, missed };
+    return { matched, missed, na };
   }
 
   // ===== 讓 AI 從掃描結果裡挑前幾名（v16.43）=====
@@ -32654,6 +32957,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           </div>
           ${band ? `<div style="font-size:11px; color:var(--ink-secondary); line-height:1.6; margin-bottom:8px; padding:5px 9px; background:var(--bg-elevated); border-left:2px solid ${bandColor}; border-radius:3px;">📏 ${escape(band)}</div>` : ''}
           ${liqWarn ? `<div style="font-size:10.5px; color:var(--danger); margin-bottom:8px;">${liq.emg ? '⚠ 興櫃股：流動性差、波動大、沒有漲跌幅限制。' : ''}${liq.low ? '⚠ 日均成交金額偏低（台股 < 3,000 萬／美股 < US$5M）：買得進不一定出得掉，滑價會吃掉停損的精度。' : ''}</div>` : ''}
+          ${held ? '' : `<div style="font-size:10.5px; color:var(--ink-tertiary); line-height:1.65; margin-top:5px;">
+            ※ 上面那個「賠率 2:1」<strong>是賠率，不是勝率</strong>。2:1 要<strong>勝率超過 33%</strong> 才不會賠錢，
+            而且${c.market === 'tw' ? '台股來回還有手續費與 <strong>0.3% 證交稅</strong>（ETF 0.1%）' : '還有手續費'}要先扣掉。
+          </div>`}
           ${scanRiskHtml(c, opts)}`;
   }
   function buildScanAiPrompt() {
@@ -32674,7 +32981,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 【我做了什麼】
 我用自己的工具掃了${mktName}，${how}
 掃描母體共 ${scanTriedN()} 檔，通過 ${total} 檔，以下列出前 ${rows.length} 檔。${scanSkippedN ? `
-另有 ${scanSkippedN} 檔因為本機資料太舊／太少／幾乎沒成交量而算不準，沒有列入——它們不是「不符合條件」，是我根本沒有算，所以你的名單裡本來就看不到它們。` : ''}
+另有 ${scanSkippedN} 檔因為本機資料太舊／太少／幾乎沒成交量而算不準，沒有列入——它們不是「不符合條件」，是我根本沒有算，所以你的名單裡本來就看不到它們。` : ''}${scanRegimeInfo ? `
+
+【今天的大盤環境】
+${scanRegimeText(scanRegimeInfo).replace(/\*\*/g, '')}
+（這一句跟我畫面上看到的**逐字一樣**。挑選時請把它考慮進去，但不要因為它就說「都不要買」——要不要進場是我的決定。）` : ''}
 
 【⚠ 你看得到的資料只有下面這些】
 · 只有技術指標、停損／目標參考價、上檔第一道壓力的判讀、流動性（日均成交金額），以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
@@ -32807,7 +33118,11 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
       `共 ${scored.length} 檔符合（掃了 ${scanTriedN()} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序`
     ) + scored.map((r, i) => {
       const c = r.ctx;
-      const pct = r.matched.length / usScanPicked.length * 100;
+      // ⚠ 分母要扣掉「算不出來」的那幾條。不扣的話，一檔有 2 條算不出來的股票
+      //   會被寫成「符合 3/8」，讀起來像「另外 5 條都不符合」——其實只有 3 條不符合。
+      const naN = (r.na || []).length;
+      const denom = Math.max(1, usScanPicked.length - naN);
+      const pct = r.matched.length / denom * 100;
       const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
       return `
         <div style="background:var(--bg-card); border:1px solid var(--line); border-left:2px solid ${pct >= 80 ? 'var(--accent)' : pct >= 60 ? 'var(--accent-deep)' : 'var(--line-strong)'}; border-radius:4px; padding:12px 14px; margin-bottom:8px;">
@@ -32816,7 +33131,7 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
             <span style="font-family:var(--mono); font-size:16px; color:var(--accent); font-weight:600;">${escape(c.symbol)}</span>
             ${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? `<span style="font-family:var(--serif); font-size:14px; color:var(--ink-primary);">${escape(c.zh || c.name)}</span>` : ''}
             <span class="${cls}" style="font-family:var(--mono); font-size:11px;">${escape(c.sig.overall)}</span>
-            <span style="margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--accent);">符合 ${r.matched.length}/${usScanPicked.length}</span>
+            <span style="margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--accent);">符合 ${r.matched.length}/${denom}${naN ? `<span style="color:var(--ink-tertiary);"> · ${naN} 項算不出來</span>` : ''}</span>
           </div>
           ${scanLevelCardsHtml(c, f)}
           ${(() => {
@@ -32832,7 +33147,11 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
           <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px;">
             ${r.matched.map(m => `<span style="font-family:var(--mono); font-size:10px; color:${m.fund ? 'var(--accent-warm)' : 'var(--accent)'}; border:1px solid var(--accent-deep); border-radius:2px; padding:2px 7px;">✓ ${escape(m.name)}</span>`).join('')}
             ${r.missed.map(m => `<span style="font-family:var(--mono); font-size:10px; color:var(--ink-muted); border:1px solid var(--line); border-radius:2px; padding:2px 7px;">✕ ${escape(m.name)}</span>`).join('')}
+            ${(r.na || []).map(m => `<span title="本機日 K 不夠長，這一項沒有算" style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); border:1px dashed var(--line-strong); border-radius:2px; padding:2px 7px;">? ${escape(m.name)}</span>`).join('')}
           </div>
+          ${(r.na || []).length ? `<div style="font-size:11px; color:var(--ink-tertiary); line-height:1.7; margin-bottom:6px;">
+            ? 的那 ${(r.na || []).length} 項<strong>算不出來</strong>（本機只有 ${c.nBars || 0} 根日 K，這幾項要更長的歷史）——
+            <strong>不是「不符合」</strong>。要它們也算的話，去「📥 累積資料」把這一檔抓齊。</div>` : ''}
           <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.6; padding-top:7px; border-top:1px solid var(--line);">
             📖 ${escape(c.sig.summary || '')}
           </div>
