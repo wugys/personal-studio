@@ -3417,14 +3417,33 @@
       <div id="barsProgressBox" style="margin-bottom:14px;"></div>
       <div id="barsCheckOut" style="font-size:11.5px; line-height:1.75; margin-bottom:12px;"></div>
 
+      <!-- 每天自動更新（v16.65）。⚠ 標題刻意不寫「每天自動更新」——電腦關機就不會跑，
+           畫面只能承諾「開著就跑、沒開就下次補跑」，並且用執行紀錄證明它真的跑過。 -->
+      <div id="barsAutoBox" style="border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:4px; padding:12px 14px; margin-bottom:14px;"></div>
+
       <div style="background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; padding:10px 14px; font-size:11.5px; color:var(--ink-secondary); line-height:1.7;">
         <strong>可以隨時關掉。</strong>進度會記住，下次按「繼續累積」接著跑。<br>
         資料存在<strong>這個瀏覽器</strong>（跟持股一樣是按網址分開存的）。清掉瀏覽器資料就要重抓，但那只是快取，<strong>不影響你的持股與交易紀錄</strong>。<br>
-        <strong>四天內抓過的會自動跳過</strong>，所以每天再按一次只會補新的，很快。
+        <strong>已經拿到最近一次收盤價的會自動跳過</strong>，而且有底的只補最近一個月（不重抓一整年），所以每天再跑一次很快。
       </div>
 
       <div class="form-actions" style="justify-content:flex-end; margin-top:14px;">
         <button class="btn btn-sm" onclick="closeBarsModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 累積歷史資料 · 執行紀錄 ============ -->
+  <div class="modal-backdrop" id="barsLogModal">
+    <div class="modal" style="max-width: 640px;">
+      <h2>📜 執行<em>紀錄</em></h2>
+      <div style="font-size:12px; color:var(--ink-secondary); line-height:1.7; margin-bottom:12px;">
+        每一次更新都會留一筆（最近 30 次）。<strong>「沒有跑完就中斷了」也會留下來</strong>——
+        沒有這個的話，你永遠不知道昨天半夜到底有沒有真的跑。
+      </div>
+      <div id="barsLogBody" style="max-height:52vh; overflow-y:auto;"></div>
+      <div class="form-actions" style="justify-content:flex-end; margin-top:14px;">
+        <button class="btn btn-sm" onclick="closeBarsLogModal()">關閉</button>
       </div>
     </div>
   </div>
@@ -9447,7 +9466,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.63 · ЌЌ</div>
+    <div>v 16.65 · ЎЎ</div>
   </footer>
 </div>
 
@@ -27252,7 +27271,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   //   v16.16 加 `/bars` **都沒有再升版號** → 使用者的舊 Worker 回報「ver 3」看起來很新，
   //   實際上那兩條路徑根本不存在，而我的檢查會說「夠新」**不警告**——正是它想防的那件事。
   //   → 改成問 Worker「你支援哪些路徑」（`routes`），有沒有那個功能它自己說了算。
-  const WORKER_ROUTE_NEEDED = { quote: 'quote', symbols: 'symbols', bars: 'bars', search: 'search' };
+  const WORKER_ROUTE_NEEDED = { quote: 'quote', symbols: 'symbols', bars: 'bars', search: 'search', baradj: 'baradj' };
+  // 這台 Worker 給的日 K 是還原權值的嗎？（v6 起才有）
+  const workerHasBarAdj = async () => (await quoteWorkerCaps()).routes.indexOf('baradj') !== -1;
   let workerCapCache = { caps: null, at: 0 };
   async function quoteWorkerCaps(force) {
     if (!force && workerCapCache.caps && Date.now() - workerCapCache.at < 300000) return workerCapCache.caps;
@@ -27408,9 +27429,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   async function barsGet(mkt, sym) {
     try { return await barsTx('readonly', st => st.get(barsKeyOf(mkt, sym))); } catch (e) { return null; }
   }
-  async function barsPut(mkt, sym, rows) {
+  // adj = 這一筆的收盤價有沒有還原除息／除權。
+  // ⚠ 一定要存下來：Worker v6 之前給的是**原始收盤價**，除息當天會假跌一段，
+  //   害 RSI 與「距 60 日高」算錯（實測華南金 RSI 32.2 vs 正確的 37.8）。
+  //   舊資料與新資料混在同一個資料庫裡，**畫面上完全看不出來**，所以要標記才講得出來。
+  async function barsPut(mkt, sym, rows, adj) {
     if (!Array.isArray(rows) || !rows.length) return false;   // 空的不要存（失敗的抓取不要快取）
-    const rec = { key: barsKeyOf(mkt, sym), mkt, sym: String(sym).toUpperCase(), rows,
+    const rec = { key: barsKeyOf(mkt, sym), mkt, sym: String(sym).toUpperCase(), rows, adj: adj ? 1 : 0,
                   n: rows.length, from: rows[0][0], to: rows[rows.length - 1][0], updated: Date.now() };
     try { await barsTx('readwrite', st => st.put(rec)); return true; } catch (e) { return false; }
   }
@@ -27422,14 +27447,19 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   // 只讀 metadata 不讀 rows 會比較快，但 getAll 一次拿全部在幾千筆時還可以接受
   async function barsStats() {
-    const out = { total: 0, us: 0, tw: 0, bytes: 0, oldest: '', newest: '', quotaMB: 0, usedMB: 0 };
+    const out = { total: 0, us: 0, tw: 0, bytes: 0, oldest: '', newest: '', quotaMB: 0, usedMB: 0, raw: 0, rawTw: 0, rawUs: 0 };
     try {
       const all = (await barsTx('readonly', st => st.getAll())) || [];
       all.forEach(r => {
         if (!r || !Array.isArray(r.rows)) return;
         out.total++;
         if (r.mkt === 'us') out.us++; else if (r.mkt === 'tw') out.tw++;
-        out.bytes += JSON.stringify(r.rows).length;
+        // 沒有 adj 旗標＝Worker v6 以前存的，收盤價沒有還原除息
+        if (!r.adj) { out.raw++; if (r.mkt === 'tw') out.rawTw++; else if (r.mkt === 'us') out.rawUs++; }
+        // ⚠ 不要 JSON.stringify(r.rows)——21,500 檔時等於每次呼叫序列化 265 MB。
+        //   一根 K 是 ["2026-08-30",1234.5,1240,1230,1238,12345678] ≈ 51 bytes，估算就夠了
+        //   （這個數字只拿來顯示「佔用幾 MB」，不需要精準到位元組）。
+        out.bytes += (r.n || r.rows.length) * 51;
         const d = r.updated ? todayISO(r.updated) : '';
         if (d && (!out.oldest || d < out.oldest)) out.oldest = d;
         if (d && (!out.newest || d > out.newest)) out.newest = d;
@@ -27452,12 +27482,129 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   // 資料多舊算「還能用」：交易日不是天天有，週末＋連假抓 4 天
   const BARS_FRESH_DAYS = 4;
-  function barsIsFresh(rec) {
+  // wantAdj = 這台 Worker 給得出還原權值的資料。
+  // ⚠ 沒有這個判斷的話會有一個很難發現的洞：舊資料（原始價）的 updated 是今天，
+  //   於是「重建工作清單再跑一次」會**全部被當成很新而跳過**，永遠換不成新的——
+  //   而畫面上那句「重跑一次就會換成新的」就變成假話（UI 答應的事要會發生）。
+  // ⚠ 反過來，Worker 還是舊版時**不可以**把它們當過期，
+  //   否則每次都全部重抓、抓回來的還是原始價，永遠不會收斂。
+  function barsIsFresh(rec, wantAdj, mkt) {
     if (!rec || !rec.updated) return false;
-    return (Date.now() - rec.updated) < BARS_FRESH_DAYS * 864e5;
+    if (wantAdj && !rec.adj) return false;              // 舊格式：不管多新都要重抓
+    const sess = mkt ? barsSessionOf(mkt) : '';
+    // 已經知道最近的收盤日 → 問「有沒有拿到那一天」，這是唯一的判準
+    if (sess) return String(rec.to || '') >= sess;
+    // 還不知道（這一輪第一批）→ 備胎：20 小時內抓過就先跳過，第一批回來就會有答案
+    return (Date.now() - rec.updated) < BARS_FRESH_HOURS * 3600e3;
   }
 
   // ===== 累積器：一次跑一批，可停可續 =====
+  // ===== 交易時段：這個市場現在收盤了嗎（v16.65）=====
+  //
+  // 🔴 為什麼一定要這一段：使用者想排「每天凌晨 3 點」更新。
+  //   台北 03:00 = 紐約 14:00（夏令）／15:00（冬令）——**美股還在交易**。
+  //   那時候抓回來的最後一根 K，日期是「今天」、價格是**還在動的盤中價**，
+  //   而 v16.63 那道「超過 12 天就不算數」的閘**完全擋不住它**（它是最新鮮的一根）。
+  //   等於每天主動往資料庫塞一筆假價格，然後拿去算 MA、RSI、停損、2:1 目標。
+  // ⚠ 所以不管使用者排幾點，抓回來的資料都要自己把「還沒收完的那一根」丟掉。
+  //   排程時間只是「早一點拿到」，資料正確性不可以押在使用者選對時間上。
+  const MKT_TZ = { tw: 'Asia/Taipei', us: 'America/New_York' };
+  const MKT_CLOSE_MIN = { tw: 13 * 60 + 30, us: 16 * 60 };   // 台股 13:30 收、美股 16:00 收
+  // 回 { date:'YYYY-MM-DD', min: 從午夜起算的分鐘, dow: 0..6 } —— 那個市場「當地的現在」
+  function marketNow(mkt) {
+    const tz = MKT_TZ[mkt] || MKT_TZ.us;
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', weekday: 'short'
+      }).formatToParts(new Date());
+      const g = k => (parts.find(x => x.type === k) || {}).value || '';
+      const hh = Number(g('hour') === '24' ? '0' : g('hour'));
+      return {
+        date: `${g('year')}-${g('month')}-${g('day')}`,
+        min: hh * 60 + Number(g('minute')),
+        dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday'))
+      };
+    } catch (e) { return null; }   // 舊瀏覽器沒有 timeZone → 回 null，呼叫端就當「不知道」不亂猜
+  }
+  // 那個市場今天收盤了嗎。null = 算不出來（不知道就不要假裝知道）
+  function marketClosedToday(mkt) {
+    const n = marketNow(mkt);
+    if (!n) return null;
+    if (n.dow === 0 || n.dow === 6) return true;          // 週末：今天本來就沒有盤
+    return n.min >= (MKT_CLOSE_MIN[mkt] || 960);
+  }
+  // 🔴 把「還沒收完的那一根」丟掉。
+  //   只丟「日期 == 那個市場的今天，而且今天還沒收盤」的最後一根，其他一根都不動。
+  //   ⚠ 算不出當地時間時（marketNow 回 null）什麼都不丟——寧可少保護，也不要亂刪資料。
+  function barsDropPartial(mkt, rows) {
+    if (!Array.isArray(rows) || !rows.length) return rows;
+    const closed = marketClosedToday(mkt);
+    if (closed !== false) return rows;                     // 收盤了、或算不出來 → 不動
+    const n = marketNow(mkt);
+    const last = rows[rows.length - 1];
+    if (n && last && String(last[0]) === n.date) return rows.slice(0, -1);
+    return rows;
+  }
+
+  // ===== delta：只補最近一個月，不要每天重抓一整年（v16.65）=====
+  //
+  // 每天更新只為了拿新的那 1~2 根 K，卻重抓 252 根——實測 20 檔一批：
+  //   range=1y  → 208 KB / 909 ms
+  //   range=1mo →  20 KB / 413 ms
+  // 全部 21,500 檔跑一輪：224 MB → 21 MB，時間也快一倍。
+  // ⚠ 為什麼是 1mo 不是 5d：Worker 的 BARS_RANGES 白名單裡**沒有 5d**，
+  //   傳 5d 它會**默默改成 1y**（實測回 244 根 208KB，而且不會報錯）。
+  //   → 只准用白名單裡真的有的值，而且回應會回報實際用的 range，可以驗。
+  const BARS_DELTA_RANGE = '1mo';
+  const BARS_DELTA_MAX_GAP = 20;     // 缺超過 20 個交易日就退回抓一整年（1mo 只有 ~22 根，補不回來）
+
+  // 這一檔要抓一整年，還是只補最近一個月？
+  function barsFetchRange(rec, wantAdj) {
+    if (!rec || !Array.isArray(rec.rows) || rec.rows.length < 60) return '1y';   // 沒有底、或底太薄
+    if (wantAdj && !rec.adj) return '1y';   // 🔴 舊格式是原始價，跟還原價**不能接在一起**（尺度不同）
+    const last = String(rec.to || (rec.rows[rec.rows.length - 1] || [])[0] || '');
+    if (!last) return '1y';
+    const lag = daysBetweenToday(last);     // 負數 = 幾天前
+    if (lag == null || Math.abs(lag) > BARS_DELTA_MAX_GAP * 1.6) return '1y';    // 缺太多，補不回來
+    return BARS_DELTA_RANGE;
+  }
+
+  // 把新抓的幾根接到舊的後面。
+  // ⚠ 一定要冪等：同一天套兩次不可以變成兩根。用日期當鍵，新的蓋舊的。
+  // ⚠ 只接得上「同一個價格尺度」的資料——除息還原之後整條線會往下平移，
+  //   舊的原始價跟新的還原價接在一起會在接縫處生出一個假的跳空。
+  //   （所以上面 barsFetchRange 遇到 adj 不一致時直接回 1y 整條換掉。）
+  function barsMergeRows(oldRows, newRows) {
+    const a = Array.isArray(oldRows) ? oldRows : [];
+    const b = Array.isArray(newRows) ? newRows : [];
+    if (!a.length) return b;
+    if (!b.length) return a;
+    const m = new Map();
+    a.forEach(r => { if (Array.isArray(r) && r[0]) m.set(String(r[0]), r); });
+    b.forEach(r => { if (Array.isArray(r) && r[0]) m.set(String(r[0]), r); });   // 新的蓋舊的
+    const out = Array.from(m.values()).sort((x, y) => String(x[0]) < String(y[0]) ? -1 : 1);
+    return out.length > 300 ? out.slice(-300) : out;   // 只留最近 300 根（掃描只用得到 252）
+  }
+
+  // ===== 這一筆資料還算不算新（v16.65 改成看「有沒有拿到最近一個收盤日」）=====
+  //
+  // ⚠ 為什麼不是把 BARS_FRESH_DAYS 改成 1：每天固定時刻起跑，同一檔距上次抓取
+  //   剛好 86,400,000 ms，`<` 判定落在刀鋒上——起跑早 30 秒就翻面，畫面上完全看不出來。
+  // ⚠ 也不做「手動 4 天、自動 1 天」兩套門檻：兩套門檻保證生出第二句假話（v16.32）。
+  //   全站只有一個判準，就是下面這一個。
+  // ⚠ 最近一個交易日**不寫假日表**（手寫的清單一定會過期，踩過五次）——
+  //   從剛抓回來的資料自己推：這一批裡最大的那個日期就是最近的收盤日。
+  //   颱風假、臨時休市、時差、夏令時間全部自動正確。
+  let barsLatestSession = {};        // { tw:'2026-08-29', us:'2026-08-29' } 這一輪推出來的
+  const BARS_FRESH_HOURS = 20;       // 還不知道收盤日時的備胎（留 4 小時抖動空間）
+  function barsSessionOf(mkt) { return barsLatestSession[mkt] || ''; }
+  function barsNoteSession(mkt, rows) {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const d = String(rows[rows.length - 1][0] || '');
+    if (d && d > (barsLatestSession[mkt] || '')) barsLatestSession[mkt] = d;
+  }
+
   const BARS_PROGRESS_KEY = 'studio_bars_progress_v1';
   let barsRunning = false;
   let barsStopFlag = false;
@@ -27506,6 +27653,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!p) throw new Error('還沒建立工作清單');
     const base = await quoteWorkerBase();
     if (!base) throw new Error('還沒設定 Worker');
+    const wantAdj = await workerHasBarAdj();   // 一次就好，不要在迴圈裡問幾千次
     barsRunning = true; barsStopFlag = false;
     let done = 0, skipped = 0, failed = 0;
     if (!Array.isArray(p.failed)) p.failed = [];
@@ -27515,17 +27663,28 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       //   **被游標跳過之後就再也不會被重試**，而且畫面上完全看不出來（實測 40 檔那批 idx 跑到 42）。
       while (p.idx < p.list.length && (done + skipped + failed) < maxItems && !barsStopFlag) {
         // 一次 20 檔（Worker 的上限）
+        // ⚠ 一個請求只能帶一個 range，所以同一批裡的股票**必須是同一種模式**
+        //   （要嘛都補一個月、要嘛都抓一整年）。第一檔決定這一批的模式，
+        //   後面模式不同的就留到下一批（游標退回去，不可以吃掉它）。
         const chunk = [];
+        const prev = {};                  // sym → 現有的那一筆（等一下要合併）
+        let batchRange = '';
         while (chunk.length < 20 && p.idx < p.list.length && (done + skipped + failed + chunk.length) < maxItems) {
-          const sym = p.list[p.idx++];
+          const sym = p.list[p.idx];
           const cur = await barsGet(p.mkt, sym);
-          if (barsIsFresh(cur)) { skipped++; continue; }   // 最近抓過就跳過，不浪費請求
+          if (barsIsFresh(cur, wantAdj, p.mkt)) { p.idx++; skipped++; continue; }   // 已經有最近收盤日了，不浪費請求
+          const rg = p.range === '1y' || !p.range ? barsFetchRange(cur, wantAdj) : p.range;
+          if (!batchRange) batchRange = rg;
+          else if (rg !== batchRange) break;         // 模式不同 → 這一批到此為止，**不動游標**
+          p.idx++;
+          prev[sym] = cur;
           chunk.push(sym);
         }
+        if (!batchRange) batchRange = p.range || '1y';
         if (!chunk.length) { if (onTick) onTick({ ...p, done, skipped, failed }); continue; }
         const url = new URL(base + '/bars');
         url.searchParams.set(p.mkt === 'tw' ? 'tw' : 'us', chunk.join(','));
-        url.searchParams.set('range', p.range || '1y');
+        url.searchParams.set('range', batchRange);
         // ⚠ v16.62：以前不管哪一種失敗都印同一句「連不到 Worker 或上游擋住」——
         //   那是猜的。實測使用者的 Worker 完全健康（20 檔 1 秒、CORS 正常、壞代號也不會拖垮整批），
         //   但畫面照樣說「連不到 Worker」，害人去查根本沒壞的東西。
@@ -27553,10 +27712,25 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           p.lastError = `${why}（已經抓到 ${p.idx} 檔，按「繼續累積」會從這裡接著跑）`;
           break;
         }
+        // ⚠ Worker 的 range 白名單擋掉不認得的值時會**默默改成 1y**——
+        //   回應會回報它實際用的 range，對不上就講出來（不完整/不是你要的東西不可以不報）。
+        if (body.range && batchRange !== '1y' && body.range !== batchRange) {
+          p.lastError = `你的 Worker 不支援 range=${batchRange}（它用了 ${body.range}），`
+            + '所以每天更新會抓一整年、比較慢也比較耗流量。重貼一次 worker/news-rss.js 就好（網址不用改）。';
+        }
         for (const sym of chunk) {
-          const rows = body.bars[sym];
+          let rows = body.bars[sym];
           if (Array.isArray(rows) && rows.length) {
-            await barsPut(p.mkt, sym, rows);
+            // 🔴 丟掉「還沒收完的那一根」——排在美股盤中的話，最後一根是盤中價但日期是今天
+            rows = barsDropPartial(p.mkt, rows);
+            barsNoteSession(p.mkt, rows);            // 從資料自己推「最近的收盤日是哪一天」
+            // delta 模式：接到既有的後面（用日期當鍵、新的蓋舊的，套兩次也不會變兩根）
+            if (batchRange !== '1y' && prev[sym] && Array.isArray(prev[sym].rows)) {
+              rows = barsMergeRows(prev[sym].rows, rows);
+            }
+          }
+          if (Array.isArray(rows) && rows.length) {
+            await barsPut(p.mkt, sym, rows, body.adj);
             done++;
             const at = p.failed.indexOf(sym);
             if (at !== -1) p.failed.splice(at, 1);          // 之前失敗、這次成功了 → 從名單移除
@@ -27688,6 +27862,129 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function closeBarsModal() { closeModalRestore('barsModal'); }
   function barsStop() { barsStopFlag = true; showToast('停止中…跑完這一批就停'); }
 
+  // 🔴 舊資料（原始收盤價）與新資料（還原權值）混在一起時，一定要講出來。
+  //
+  // 為什麼非講不可：兩種資料**長得一模一樣**，都是 252 根日 K，畫面上分不出來。
+  //   但除息當天原始價會假跌一段——實測 2026-08-13 華南金 -8.59%，
+  //   用它算 RSI 是 32.2（正確 37.8）、距 60 日高 -10.0%（正確 -7.0%）。
+  //   於是「RSI 超賣」「健康回檔」被除息騙，而使用者只會看到一檔「跌深的股票」。
+  // ⚠ 只提醒不自動改（v11.5 同一條）：重抓幾千檔是他的頻寬與時間，要他自己決定。
+  // ⚠ 一筆舊的都沒有就一個字都不講（會誤報的保護比沒保護糟）。
+  function barsRawNote(st) {
+    if (!st || !st.raw) return '';
+    const parts = [];
+    if (st.rawTw) parts.push(`台股 ${st.rawTw}`);
+    if (st.rawUs) parts.push(`美股 ${st.rawUs}`);
+    return `<div style="margin-top:9px; padding-top:9px; border-top:1px solid var(--line); font-size:11.5px; color:var(--accent-warm); line-height:1.75;">
+        ⚠ 其中 <strong>${st.raw} 檔</strong>${parts.length ? `（${escape(parts.join('　'))}）` : ''}是<strong>舊版資料</strong>，收盤價<strong>沒有還原除息</strong>。<br>
+        <span style="color:var(--ink-secondary);">除息當天股價會掉一段，那不是跌，是把配息從股價裡扣掉。用它算出來的
+        <strong>RSI</strong> 會偏低、<strong>距 60 日高</strong>會偏遠——「RSI 超賣」「健康回檔」這兩個條件會被騙
+        （台股高股息股差 3~6 個點，美股幾乎沒差）。<br>
+        按「<strong>↻ 重建工作清單</strong>」再跑一次就會全部換成新的。</span>
+      </div>`;
+  }
+
+  // 自動更新面板。
+  // 🔴 用字規矩（這一段最容易變成假話）：
+  //   · 不准寫「每天自動更新」——電腦關機就不會跑。寫「開著就跑、沒開就下次補跑」。
+  //   · 不准寫「上次更新」——那可能只是跑了 3 檔就斷了。只准引用「整份清單真的跑完」。
+  //   · 使用者選了幾點就顯示幾點（v16.32：可以改的東西，描述它的那句話不可以寫死）。
+  function barsTimeStr(o) { return String(o.h).padStart(2, '0') + ':' + String(o.m).padStart(2, '0'); }
+  function barsAgoText(ts) {
+    if (!ts) return '';
+    const h = (Date.now() - ts) / 3600000;
+    if (h < 1) return Math.max(1, Math.round(h * 60)) + ' 分鐘前';
+    if (h < 48) return Math.round(h) + ' 小時前';
+    return Math.round(h / 24) + ' 天前';
+  }
+  async function renderBarsAutoBox() {
+    const box = document.getElementById('barsAutoBox');
+    if (!box) return;
+    await loadBarsAuto();
+    const c = barsAutoCfg;
+    const twLog = await barsLastFullPass('tw'), usLog = await barsLastFullPass('us');
+    const line = (mkt, log) => {
+      const one = c[mkt], nm = mkt === 'tw' ? '台股' : '美股';
+      const when = log ? `${todayISO(log.endedAt || log.startedAt)} ${new Date(log.endedAt || log.startedAt).toTimeString().slice(0, 5)}（${barsAgoText(log.endedAt || log.startedAt)}）`
+        : '<span style="color:var(--accent-warm);">還沒有完整跑完過</span>';
+      return `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+          <label style="display:flex; align-items:center; gap:5px; font-size:12px; min-width:74px;">
+            <input type="checkbox" ${one.on !== false ? 'checked' : ''} onchange="setBarsAutoOn('${mkt}', this.checked)"> ${nm}
+          </label>
+          <input type="time" class="form-input" value="${barsTimeStr(one)}" onchange="setBarsAutoTime('${mkt}', this.value)"
+                 style="width:104px; padding:4px 8px; font-size:12px;">
+          <span style="font-size:11px; color:var(--ink-tertiary);">上次完整跑完：${when}</span>
+        </div>`;
+    };
+    box.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:9px;">
+        <strong style="font-size:13px;">🕒 到時間就自己更新</strong>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+          <input type="checkbox" ${!c.off ? 'checked' : ''} onchange="setBarsAutoOff(!this.checked)"> 開啟
+        </label>
+      </div>
+      ${c.off ? '' : line('tw', twLog) + line('us', usLog)}
+      <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.75; margin-top:8px; padding-top:8px; border-top:1px solid var(--line);">
+        <strong style="color:var(--accent-warm);">它能做到的：</strong>這個網頁開著的時候，到時間就會自己跑；
+        沒開著的話，<strong>你下次打開這一頁就會自動補跑</strong>。<br>
+        <strong style="color:var(--danger);">它做不到的：</strong>電腦關機、睡著、瀏覽器沒開 —— 就是不會跑。
+        網頁沒有辦法叫醒你的電腦，這件事沒有繞路。<br>
+        <span style="color:var(--ink-tertiary);">
+        想要「不管有沒有開網頁都跑」，按下面的按鈕複製一段指令，貼到 Windows PowerShell 執行一次，
+        它會叫 Windows 每天自動開這一頁。</span>
+      </div>
+      <div style="margin-top:9px; display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn btn-sm" type="button" onclick="copyBarsSchedCmd()">📋 複製 Windows 排程指令</button>
+        <button class="btn btn-sm" type="button" onclick="openBarsLogModal()">📜 執行紀錄</button>
+      </div>
+      <div style="margin-top:9px; padding:8px 11px; background:rgba(212,165,116,0.07); border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.7;">
+        <strong>為什麼不是凌晨 3 點？</strong>台北凌晨 3 點，紐約才下午 2 點多 ——
+        <strong>美股還在交易</strong>，那時候抓到的最後一根是<strong>還在動的價格</strong>，
+        日期卻寫著「今天」。（我們會自己把那一根丟掉，但等於白跑一趟。）<br>
+        美股排<strong>早上 6:00</strong>，紐約一定收完盤了。
+        台股排<strong>下午 14:40</strong>拿到的是<strong>今天</strong>的收盤；排凌晨 3 點拿到的是昨天的。<br>
+        <span style="color:var(--ink-tertiary);">時間你可以自己改，上面兩個格子直接點就能改。</span>
+      </div>`;
+  }
+  async function setBarsAutoOff(off) { await loadBarsAuto(); barsAutoCfg.off = !!off; await saveBarsAuto(); renderBarsAutoBox(); }
+  async function setBarsAutoOn(mkt, on) { await loadBarsAuto(); barsAutoCfg[mkt] = { ...barsAutoCfg[mkt], on: !!on }; await saveBarsAuto(); renderBarsAutoBox(); }
+  async function setBarsAutoTime(mkt, v) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || ''));
+    if (!m) return;
+    await loadBarsAuto();
+    barsAutoCfg[mkt] = { ...barsAutoCfg[mkt], h: Number(m[1]), m: Number(m[2]) };
+    // ⚠ 改了時間就把「今天跑過了」清掉，不然改成更晚的時間今天不會再跑，
+    //   使用者會以為設定沒生效（UI 答應的事要會發生）。
+    barsAutoCfg.last = { ...(barsAutoCfg.last || {}), [mkt]: '' };
+    await saveBarsAuto();
+    renderBarsAutoBox();
+    // 排在美股還在交易的時段就當場講，不要等他明天才發現白跑一趟
+    if (mkt === 'us') {
+      const n = marketNow('us');
+      const hh = Number(m[1]), mm = Number(m[2]);
+      const nyMin = n ? ((hh * 60 + mm) + (n.min - (new Date().getHours() * 60 + new Date().getMinutes())) + 1440) % 1440 : null;
+      if (nyMin != null && nyMin >= 9 * 60 + 30 && nyMin < 16 * 60) {
+        showToast('⚠ 這個時間紐約還在交易，抓到的最後一根會是盤中價（我們會丟掉它，等於白跑）');
+      }
+    }
+  }
+  function copyBarsSchedCmd() {
+    // ⚠ 網址自己填，不讓使用者手打——打成另一個網址就會存到另一個抽屜（v16.13 四個獨立抽屜）
+    const url = location.origin + location.pathname + '?bars=auto';
+    const t = barsTimeStr(barsAutoCfg.us || { h: 6, m: 0 });
+    const cmd = [
+      '# 每天 ' + t + ' 自動開這一頁更新股票資料（用你平常那個 Chrome）',
+      '# 貼到 PowerShell 執行一次就好。要取消：Unregister-ScheduledTask -TaskName "個人工作室-更新股價" -Confirm:$false',
+      '$chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"',
+      '$url    = "' + url + '"',
+      '$action  = New-ScheduledTaskAction -Execute $chrome -Argument "--new-window $url"',
+      '$trigger = New-ScheduledTaskTrigger -Daily -At ' + t,
+      'Register-ScheduledTask -TaskName "個人工作室-更新股價" -Action $action -Trigger $trigger -Force',
+      'Write-Host "設定好了。每天 ' + t + ' 會自動開一個視窗更新，跑完你可以直接關掉。"'
+    ].join('\n');
+    trvCopy(cmd, '已複製 · 貼到 PowerShell 執行一次');
+  }
+
   async function renderBarsPanel() {
     const st = await barsStats();
     const p = await barsLoadProgress();
@@ -27723,6 +28020,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           </div>
           ${st.total ? `<div style="font-size:11px; color:var(--ink-tertiary); margin-top:6px;">最舊一筆更新於 ${escape(st.oldest)}　·　最新 ${escape(st.newest)}</div>`
             : '<div style="font-size:11.5px; color:var(--accent-warm); margin-top:6px;">還沒有任何資料。選好範圍後按「開始累積」。</div>'}
+          ${barsRawNote(st)}
         </div>`;
     }
 
@@ -27733,10 +28031,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         const pct = p.list.length ? Math.min(100, p.idx / p.list.length * 100) : 0;
         pb.innerHTML = `
           <div style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary); margin-bottom:5px;">
-            ${escape(p.mkt === 'tw' ? '台股' : '美股')} 工作清單 ${p.idx} / ${p.list.length}（${pct.toFixed(1)}%）
+            ${escape(p.mkt === 'tw' ? '台股' : '美股')} 工作清單 <span id="barsProgLine">${p.idx} / ${p.list.length}（${pct.toFixed(1)}%）</span>
           </div>
           <div style="height:7px; background:var(--bg-card); border:1px solid var(--line); border-radius:4px; overflow:hidden;">
-            <div style="height:100%; width:${pct.toFixed(1)}%; background:var(--accent);"></div>
+            <div id="barsProgBar" style="height:100%; width:${pct.toFixed(1)}%; background:var(--accent);"></div>
           </div>
           ${p.lastError ? `<div style="font-size:11.5px; color:var(--danger); margin-top:6px;">上次中斷：${escape(p.lastError)}</div>` : ''}
           ${p.idx >= p.list.length ? '<div style="font-size:11.5px; color:var(--accent); margin-top:6px;">✓ 這份清單跑完了。要更新成最新資料，按「重建工作清單」再跑一次。</div>' : ''}
@@ -27747,6 +28045,52 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             </div>` : ''}`;
       }
     }
+    renderBarsAutoBox().catch(() => {});
+  }
+
+  // 執行紀錄視窗。🔴 沒有它，「有沒有真的跑」永遠只能用猜的。
+  function openBarsLogModal() { openModalOnTop('barsLogModal'); renderBarsLog(); }
+  function closeBarsLogModal() { closeModalRestore('barsLogModal'); }
+  async function renderBarsLog() {
+    const box = document.getElementById('barsLogBody');
+    if (!box) return;
+    const arr = await readJson(BARS_LOG_KEY, []);
+    if (!Array.isArray(arr) || !arr.length) {
+      box.innerHTML = '<div style="font-size:12px; color:var(--ink-tertiary); line-height:1.8;">'
+        + '還沒有任何紀錄。<br>只要按過「開始／繼續累積」、或到時間自動跑過一次，這裡就會留下一筆——'
+        + '包含幾點開始、跑了幾檔、成功幾檔、為什麼停下來。</div>';
+      return;
+    }
+    const why = {
+      'list-done': '<span style="color:var(--accent);">整份清單跑完了</span>',
+      'budget': '跑到這次的上限就停',
+      'stopped': '你按了停止',
+      'error': '<span style="color:var(--danger);">出錯中斷</span>',
+      'no-list': '<span style="color:var(--danger);">建不出清單</span>'
+    };
+    box.innerHTML = arr.map(r => {
+      const t = new Date(r.startedAt);
+      const secs = r.endedAt ? Math.round((r.endedAt - r.startedAt) / 1000) : null;
+      return `<div style="border-bottom:1px solid var(--line); padding:9px 0; font-size:12px; line-height:1.75;">
+        <div style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">
+          ${escape(todayISO(r.startedAt))} ${t.toTimeString().slice(0, 8)} ·
+          ${escape(r.mkt === 'tw' ? '台股' : '美股')} ·
+          ${r.reason === 'auto' ? '自動' : '手動'}
+        </div>
+        <div style="color:var(--ink-secondary);">
+          新增 <strong style="color:var(--accent);">${r.done || 0}</strong> 檔
+          ${r.skipped ? ` · 跳過 ${r.skipped}（已經是最新）` : ''}
+          ${r.failed ? ` · <span style="color:var(--accent-warm);">失敗 ${r.failed}</span>` : ''}
+          ${r.listLen ? ` · 進度 ${r.idx}/${r.listLen}` : ''}
+          ${secs != null ? ` · ${secs} 秒` : ''}
+        </div>
+        <div style="font-size:11.5px; color:var(--ink-tertiary);">
+          ${r.endedAt ? (why[r.reason] || escape(String(r.reason || ''))) :
+            '<span style="color:var(--danger);">沒有跑完就中斷了</span>（分頁被關、電腦睡著，或是網路掛住）'}
+          ${r.lastError ? `<br><span style="color:var(--danger);">${escape(String(r.lastError).slice(0, 200))}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   async function barsResetList() {
@@ -27766,6 +28110,158 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
   }
 
+  // ============================================================
+  // 每天自動更新（v16.65）
+  //
+  // 🔴 先把做得到與做不到分清楚，因為畫面上一個字都不可以寫錯：
+  //   · 排得下去：App 開著的時候會照時間跑；沒開著，下次打開會自動補跑。
+  //   · **保證不了會跑**：電腦關機、休眠、瀏覽器沒開，就是不會跑。
+  //     這是純網頁的硬限制，沒有辦法繞過。所以畫面上**永遠不寫「每天自動更新」**，
+  //     只寫真的發生過的事：「上次完整跑完：08/30 06:11」。
+  //
+  // 🔴 預設時間不是使用者要的凌晨 3 點，而且一定要解釋為什麼：
+  //   台北 03:00 = 紐約 14:00（夏令）／15:00（冬令），**美股還在交易**。
+  //   （抓回來的半根 K 我們會自己丟掉，見 barsDropPartial，但那等於白跑一趟。）
+  //   台股排 14:30 拿到的是**今天**的收盤；排 03:00 拿到的是昨天的。
+  const BARS_AUTO_KEY = 'studio_bars_auto_v1';
+  const BARS_AUTO_DEFAULT = {
+    off: true,                       // 預設關閉——沒問過就自動每天下載幾百 MB 是不對的
+    tw: { on: true, h: 14, m: 40 },  // 台股 13:30 收盤，留 10 分鐘給資料商上架
+    us: { on: true, h: 6, m: 0 },    // 紐約 16:00 收 = 台北隔天 04:00/05:00，排 06:00 一定收完了
+    usTop: 6000,                     // 美股要抓前幾大（台股沒有這個選項，就是全部）
+    last: {}                         // { tw:'2026-08-30', us:'2026-08-30' } 今天跑過了沒
+  };
+  let barsAutoCfg = { ...BARS_AUTO_DEFAULT };
+  async function loadBarsAuto() {
+    const o = await readJson(BARS_AUTO_KEY, null);
+    barsAutoCfg = { ...BARS_AUTO_DEFAULT };                        // 先重設再套用（壞值不要沿用舊的）
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      barsAutoCfg.off = !!o.off;
+      ['tw', 'us'].forEach(k => {
+        const v = o[k];
+        if (v && typeof v === 'object') barsAutoCfg[k] = {
+          on: v.on !== false,
+          h: Math.min(23, Math.max(0, Number(v.h) || BARS_AUTO_DEFAULT[k].h)),
+          m: Math.min(59, Math.max(0, Number(v.m) || 0))
+        };
+      });
+      if (Number(o.usTop) > 0) barsAutoCfg.usTop = Number(o.usTop);
+      if (o.last && typeof o.last === 'object' && !Array.isArray(o.last)) barsAutoCfg.last = o.last;
+    }
+    return barsAutoCfg;
+  }
+  async function saveBarsAuto() { await writeKey(BARS_AUTO_KEY, JSON.stringify(barsAutoCfg)); }
+
+  // ===== 執行紀錄（v16.65）=====
+  // 🔴 沒有這個，「每天自動更新」這句話永遠沒辦法被證明。
+  //   toast 只顯示 2.4 秒——凌晨三點等於不存在。自動路徑的每一條 return 都要先留紀錄。
+  // ⚠ endedAt 是 null 本身就是證據：分頁被關、電腦休眠、fetch 掛住——
+  //   這幾種以前長得一模一樣（進度停在中間、lastError 是空的），現在分得出來。
+  const BARS_LOG_KEY = 'studio_bars_runlog_v1';
+  const BARS_LOG_MAX = 30;
+  async function barsLogPush(entry) {
+    let arr = await readJson(BARS_LOG_KEY, []);
+    if (!Array.isArray(arr)) arr = [];
+    arr.unshift(entry);
+    await writeKey(BARS_LOG_KEY, JSON.stringify(arr.slice(0, BARS_LOG_MAX)));
+    return entry;
+  }
+  async function barsLogFinish(id, patch) {
+    let arr = await readJson(BARS_LOG_KEY, []);
+    if (!Array.isArray(arr)) return;
+    const i = arr.findIndex(x => x && x.id === id);
+    if (i === -1) return;
+    arr[i] = { ...arr[i], ...patch, endedAt: Date.now() };
+    await writeKey(BARS_LOG_KEY, JSON.stringify(arr.slice(0, BARS_LOG_MAX)));
+  }
+  // 上次「整份清單真的跑完」是什麼時候。畫面只准引用這一個。
+  async function barsLastFullPass(mkt) {
+    const arr = await readJson(BARS_LOG_KEY, []);
+    if (!Array.isArray(arr)) return null;
+    return arr.find(x => x && x.mkt === mkt && x.reason === 'list-done') || null;
+  }
+
+  // ===== 不碰 DOM 的執行入口（v16.65）=====
+  // ⚠ 原本 barsStartRun / barsResetList 直接讀三個 <select>，等於預設「累積視窗是開著的」。
+  //   自動跑的時候視窗是關的，那些 getElementById 全部回 null。
+  //   → 純參數版在這裡，barsStartRun 降級成只負責讀 DOM 的薄殼。
+  async function barsRunAuto(opt) {
+    const mkt = opt && opt.mkt === 'tw' ? 'tw' : 'us';
+    const topN = Number(opt && opt.topN) || 6000;
+    const batch = Number(opt && opt.batch) || 100000;     // 自動跑預設不設上限，跑到完為止
+    const reason = (opt && opt.reason) || 'manual';
+    const id = 'r' + Date.now() + Math.floor(performance.now() % 1000);
+    const st0 = await barsStats();
+    await barsLogPush({ id, startedAt: Date.now(), endedAt: null, mkt, reason,
+      totalBefore: st0.total, done: 0, skipped: 0, failed: 0, listLen: 0, idx: 0 });
+    try {
+      let p = await barsLoadProgress();
+      if (!p || p.mkt !== mkt || (mkt === 'us' && p.topN !== topN)) {
+        const list = await barsBuildWorklist(mkt, topN);
+        await barsSaveProgress({ mkt, range: '1y', topN, list, idx: 0,
+          startedAt: Date.now(), updatedAt: Date.now(), lastError: '', failed: (p && p.failed) || [] });
+        p = await barsLoadProgress();
+      }
+      if (!p) { await barsLogFinish(id, { reason2: 'no-list', lastError: '建不出工作清單' }); return { ok: false, why: '建不出工作清單' }; }
+      // 清單跑完了 → 重來一輪（每天更新本來就是要重跑；delta 模式下大部分會很快跳過或只補一個月）
+      if (p.idx >= p.list.length) { p.idx = 0; await barsSaveProgress(p); }
+      const res = await barsRunBatch(batch, opt && opt.onTick);
+      const after = await barsLoadProgress();
+      const st1 = await barsStats();
+      const finished = after && after.idx >= after.list.length;
+      await barsLogFinish(id, {
+        done: res.done, skipped: res.skipped, failed: res.failed,
+        listLen: (after && after.list.length) || 0, idx: (after && after.idx) || 0,
+        totalAfter: st1.total, lastError: (after && after.lastError) || '',
+        reason: res.stopped ? 'stopped' : finished ? 'list-done' : 'budget'
+      });
+      return { ok: true, ...res, finished };
+    } catch (e) {
+      // ⚠ 自動路徑的每一條出口都要留紀錄，包括丟錯這一條
+      await barsLogFinish(id, { reason: 'error', lastError: (e && e.message) || String(e) });
+      return { ok: false, why: (e && e.message) || String(e) };
+    }
+  }
+
+  // 今天這個市場該跑了嗎
+  function barsAutoDue(mkt, cfg) {
+    const c = cfg || barsAutoCfg;
+    if (c.off) return false;
+    const one = c[mkt];
+    if (!one || one.on === false) return false;
+    const now = new Date();
+    const today = todayISO();
+    if ((c.last || {})[mkt] === today) return false;          // 今天跑過了
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    return nowMin >= (one.h * 60 + one.m);                    // 已經過了設定的時間
+  }
+  // 開 App 時補跑 ＋ App 開著時每分鐘檢查一次。
+  // ⚠ 一次只跑一個市場：跑完一個再等下一次檢查，不要一口氣把兩個都排下去
+  //   （兩個市場共用同一份進度，同時跑會互相覆蓋）。
+  let barsAutoTimer = null;
+  async function barsAutoTick() {
+    try {
+      if (barsRunning) return;                                 // 手動正在跑就讓開
+      if (document.body.classList.contains('guest-mode')) return;   // 團友的裝置不替他下載
+      await loadBarsAuto();
+      const mkt = barsAutoDue('tw', barsAutoCfg) ? 'tw' : barsAutoDue('us', barsAutoCfg) ? 'us' : '';
+      if (!mkt) return;
+      // ⚠ 先記「今天跑過了」再開始跑。不先記的話，跑到一半重整頁面會從頭再來一次。
+      barsAutoCfg.last = { ...(barsAutoCfg.last || {}), [mkt]: todayISO() };
+      await saveBarsAuto();
+      const r = await barsRunAuto({ mkt, topN: barsAutoCfg.usTop, reason: 'auto' });
+      if (r && r.ok) showToast(`✓ ${mkt === 'tw' ? '台股' : '美股'}日 K 自動更新 · 新增 ${r.done} 檔`);
+      renderBarsPanel().catch(() => {});
+    } catch (e) {}
+  }
+  function startBarsAutoTimer() {
+    if (barsAutoTimer) return;
+    // ⚠ 用「比對今天的日期」判斷，不靠 setTimeout 的延遲精度——
+    //   電腦休眠醒來之後 timer 完全不準，但日期比對一定對。
+    barsAutoTimer = setInterval(() => { barsAutoTick(); }, 60000);
+    setTimeout(() => { barsAutoTick(); }, 8000);   // 開 App 8 秒後先補跑一次（讓首頁先畫完）
+  }
+
   async function barsStartRun() {
     if (barsRunning) { showToast('正在跑了'); return; }
     const mkt = document.getElementById('barsMarket').value;
@@ -27783,9 +28279,21 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (stopBtn) stopBtn.style.display = '';
     const t0 = Date.now();
     try {
+      // 🔴 以前這裡每一批都 renderBarsPanel() → barsStats() → getAll() 把**整個資料庫**
+      //    讀出來逐筆 JSON.stringify 算大小。4,869 檔時是每 20 檔序列化 50 MB；
+      //    抓全部 21,500 檔時是 265 MB × 1,078 批。這就是「300 檔要 3 分鐘」的來源——
+      //    ⚠ 我在幾乎空的資料庫上量到 1,177 檔/分，那個數字騙人，因為瓶頸跟資料量成正比。
+      //    進度只要更新按鈕上那一行字就夠了，整個面板不用重畫。
       const res = await barsRunBatch(batch, (tick) => {
         if (runBtn) runBtn.textContent = `◌ ${tick.idx} / ${tick.list.length}（成功 ${tick.done}）`;
-        renderBarsPanel().catch(() => {});
+        const pbTxt = document.getElementById('barsProgLine');
+        if (pbTxt) {
+          const pct = tick.list.length ? Math.min(100, tick.idx / tick.list.length * 100) : 0;
+          pbTxt.textContent = `${tick.idx} / ${tick.list.length}（${pct.toFixed(1)}%）· 新增 ${tick.done}`
+            + (tick.skipped ? ` · 跳過 ${tick.skipped}` : '') + (tick.failed ? ` · 失敗 ${tick.failed}` : '');
+          const barEl = document.getElementById('barsProgBar');
+          if (barEl) barEl.style.width = pct.toFixed(1) + '%';
+        }
       });
       const secs = Math.round((Date.now() - t0) / 1000);
       showToast(`${res.stopped ? '已停止' : '完成'} · 新增 ${res.done} 檔${res.skipped ? ` · 跳過 ${res.skipped}（最近抓過）` : ''}${res.failed ? ` · 失敗 ${res.failed}` : ''} · ${secs} 秒`);
@@ -40754,12 +41262,38 @@ ${daysBrief}${butlerPartyBlock()}
     }
   }
 
+  // Windows 排程開的視窗會帶 ?bars=auto。
+  // ⚠ 刻意「開一個看得見的視窗」而不是背景偷跑：這個專案 70% 的 bug 是「畫面沒講真話」，
+  //   而抓到它們的方法一律是「有人正在看著畫面」。跑完把結果留在畫面上，使用者早上看得到。
+  function applyBarsAutoParam() {
+    try {
+      if (new URLSearchParams(window.location.search).get('bars') !== 'auto') return;
+      setTimeout(async () => {
+        try {
+          openBarsModal();
+          await loadBarsAuto();
+          // ⚠ 兩個市場都跑（排程一天只開一次），一個跑完再跑下一個——它們共用同一份進度
+          for (const mkt of ['tw', 'us']) {
+            if (barsAutoCfg[mkt] && barsAutoCfg[mkt].on === false) continue;
+            await barsRunAuto({ mkt, topN: barsAutoCfg.usTop, reason: 'schedule' });
+            barsAutoCfg.last = { ...(barsAutoCfg.last || {}), [mkt]: todayISO() };
+            await saveBarsAuto();
+            await renderBarsPanel();
+          }
+          showToast('✓ 排程更新跑完了，可以關掉這個視窗');
+        } catch (e) { showToast('☒ 排程更新失敗：' + ((e && e.message) || e)); }
+      }, 2000);
+    } catch (e) {}
+  }
+
   function applyEnterParam() {
     try {
       const enterId = new URLSearchParams(window.location.search).get('enter');
       if (!enterId) return;
       if (enterId === 'ungrouped' || groups.find(g => g.id === enterId)) {
         enterGroup(enterId === 'ungrouped' ? '' : enterId);
+      } else if (enterId === 'bars') {
+        setTimeout(() => { try { openBarsModal(); } catch (e) {} }, 300);
       } else if (enterId === 'ai' || enterId === 'aiProvider') {
         // 直接打開「AI 服務設定」（v16.60）——設定 AI 時常常要反覆開關，
         // 給一個網址可以直接跳到那一格，不用每次從首頁找按鈕
@@ -40948,8 +41482,8 @@ ${daysBrief}${butlerPartyBlock()}
   wireRePreviewLive();
 
   initPWA();
-  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam())
-           .then(() => { renderInstallHint(); twWarmUniverse(); return maybeAutoRefreshPrices(); });
+  loadAll().then(() => applyGuestMode()).then(() => processShareLinkParams()).then(() => applyEnterParam()).then(() => applyBarsAutoParam())
+           .then(() => { renderInstallHint(); twWarmUniverse(); startBarsAutoTimer(); return maybeAutoRefreshPrices(); });
 </script>
 
 </body>
