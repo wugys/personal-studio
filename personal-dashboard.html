@@ -3411,6 +3411,7 @@
         <button class="btn btn-sm" type="button" onclick="barsResetList()">↻ 重建工作清單</button>
         <button class="btn btn-sm" type="button" onclick="barsCheckWorker()" title="中斷時先按這個，分得出是 Worker 的問題還是上游暫時擋住">🩺 檢查 Worker</button>
         <span style="flex:1;"></span>
+        <button class="btn btn-sm" type="button" onclick="runRsBuild()">🏅 算相對強弱</button>
         <button class="btn btn-sm" type="button" onclick="barsWipe()" style="border-color:var(--danger); color:var(--danger);">🗑 清空本機資料</button>
       </div>
 
@@ -9479,7 +9480,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.70 · ГГ</div>
+    <div>v 16.71 · ДД</div>
   </footer>
 </div>
 
@@ -29149,6 +29150,51 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     } catch (e) { return ''; }
   }
 
+  // 算全市場排名。⚠ 完全不連網——只讀本機已經抓下來的日 K。
+  async function runRsBuild() {
+    const mkt = (document.getElementById('barsMarket') || {}).value === 'tw' ? 'tw' : 'us';
+    const btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.textContent = '◌ 計算中…'; }
+    try {
+      const t = await scanRsBuild(mkt, (i, n) => { if (btn) btn.textContent = `◌ ${i} / ${n}`; });
+      if (t && t.why) {
+        const msg = t.why === 'nolocal' ? '本機還沒有這個市場的日 K，先按「開始累積」抓下來。'
+          : t.why === 'noneready' ? `本機有 ${t.total} 檔，但**一檔都算不出 RS**——它需要 ${RS_MIN_BARS} 根日 K，而 1 年只有 244~251 根。請把上面的「📏 要存幾年」改成 2 年或 5 年，重抓一次。`
+          : t.why === 'mixeddate' ? `這幾檔的資料日期太散（最多的那一天只佔 ${(t.share * 100).toFixed(0)}%，共 ${t.dates} 個不同日期）。排名等於在比不同日子的價格，那個名次是假的——請先按「開始累積」把資料更新到同一天。`
+          : `能排名的股票太少（只有 ${t.pop} 檔），排出來的百分位沒有意義。`;
+        showCopiableError ? showCopiableError('算不出相對強弱', msg) : alert(msg);
+      } else if (t) {
+        showToast(`🏅 排名算好了 · 母體 ${t.popN} 檔 · 基準日 ${t.base}`);
+      }
+    } catch (e) { showToast('☒ ' + ((e && e.message) || e)); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = '🏅 算相對強弱'; } await renderBarsPanel(); }
+  }
+  function barsRsNote() {
+    const mkt = (document.getElementById('barsMarket') || {}).value === 'tw' ? 'tw' : 'us';
+    const t = scanRsTable[mkt];
+    const need = barsRangeOpt().bars < RS_MIN_BARS;
+    if (!t) {
+      return `<div style="margin-top:9px; padding-top:9px; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-tertiary); line-height:1.75;">
+        <strong>相對強弱（RS）還沒算過。</strong>算了之後，掃描條件會多兩項「比市場上七成／九成的股票強」，
+        而且「趨勢範本」那套策略才完整。<br>
+        ${need ? `<span style="color:var(--accent-warm);">⚠ 你現在選的是「${escape(barsRangeOpt().label)}」（約 ${barsRangeOpt().bars} 根），
+        <strong>算不出 RS</strong>——它需要 ${RS_MIN_BARS} 根。請先改成 2 年或 5 年並重抓。</span>` : '按上面的「🏅 算相對強弱」就會算（不連網）。'}
+      </div>`;
+    }
+    const age = Math.round((Date.now() - t.at) / 86400000);
+    return `<div style="margin-top:9px; padding-top:9px; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-secondary); line-height:1.75;">
+        🏅 <strong>相對強弱排名</strong>：母體 ${t.popN.toLocaleString('en-US')} 檔 · 基準日 ${escape(t.base)}
+        <span style="color:var(--ink-tertiary);">（${age === 0 ? '今天算的' : age + ' 天前算的'}）</span>
+        ${age >= 5 ? '<span style="color:var(--accent-warm);"> ⚠ 有點舊了，資料更新過就該重算一次</span>' : ''}<br>
+        <span style="color:var(--ink-tertiary);">
+        ${t.medRet == null ? '' : `母體這一年的中位數報酬 ${t.medRet >= 0 ? '+' : ''}${t.medRet.toFixed(1)}%。`}
+        ${t.short ? `另有 ${t.short.toLocaleString('en-US')} 檔日 K 不到 ${RS_MIN_BARS} 根算不出來（<strong>不是「表現差」，是沒有算</strong>）。` : ''}
+        ${t.etfKnown ? (t.etfOut ? `已排除 ${t.etfOut} 檔 ETF 與興櫃（它們還是有分數，只是不算進母體）。` : '')
+                     : '<strong>美股沒有免費來源可以判斷哪些是 ETF</strong>，所以母體裡混著 ETF——多頭年份前段班會被槓桿 ETF 佔掉一些位置。'}
+        <br>⚠ RS 是<strong>相對</strong>的：空頭市場裡 RS 90 照樣可能是賠錢的，只是比別人少賠。</span>
+      </div>`;
+  }
+
   async function renderBarsPanel() {
     const st = await barsStats();
     const p = await barsLoadProgress();
@@ -29184,7 +29230,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           </div>
           ${st.total ? `<div style="font-size:11px; color:var(--ink-tertiary); margin-top:6px;">最舊一筆更新於 ${escape(st.oldest)}　·　最新 ${escape(st.newest)}</div>`
             : '<div style="font-size:11.5px; color:var(--accent-warm); margin-top:6px;">還沒有任何資料。選好範圍後按「開始累積」。</div>'}
-          ${barsRawNote(st)}${barsRangeNote(st)}
+          ${barsRawNote(st)}${barsRangeNote(st)}${barsRsNote()}
         </div>`;
     }
 
@@ -31829,6 +31875,150 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return c.market === 'tw' ? t >= 3e7 : t >= 5e6;
   }
 
+  // ============================================================
+  // 相對強弱 RS（v16.71）
+  //
+  // 「這一檔過去一年的表現，贏過市場上百分之幾的股票」——1 到 99 分。
+  // IBD 式加權：最近一季 40%，其餘三季各 20%（近期的權重比較高）。
+  //
+  // 🔴 它是**相對**的，不是絕對的。空頭市場裡 RS 90 照樣可能是賠錢的
+  //   （只是「比別人少賠」）。畫面上一定要講，不然「RS 90」會被讀成「這檔很會漲」。
+  //
+  // ⚠ 要 253 根日 K 才算得出完整四段——**1 年只有 244~251 根**，
+  //   所以這個功能一定要先把「📏 要存幾年」改成 2 年或 5 年。
+  // ⚠ 回看長度一律固定 63/126/189/252，**不准用 min() 截斷**：
+  //   244 根的股票用 roc(243)、251 根的用 roc(252)，
+  //   等於橫斷面在比「不同回看長度的報酬」，那個排名沒有意義。
+  // ============================================================
+  const RS_MIN_BARS = 253;
+  function scanRsRaw(bars) {
+    const n = bars.length;
+    if (n < RS_MIN_BARS) return null;
+    const c = k => Number(bars[n - 1 - k].close);
+    const c0 = c(0);
+    if (!(c0 > 0)) return null;
+    const roc = k => { const p = c(k); return p > 0 ? c0 / p - 1 : null; };
+    const q = [roc(63), roc(126), roc(189), roc(252)];
+    if (q.some(x => x == null)) return null;
+    return {
+      score: 0.4 * q[0] + 0.2 * q[1] + 0.2 * q[2] + 0.2 * q[3],
+      // ⚠ 母體中位數要用這個，**不是 score**——score 是四段混合值，
+      //   寫成「這一年的報酬」是錯的（它不是任何一段真實的報酬率）。
+      ret252: (c0 / c(252) - 1) * 100
+    };
+  }
+
+  // ── RS 排名表（離線預先算好，掃描時直接查）──────────────────
+  //
+  // ⚠ 表要放 **IndexedDB**，不可以放 `studio_` 開頭的 localStorage：
+  //   `BACKUP_PREFIXES` 會把它吃進全站備份，還原到另一台時**日 K 沒有跟著過去**
+  //   → 畫面寫「母體 18,409 檔」而本機一根 K 都沒有。
+  //   （放 bars 庫裡用 `rs:` 當前綴；`barsStats` 只算有 rows 的紀錄，不會被汙染，
+  //     `scanLocalSymbols` 只挑 `tw:` / `us:` 前綴，也不會被掃進去。）
+  const RS_BASE_MIN_SHARE = 0.6;    // 基準日佔比低於這個就擋下來——資料日期太散，排名沒有意義
+  let scanRsTable = {};             // { tw: {...}, us: {...} } 記憶體快取
+
+  async function scanRsBuild(mkt, onTick) {
+    const m = mkt === 'tw' ? 'tw' : 'us';
+    const syms = await scanLocalSymbols(m);      // 已經排除 ^ 開頭的指數
+    if (!syms.length) return { why: 'nolocal' };
+    const rows = [];
+    let short = 0;
+    for (let i = 0; i < syms.length; i++) {
+      const sym = syms[i];
+      try {
+        const rec = await barsGet(m, sym);
+        const bars = rec ? barsToOhlc(rec.rows) : [];
+        const rs = scanRsRaw(bars);
+        if (!rs) { short++; }
+        else rows.push({ sym, score: rs.score, ret252: rs.ret252, date: bars[bars.length - 1].time });
+      } catch (e) { short++; }
+      if (onTick && i % 200 === 0) onTick(i, syms.length);
+    }
+    if (!rows.length) return { why: 'noneready', total: syms.length, short };
+
+    // 🔴 基準日要取眾數，而且佔比太低就擋下來。
+    //   資料日期散在好幾天的話，排名等於在比「不同日子的價格」——那個名次是假的。
+    const byDate = {};
+    rows.forEach(r => { byDate[r.date] = (byDate[r.date] || 0) + 1; });
+    const base = Object.keys(byDate).sort((a, b) => byDate[b] - byDate[a])[0];
+    const share = byDate[base] / rows.length;
+    if (share < RS_BASE_MIN_SHARE) {
+      return { why: 'mixeddate', base, share, total: rows.length, dates: Object.keys(byDate).length };
+    }
+
+    // 🔴 母體要排除 ETF：多頭年份 RS 前 1% 會被 00631L、TQQQ、SOXL 這種**槓桿 ETF 整排佔滿**，
+    //   名單會變成一份槓桿 ETF 清單而不是選股結果。
+    // ⚠ 台股靠 `/^00/` 判得出來；**美股沒有免費來源可以判 ETF**，所以美股這一項做不到，
+    //   畫面上要老實講，不可以假裝有濾。
+    // ⚠ 興櫃**出母體但保留分數**：它沒有漲跌幅限制、流動性又差，
+    //   放進母體會扭曲百分位；但使用者還是看得到它自己的分數。
+    let uni = null;
+    if (m === 'tw') { try { uni = await twLoadUniverse(); } catch (e) { uni = null; } }
+    const boardOf = {};
+    if (Array.isArray(uni)) uni.forEach(x => { boardOf[String(x[0])] = String(x[2] || ''); });
+    const isEtf = s => m === 'tw' && /^00/.test(s);
+    const isEmg = s => m === 'tw' && boardOf[s] === 'emg';
+    const pop = rows.filter(r => !isEtf(r.sym) && !isEmg(r.sym));
+    if (pop.length < 30) return { why: 'toosmall', total: rows.length, pop: pop.length };
+
+    // 百分位 → 1~99
+    const sorted = pop.slice().sort((a, b) => a.score - b.score);
+    const cuts = sorted.map(x => x.score);
+    const pct = v => {
+      // 二分找「有幾檔比我低」
+      let lo = 0, hi = cuts.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (cuts[mid] < v) lo = mid + 1; else hi = mid; }
+      return Math.min(99, Math.max(1, Math.round(lo / cuts.length * 98) + 1));
+    };
+    const map = {};
+    rows.forEach(r => { map[r.sym] = pct(r.score); });
+    const rets = pop.map(x => x.ret252).sort((a, b) => a - b);
+    const table = {
+      key: 'rs:' + m, mkt: m, at: Date.now(), base, baseShare: share,
+      n: rows.length, popN: pop.length, short,
+      etfOut: rows.length - pop.length, etfKnown: m === 'tw',
+      // 🔴 中位數用 ret252，不是 score（score 是四段混合值，不是任何一段真實報酬）
+      medRet: rets.length ? rets[Math.floor(rets.length / 2)] : null,
+      map
+    };
+    try { await barsTx('readwrite', st => st.put(table)); } catch (e) {}
+    scanRsTable[m] = table;
+    return table;
+  }
+
+  async function scanRsLoad(mkt) {
+    const m = mkt === 'tw' ? 'tw' : 'us';
+    if (scanRsTable[m]) return scanRsTable[m];
+    try {
+      const t = await barsTx('readonly', st => st.get('rs:' + m));
+      if (t && t.map) { scanRsTable[m] = t; return t; }
+    } catch (e) {}
+    return null;
+  }
+  const scanRsOf = (mkt, sym) => {
+    const t = scanRsTable[mkt === 'tw' ? 'tw' : 'us'];
+    if (!t || !t.map) return null;
+    const v = t.map[String(sym).toUpperCase()];
+    return v == null ? null : v;
+  };
+
+  // 一句話，畫面與 AI 提示詞共用。
+  // 🔴 三件事一定要講：母體幾檔／基準日是哪一天／**RS 是相對的，空頭市場 RS 90 照樣可能賠錢**。
+  function scanRsNote(mkt) {
+    const m = mkt === 'tw' ? 'tw' : 'us';
+    const t = scanRsTable[m];
+    if (!t) return '';
+    const age = t.at ? Math.round((Date.now() - t.at) / 86400000) : null;
+    const med = t.medRet == null ? '' : `母體這一年的中位數報酬是 ${t.medRet >= 0 ? '+' : ''}${t.medRet.toFixed(1)}%。`;
+    return `相對強弱（RS）：拿 ${t.popN.toLocaleString('en-US')} 檔${m === 'tw' ? '台股' : '美股'}排名，`
+      + `基準日 ${t.base}${age ? `（這份排名是 ${age} 天前算的）` : '（剛算好）'}。${med}`
+      + `⚠ RS 是**相對**的：空頭市場裡 RS 90 照樣可能是賠錢的，只是比別人少賠。`
+      + (t.etfKnown ? `${t.etfOut ? `已排除 ${t.etfOut} 檔 ETF 與興櫃（它們還是有分數，只是不算進母體）。` : ''}`
+                    : `⚠ 美股**沒有免費來源可以判斷哪些是 ETF**，所以母體裡混著 ETF——多頭年份前段班會被槓桿 ETF 佔掉一些位置。`)
+      + (t.short ? `另有 ${t.short.toLocaleString('en-US')} 檔日 K 不到 ${RS_MIN_BARS} 根，算不出 RS（不是「表現差」，是沒有算）。` : '');
+  }
+
   const US_SCAN_CONDS = [
     { key: 'golden',     name: '出現黃金交叉',   hint: '短期均線剛穿過長期均線，通常代表轉強的起點',       test: c => !!(c.sig.cross && c.sig.cross.type === 'golden') },
     { key: 'bull_stack', name: '多頭排列',       hint: '5日>20日>60日均線，三條線由上往下排好，趨勢明確向上', test: c => !!(c.sig.ma5 && c.sig.ma20 && c.sig.ma60 && c.sig.ma5 > c.sig.ma20 && c.sig.ma20 > c.sig.ma60) },
@@ -31875,6 +32065,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       // ⚠ 台股中小型股 30 天區間常態 15~30%，寫死 10% 幾乎篩不到東西 → 改成跟自己的波動比
       hint: '前 30 天在很窄的區間裡整理（區間寬度 < 6 倍單日波動），最後一根收盤衝過上緣。⚠ 假突破率很高，沒有停損就是災難',
       test: c => !!(c.box && c.atrPct > 0 && c.box.widthPct <= c.atrPct * 6 && c.box.breakout) },
+    // ⚠ needRs：這一條要先算好全市場排名表。沒有表的話是「**算不出來**」不是「沒通過」。
+    { key: 'rs_strong', name: '比市場上七成的股票強', needRs: true,
+      hint: '相對強弱（RS）70 分以上：過去一年的表現贏過市場上 70% 的股票。⚠ RS 是**相對**的——空頭市場裡 RS 90 照樣可能是賠錢的，只是比別人少賠',
+      test: c => c.rs != null && c.rs >= 70 },
+    { key: 'rs_top', name: '比市場上九成的股票強', needRs: true,
+      hint: '相對強弱 90 分以上。⚠ 同上，這是「贏過別人」不是「一定有賺」',
+      test: c => c.rs != null && c.rs >= 90 },
     { key: 'bias_low', name: '被打得比平常深', needBars: 24,
       hint: '股價比 24 日均線低超過 2.5 倍的單日波動。⚠ 這一條跟「黃金交叉」「多頭排列」**方向相反**，是找跌過頭的反彈',
       test: c => !!(c.bias && c.bias.inAtr != null && c.bias.inAtr <= -2.5) }
@@ -31930,10 +32127,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
     // ── v16.69 新增。全部零 API，只吃本機日 K ──────────────────
     { key: 's_trend_tpl', icon: '🏔', name: '趨勢範本（Minervini）', fund: false, need: 'all',
-      desc: '長短均線四層排好、年線在爬、比一年低點高 30% 以上、離一年高點 25% 內 —— 過去的大漲股在起漲前多半符合這幾項。'
-          + '⚠ 但符合的股票裡**大多數不會大漲**：這幾項彼此高度相關，全中不代表五個獨立證據。'
-          + '⚠ 原版還有一條「相對強弱排名前 30%」，**這裡沒有做**（要先把全市場排名算出來）',
-      conds: ['above_ma200', 'ma200_up', 'ma_long_stack', 'above_52w_low', 'near_52w_high'] },
+      desc: '長短均線四層排好、年線在爬、比一年低點高 30% 以上、離一年高點 25% 內、'
+          + '而且相對強弱贏過市場七成 —— 過去的大漲股在起漲前多半符合這幾項。'
+          + '⚠ 但符合的股票裡**大多數不會大漲**：這幾項彼此高度相關，全中不代表六個獨立證據。'
+          + '⚠ 這一套要先在「📥 累積資料」按「🏅 算相對強弱」，而且日 K 要 2 年以上（RS 需要 253 根）',
+      conds: ['above_ma200', 'ma200_up', 'ma_long_stack', 'above_52w_low', 'near_52w_high', 'rs_strong'] },
     { key: 's_smooth', icon: '📐', name: '穩穩走高', fund: false, need: 'all',
       desc: '近 60 天走勢像一條往上的直線、年線也在爬、短線還沒過熱 —— 抱起來比較不會心臟病',
       conds: ['trend_smooth', 'ma200_up', 'above_ma20', 'not_hot'] },
@@ -32268,11 +32466,17 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   // 掃描結果抬頭（兩個 renderer 共用，不要各寫一份）
+  function scanRsHeadHtml() {
+    const t = scanRsTable[usScanMarket === 'tw' ? 'tw' : 'us'];
+    if (!t) return '';
+    return `<div style="margin-top:6px; padding:6px 12px; background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-deep); border-radius:3px; font-size:11px; color:var(--ink-tertiary); line-height:1.7;">
+        ${escape(scanRsNote(usScanMarket)).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</div>`;
+  }
   function scanHeadHtml(inner) {
     return `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
         <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${inner}</span>
         ${scanAiBtnHtml()}
-      </div>` + scanRegimeHtml() + scanSkipNote();
+      </div>` + scanRegimeHtml() + scanRsHeadHtml() + scanSkipNote();
   }
   // 台股清單有重複（2308/3661/6669… 出現兩次），一律去重
   function twScanList() {
@@ -32669,6 +32873,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       lastChg: scanLastChg(bars),
       splitAt: scanSplitSuspect(bars),
       nBars: bars.length,
+      rsRaw: (() => { const r = scanRsRaw(bars); return r ? r.score : null; })(),
+      ret252: (() => { const r = scanRsRaw(bars); return r ? r.ret252 : null; })(),
+      rs: scanRsOf(usScanMarket, item.symbol),   // 1~99；沒有排名表就是 null（＝算不出來）
       market: usScanMarket,                      // 判讀流動性門檻要知道是台股還美股；render 時讀全域會在切市場後拿錯
       board: item.market || '',                  // 台股的 上市/上櫃/興櫃（twFindStock 給的；美股與查不到的為空）
       turnover20: amt20.length ? avg(amt20) : null,
@@ -32721,6 +32928,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     scanSkipped = []; scanSkippedN = 0;   // 每次掃描重來（不然上一輪的會一直累積）
     // 大盤濾網：⚠ 只讀本機，**絕對不連網**（「本機已累積的全部」承諾一次網路都不打，v16.42）
     try { scanRegimeInfo = await scanRegime(usScanMarket); } catch (e) { scanRegimeInfo = null; }
+    try { await scanRsLoad(usScanMarket); } catch (e) {}   // 有排名表就用，沒有就是「算不出來」
     usScanBlocked = null;
     // 「本機已累積的全部」＝ 離線掃描；其他範圍照舊會連網補
     scanLocalOnly = /^(us|tw)_local$/.test(document.getElementById('usScanScope').value || '');
@@ -32879,6 +33087,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function condState(c, ctx) {
     const need = Number(c && c.needBars) || 0;
     if (need > 0 && (Number(ctx && ctx.nBars) || 0) < need) return 'na';
+    // ⚠ 還沒算過全市場排名表 → 「算不出來」，不是「這一檔不夠強」
+    if (c && c.needRs && (ctx && ctx.rs) == null) return 'na';
     try { return c.test(ctx) ? 'pass' : 'fail'; } catch (e) { return 'na'; }
   }
   function usScanEvaluate(ctx) {
@@ -32925,6 +33135,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       ? `　流動性：日均成交金額約 ${liq.amt}${liq.emg ? '（興櫃股：流動性差、無漲跌幅限制）' : ''}${liq.low ? '（⚠ 冷門，滑價風險）' : ''}`
       : '';
     // 風險旗標也要餵給 AI——畫面上警告的事，AI 不知道的話它會照樣推薦（v16.63）
+    const rsLine = c.rs != null ? `
+　相對強弱 RS ${c.rs}／99（贏過市場上 ${c.rs}% 的股票）` : '';
     const rf = scanRiskFlags(c);
     const riskLine = rf.length ? `\n　⚠ 風險：${rf.map(x => x.label + '（' + x.why + '）').join('；')}` : '';
     return `${i + 1}. ${c.symbol}${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? '（' + (c.zh || c.name) + '）' : ''}
@@ -32933,7 +33145,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 　均線：MA5 ${n(g.ma5)}／MA20 ${n(g.ma20)}／MA60 ${n(g.ma60)}　RSI ${n(g.rsi, 1)}　MACD柱 ${g.macd ? n(g.macd.hist, 3) : '—'}　KD ${g.kd ? n(g.kd.k, 1) + '/' + n(g.kd.d, 1) : '—'}
 　布林位置 %B ${n(c.pctB, 1)}　量比(5日/20日) ${n(c.volRatio, 2)}　距 60 日高 ${n(c.fromHigh60, 1)}%
 　停損參考 ${stop ? cur + n(stop.v) + '（' + n(stop.pct, 1) + '%）' : '—'}　2:1 目標 ${stop ? cur + n(stop.target2r) + '（+' + n(stop.target2rPct, 1) + '%）' : '—'}${band ? `
-　上檔判讀：${band}` : ''}${liqLine}${riskLine}${fund}`;
+　上檔判讀：${band}` : ''}${rsLine}${liqLine}${riskLine}${fund}`;
   }
 
   // 兩個 renderer（條件模式／策略模式）長得一模一樣，按鈕只寫一份共用——
@@ -33086,7 +33298,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
 【今天的大盤環境】
 ${scanRegimeText(scanRegimeInfo).replace(/\*\*/g, '')}
-（這一句跟我畫面上看到的**逐字一樣**。挑選時請把它考慮進去，但不要因為它就說「都不要買」——要不要進場是我的決定。）` : ''}
+（這一句跟我畫面上看到的**逐字一樣**。挑選時請把它考慮進去，但不要因為它就說「都不要買」——要不要進場是我的決定。）` : ''}${scanRsTable[usScanMarket === 'tw' ? 'tw' : 'us'] ? `
+
+【相對強弱】
+${scanRsNote(usScanMarket).replace(/\*\*/g, '')}` : ''}
 
 【⚠ 你看得到的資料只有下面這些】
 · 只有技術指標、停損／目標參考價、上檔第一道壓力的判讀、流動性（日均成交金額），以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
