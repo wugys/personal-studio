@@ -9447,7 +9447,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.62 · ЋЋ</div>
+    <div>v 16.63 · ЌЌ</div>
   </footer>
 </div>
 
@@ -30133,6 +30133,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   const US_SCAN_CACHE_TTL = 4 * 3600 * 1000;   // 日線 4 小時內不重抓
   let usScanCache = {};      // { 'market:symbol': { bars, ts } } —— 台美共用一份，用 market 前綴隔開
   let usScanRows = [];       // 掃完的結果（含 ctx），改條件時直接重算不重抓
+  let scanSkipped = [];      // 資料不合格、沒有列入的（v16.63）——不能默默踢掉，抬頭要講
+  // ⚠ 名單有 400 筆上限（免得幾千檔時把畫面塞爆），但「共幾檔」不可以跟著被截短，
+  //   否則掃 18,000 檔時抬頭會少報。數量另外記一個不設限的。
+  let scanSkippedN = 0;
   let usScanPicked = US_SCAN_PRESETS.pullback.slice();
   let usScanRunning = false;
   // 上一次掃描沒成功時，存 `{why, wait}`（原因、還要等多久）；成功或還沒掃過則為 null。
@@ -30226,6 +30230,76 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return market === 'tw' ? fetchTwOhlc(sym) : fetchUsOhlc(sym);
   }
   const scanCur = () => usScanMarket === 'tw' ? 'NT$' : '$';
+
+  // 「有幾檔因為資料不合格沒有列入」——兩個 renderer 共用一份（v16.63）。
+  // ⚠ 一定要講：默默踢掉的話，結果會莫名其妙變少，而使用者會以為是「真的沒有股票符合」。
+  // 「掃了 N 檔」＝ 真的走過的檔數（算出來的 ＋ 資料不合格被擋掉的）。
+  // ⚠ 只寫 usScanRows.length 的話，擋掉 200 檔時會寫成「掃了 30 檔」——
+  //    讀起來像「範圍本來就只有 30 檔」，把自己漏掉的東西藏起來（v16.32 同一條）。
+  function scanTriedN() { return usScanRows.length + scanSkippedN; }
+  function scanSkipNote() {
+    if (!scanSkippedN) return '';
+    const byWhy = {};
+    scanSkipped.forEach(s => {
+      const k = /只有 \d+ 根/.test(s.why) ? '資料根數不足'
+              : /天前/.test(s.why) ? '資料太舊（可能停牌／下市，或本機該更新了）'
+              : '幾乎沒有成交量';
+      (byWhy[k] = byWhy[k] || []).push(s.sym);
+    });
+    const lines = Object.keys(byWhy).map(k =>
+      `· ${escape(k)}：${byWhy[k].length} 檔（${escape(byWhy[k].slice(0, 12).join('、'))}${byWhy[k].length > 12 ? ' …' : ''}）`);
+    return `<div style="background:rgba(212,165,116,0.07); border-left:2px solid var(--accent-warm); border-radius:3px;
+                 padding:8px 11px; margin-bottom:9px; font-size:11px; color:var(--ink-secondary); line-height:1.75;">
+        <strong>另有 ${scanSkippedN} 檔資料不合格，沒有列入</strong>（不是「不符合條件」，是<strong>算不準</strong>）<br>
+        ${lines.join('<br>')}
+        <div style="color:var(--ink-tertiary); margin-top:4px;">資料太舊的按「📥 累積資料」重抓就會補上；停牌／下市的本來就抓不到。</div>
+      </div>`;
+  }
+  // ===== 風險旗標（v16.63）=====
+  // 🔴 這三樣**程式早就算出來、也已經顯示在畫面上**，但沒有一個進入決策：
+  //   · `scanBandInfo(c).kind === 'tight'`（賠率不足）→ 只拿來上色
+  //   · `c.lv.stops[0].pct`（停損距離）→ 沒人問過「這個停損放得住嗎」
+  //   · `c.sig.cross.daysAgo`（交叉是幾天前）→ **從來沒有任何條件讀它**，
+  //      所以「出現黃金交叉 ✔」可以是 15 天前的事，而卡片上是今天的價格。
+  // ⚠ 只標註、不自動篩掉（v11.5 那條）——同一個判斷對不同策略意義相反：
+  //   賠率不足對「回檔買點」是致命的，對「突破追強」卻是常態（突破後上方本來就沒壓力）。
+  //   所以這裡只產生旗標與排序權重，要不要排除交給使用者看了自己決定。
+  const SCAN_STALE_CROSS_DAYS = 8;
+  function scanRiskFlags(c) {
+    const out = [];
+    const b = scanBandInfo(c);
+    if (b && b.kind === 'tight') {
+      out.push({ key: 'rr', label: '賠率不足', why: `到第一道壓力的空間對停損只有 1 : ${b.rr1}（不到 1.5）` });
+    }
+    const stop = c.lv && c.lv.stops && c.lv.stops[0];
+    if (stop && Math.abs(stop.pct) >= 12) {
+      // ⚠ stops[0] 不一定是 ATR 停損（ATR 算不出來時會換成結構型），所以要把用的是哪一種講出來
+      out.push({ key: 'stop', label: '停損太寬',
+                 why: `${stop.label} 距現價 ${Math.abs(stop.pct).toFixed(1)}%——2:1 目標要漲 ${(Math.abs(stop.pct) * 2).toFixed(0)}% 才划算` });
+    }
+    const cr = c.sig && c.sig.cross;
+    if (cr && cr.type === 'golden' && cr.daysAgo >= SCAN_STALE_CROSS_DAYS) {
+      out.push({ key: 'stale', label: '訊號不新', why: `黃金交叉是 ${cr.daysAgo} 天前的事，現在的價格已經不是當時的進場點（訊號還在，只是進場點不同）` });
+    }
+    return out;
+  }
+  function scanRiskHtml(c) {
+    const f = scanRiskFlags(c);
+    if (!f.length) return '';
+    return `<div style="margin-top:7px; padding:6px 10px; background:rgba(201,123,106,0.07);
+                 border-left:2px solid var(--danger); border-radius:3px; font-size:11px;
+                 color:var(--ink-secondary); line-height:1.7;">
+        ${f.map(x => `⚠ <strong>${escape(x.label)}</strong>：${escape(x.why)}`).join('<br>')}
+      </div>`;
+  }
+
+  // 掃描結果抬頭（兩個 renderer 共用，不要各寫一份）
+  function scanHeadHtml(inner) {
+    return `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${inner}</span>
+        ${scanAiBtnHtml()}
+      </div>` + scanSkipNote();
+  }
   // 台股清單有重複（2308/3661/6669… 出現兩次），一律去重
   function twScanList() {
     const seen = new Set();
@@ -30612,6 +30686,27 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     };
   }
 
+  // ===== 資料誠實閘（v16.63）=====
+  // 🔴 為什麼要有這個：`scanFetch` 只檢查「有沒有 60 根」，**完全不看資料多舊**。
+  //   於是三個月前累積的那幾百檔，今天掃出來的「現價」是三個月前的收盤價，
+  //   卡片照樣印停損、2:1 目標、賠率，**一個字都不會提**。
+  //   （`barsIsFresh()` 早就存在，但只用在累積器跳過已抓過的，掃描器一次都沒呼叫。）
+  // ⚠ 不合格的**不要默默踢掉**——結果會莫名其妙變少。要記下來、在抬頭講出幾檔與原因（v16.13 同一條：
+  //   「算不出來」跟「不符合」是兩件事，畫面不能長一樣）。
+  const SCAN_STALE_DAYS = 12;   // 交易日約 8 天；春節休市 9 天，留一點餘裕
+  function scanDataOk(bars, sym) {
+    const n = (bars || []).length;
+    if (n < 60) return { ok: false, why: `只有 ${n} 根日 K（季線與 60 日高低算不準）` };
+    const last = bars[n - 1] && bars[n - 1].time;
+    const lag = last ? daysBetweenToday(last) : null;
+    if (lag != null && lag < -SCAN_STALE_DAYS) {
+      return { ok: false, why: `最後一根是 ${last}（${Math.abs(lag)} 天前）——可能停牌／下市，或本機資料該更新了` };
+    }
+    const zero = bars.slice(-20).filter(b => !(Number(b.volume) > 0)).length;
+    if (zero >= 5) return { ok: false, why: `近 20 個交易日有 ${zero} 天完全沒成交（買得進出不掉）` };
+    return { ok: true };
+  }
+
   async function runUsScan() {
     if (usScanRunning) return;
     let universe;
@@ -30631,6 +30726,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       return;
     }
     usScanRunning = true;
+    scanSkipped = []; scanSkippedN = 0;   // 每次掃描重來（不然上一輪的會一直累積）
     usScanBlocked = null;
     // 「本機已累積的全部」＝ 離線掃描；其他範圍照舊會連網補
     scanLocalOnly = /^(us|tw)_local$/.test(document.getElementById('usScanScope').value || '');
@@ -30665,6 +30761,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           let bars;
           if (c && (now - c.ts) < US_SCAN_CACHE_TTL) { bars = c.bars; cached++; }
           else { bars = await scanFetch(usScanMarket, item.symbol); usScanCache[ck] = { bars, ts: Date.now() }; }
+          // 資料誠實閘（v16.63）：太少／太舊／幾乎沒成交的不列入，但**要記下來講出去**
+          const dq = scanDataOk(bars, item.symbol);
+          if (!dq.ok) {
+            scanSkippedN++;
+            if (scanSkipped.length < 400) scanSkipped.push({ sym: item.symbol, name: item.name || '', why: dq.why });
+            step(item.symbol);
+            continue;
+          }
           const ctx = usScanCtx(item, bars);
           if (ctx) {
             // 策略模式時，只要有選到含基本面的策略就一定要抓
@@ -30817,13 +30921,16 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const liqLine = liq
       ? `　流動性：日均成交金額約 ${liq.amt}${liq.emg ? '（興櫃股：流動性差、無漲跌幅限制）' : ''}${liq.low ? '（⚠ 冷門，滑價風險）' : ''}`
       : '';
+    // 風險旗標也要餵給 AI——畫面上警告的事，AI 不知道的話它會照樣推薦（v16.63）
+    const rf = scanRiskFlags(c);
+    const riskLine = rf.length ? `\n　⚠ 風險：${rf.map(x => x.label + '（' + x.why + '）').join('；')}` : '';
     return `${i + 1}. ${c.symbol}${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? '（' + (c.zh || c.name) + '）' : ''}
 　收盤 ${cur}${n(c.price)}（資料日期 ${c.lastDate || '不明'}）　綜合研判：${g.overall || '—'}（分數 ${g.score == null ? '—' : g.score}）
 　${why}
 　均線：MA5 ${n(g.ma5)}／MA20 ${n(g.ma20)}／MA60 ${n(g.ma60)}　RSI ${n(g.rsi, 1)}　MACD柱 ${g.macd ? n(g.macd.hist, 3) : '—'}　KD ${g.kd ? n(g.kd.k, 1) + '/' + n(g.kd.d, 1) : '—'}
 　布林位置 %B ${n(c.pctB, 1)}　量比(5日/20日) ${n(c.volRatio, 2)}　距 60 日高 ${n(c.fromHigh60, 1)}%
 　停損參考 ${stop ? cur + n(stop.v) + '（' + n(stop.pct, 1) + '%）' : '—'}　2:1 目標 ${stop ? cur + n(stop.target2r) + '（+' + n(stop.target2rPct, 1) + '%）' : '—'}${band ? `
-　上檔判讀：${band}` : ''}${liqLine}${fund}`;
+　上檔判讀：${band}` : ''}${liqLine}${riskLine}${fund}`;
   }
 
   // 兩個 renderer（條件模式／策略模式）長得一模一樣，按鈕只寫一份共用——
@@ -30923,7 +31030,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             </div>` : ''}
           </div>
           ${band ? `<div style="font-size:11px; color:var(--ink-secondary); line-height:1.6; margin-bottom:8px; padding:5px 9px; background:var(--bg-elevated); border-left:2px solid ${bandColor}; border-radius:3px;">📏 ${escape(band)}</div>` : ''}
-          ${liqWarn ? `<div style="font-size:10.5px; color:var(--danger); margin-bottom:8px;">${liq.emg ? '⚠ 興櫃股：流動性差、波動大、沒有漲跌幅限制。' : ''}${liq.low ? '⚠ 日均成交金額偏低（台股 < 3,000 萬／美股 < US$5M）：買得進不一定出得掉，滑價會吃掉停損的精度。' : ''}</div>` : ''}`;
+          ${liqWarn ? `<div style="font-size:10.5px; color:var(--danger); margin-bottom:8px;">${liq.emg ? '⚠ 興櫃股：流動性差、波動大、沒有漲跌幅限制。' : ''}${liq.low ? '⚠ 日均成交金額偏低（台股 < 3,000 萬／美股 < US$5M）：買得進不一定出得掉，滑價會吃掉停損的精度。' : ''}</div>` : ''}
+          ${scanRiskHtml(c)}`;
   }
   function buildScanAiPrompt() {
     if (!usScanScored || !usScanScored.list || !usScanScored.list.length) return '';
@@ -30942,7 +31050,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
 【我做了什麼】
 我用自己的工具掃了${mktName}，${how}
-掃描母體共 ${usScanRows.length} 檔，通過 ${total} 檔，以下列出前 ${rows.length} 檔。
+掃描母體共 ${scanTriedN()} 檔，通過 ${total} 檔，以下列出前 ${rows.length} 檔。${scanSkippedN ? `
+另有 ${scanSkippedN} 檔因為本機資料太舊／太少／幾乎沒成交量而算不準，沒有列入——它們不是「不符合條件」，是我根本沒有算，所以你的名單裡本來就看不到它們。` : ''}
 
 【⚠ 你看得到的資料只有下面這些】
 · 只有技術指標、停損／目標參考價、上檔第一道壓力的判讀、流動性（日均成交金額），以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
@@ -31051,13 +31160,16 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
     const need = minSel === 'all' ? usScanPicked.length : Number(minSel);
     const scored = usScanRows.map(ctx => ({ ctx, ...usScanEvaluate(ctx) }))
       .filter(r => r.matched.length >= Math.min(need, usScanPicked.length))
-      .sort((a, b) => b.matched.length - a.matched.length || b.ctx.sig.score - a.ctx.sig.score);
+      .sort((a, b) => b.matched.length - a.matched.length
+        // 同分時風險旗標少的排前面（v16.63）——賠率不足/停損太寬/訊號不新的往後放
+        || scanRiskFlags(a.ctx).length - scanRiskFlags(b.ctx).length
+        || b.ctx.sig.score - a.ctx.sig.score);
     // ⚠ 存下「畫面上真的排好的這一份」給 AI 用——**不要在別的地方重算一次**，
     //   不然 AI 看到的排名跟畫面上的會不一樣（本專案付過好幾次代價的那一條）。
     usScanScored = { mode: 'cond', need, list: scored };
     if (!scored.length) {
       box.innerHTML = `<div style="text-align:center; padding:24px; color:var(--ink-tertiary); font-size:13px; line-height:1.8;">
-        掃了 ${usScanRows.length} 檔，<strong>沒有一檔符合到 ${need} 項</strong>。<br>
+        掃了 ${scanTriedN()} 檔，<strong>沒有一檔符合到 ${need} 項</strong>。<br>
         把「至少符合」調低，或少勾幾個條件試試。<br>
         <span style="font-size:11.5px;">（找不到也是一種資訊——代表目前這批股票裡沒有符合你設定的機會。）</span>
       </div>`;
@@ -31065,13 +31177,9 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
     }
     const cur = scanCur();
     const f = v => cur + Number(v).toFixed(2);
-    box.innerHTML = `
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
-        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">
-          共 ${scored.length} 檔符合（掃了 ${usScanRows.length} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序
-        </span>
-        ${scanAiBtnHtml()}
-      </div>` + scored.map((r, i) => {
+    box.innerHTML = scanHeadHtml(
+      `共 ${scored.length} 檔符合（掃了 ${scanTriedN()} 檔 · 條件 ${usScanPicked.length} 項 · 門檻 ${need} 項）· 依符合數排序`
+    ) + scored.map((r, i) => {
       const c = r.ctx;
       const pct = r.matched.length / usScanPicked.length * 100;
       const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
@@ -31124,7 +31232,9 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
       const hits = picked.map(s => ({ s, ...usStrategyHit(ctx, s) }));
       return { ctx, hits, passed: hits.filter(h => h.pass) };
     }).filter(r => r.passed.length > 0)
-      .sort((a, b) => b.passed.length - a.passed.length || b.ctx.sig.score - a.ctx.sig.score);
+      .sort((a, b) => b.passed.length - a.passed.length
+        || scanRiskFlags(a.ctx).length - scanRiskFlags(b.ctx).length
+        || b.ctx.sig.score - a.ctx.sig.score);
     usScanScored = { mode: 'strategy', picked, list: scored };   // 同上：AI 要看的就是這一份
 
     if (!scored.length) {
@@ -31135,7 +31245,7 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
       }).filter(x => x.best && x.best.hit > 0)
         .sort((a, b) => (b.best.hit / b.best.total) - (a.best.hit / a.best.total)).slice(0, 3);
       box.innerHTML = `<div style="padding:20px 10px; color:var(--ink-tertiary); font-size:13px; line-height:1.9;">
-        <div style="text-align:center; margin-bottom:10px;">掃了 ${usScanRows.length} 檔，<strong>沒有一檔完整符合你選的策略</strong>。</div>
+        <div style="text-align:center; margin-bottom:10px;">掃了 ${scanTriedN()} 檔，<strong>沒有一檔完整符合你選的策略</strong>。</div>
         <div style="text-align:center; font-size:11.5px; margin-bottom:14px;">（這也是資訊——代表目前這批股票裡，沒有符合這些策略的機會。可以換策略或擴大掃描範圍。）</div>
         ${near.length ? `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px;">
           <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:6px;">最接近的三檔（還差什麼）</div>
@@ -31149,13 +31259,9 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
       return;
     }
 
-    box.innerHTML = `
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
-        <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">
-          共 ${scored.length} 檔至少符合 1 種策略（掃了 ${usScanRows.length} 檔 · 選了 ${picked.length} 種策略）· 依符合策略數排序
-        </span>
-        ${scanAiBtnHtml()}
-      </div>` + scored.map((r, i) => {
+    box.innerHTML = scanHeadHtml(
+      `共 ${scored.length} 檔至少符合 1 種策略（掃了 ${scanTriedN()} 檔 · 選了 ${picked.length} 種策略）· 依符合策略數排序`
+    ) + scored.map((r, i) => {
       const c = r.ctx;
       const cls = c.sig.overall === '偏多' ? 'profit' : c.sig.overall === '偏空' ? 'loss' : 'flat';
       const many = r.passed.length >= 2;
