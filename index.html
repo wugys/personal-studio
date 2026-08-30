@@ -184,6 +184,8 @@
   .btn-primary { background: var(--accent); color: var(--bg-base); border-color: var(--accent); }
   .btn-primary:hover { background: var(--accent-warm); color: var(--bg-base); border-color: var(--accent-warm); }
   .btn-sm { padding: 6px 12px; font-size: 11px; }
+  /* Edge 的 password 欄位有內建眼睛鈕，不關掉會跟自己加的 👁 變成兩顆（v16.51）*/
+  input[type="password"]::-ms-reveal { display: none; }
 
   .groups-container { display: flex; flex-direction: column; gap: 32px; }
 
@@ -3326,7 +3328,7 @@
 
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="twSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="twSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
 
       <div class="form-group" style="margin-bottom:12px;">
@@ -3798,7 +3800,7 @@
       </ol>
       <div class="form-group">
         <label class="form-label">Finnhub API Key</label>
-        <input type="text" class="form-input" id="finnhubKeyInput" placeholder="例如 cxxxxxxxxxxxxxxxxxx" autocomplete="off" style="font-family:var(--mono);">
+        <input type="password" class="form-input" id="finnhubKeyInput" placeholder="例如 cxxxxxxxxxxxxxxxxxx" autocomplete="off" style="font-family:var(--mono);">
       </div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" id="finnhubTestBtn" type="button" onclick="testFinnhubKey()">🔍 測試金鑰</button>
@@ -3843,8 +3845,11 @@
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">API 金鑰（服務不需要就留空）</label>
-        <input type="text" class="form-input" id="aiProvKey" placeholder="sk-..." autocomplete="off" style="font-family:var(--mono); word-break:break-all;">
+        <label class="form-label">API 金鑰（服務不需要就留空）　<span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">貼上後會遮起來，按 👁 可以看</span></label>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input type="password" class="form-input" id="aiProvKey" placeholder="sk-..." autocomplete="off" style="font-family:var(--mono); flex:1;">
+          <button class="btn btn-sm" type="button" data-tap onclick="pasteIntoKeyField('aiProvKey')" title="從剪貼簿貼上金鑰">📋 貼上</button>
+        </div>
       </div>
       <div id="aiProvTestResult" style="font-size:11.5px; line-height:1.7; margin-top:6px;"></div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
@@ -3868,7 +3873,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Gemini API Key</label>
-        <input type="text" class="form-input" id="geminiKeyInput" placeholder="AIza..." autocomplete="off" style="font-family:var(--mono);">
+        <input type="password" class="form-input" id="geminiKeyInput" placeholder="AIza..." autocomplete="off" style="font-family:var(--mono);">
       </div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <button class="btn btn-sm" id="geminiTestBtn" type="button" onclick="testGeminiKey()">🔍 測試金鑰</button>
@@ -4099,7 +4104,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="usSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="usSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -4343,7 +4348,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="cryptoSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="cryptoSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -4606,7 +4611,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="hdEtfSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="hdEtfSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -4891,7 +4896,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="mkEtfSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="mkEtfSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -5161,7 +5166,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="dcaSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="dcaSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -5354,7 +5359,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="goalSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="goalSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -5657,7 +5662,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="bondSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="bondSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -5944,7 +5949,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="fxDepSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="fxDepSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -6251,7 +6256,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="fundSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="fundSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -6550,7 +6555,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="metalSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="metalSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -6915,7 +6920,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="reSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
+        <input type="password" id="reSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...（從 Supabase Project Settings → API 取得）">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -7311,7 +7316,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">Supabase Anon (Public) Key</label>
-        <input type="text" id="assocSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...">
+        <input type="password" id="assocSyncSupabaseKey" class="form-input" placeholder="eyJhbGciOi...">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label class="form-label">User ID（多裝置要相同）</label>
@@ -7723,7 +7728,7 @@
       <div class="form-group">
         <label class="form-label">Supabase Anon (Public) Key</label>
         <div style="display:flex; gap:6px;">
-          <input type="text" id="syncMasterKey" class="form-input" placeholder="eyJhbGciOi..." style="flex:1;">
+          <input type="password" id="syncMasterKey" class="form-input" placeholder="eyJhbGciOi..." style="flex:1;">
           <button class="btn btn-sm" type="button" onclick="fillSyncMasterFromExisting()" title="從任何一個已經設好的模組帶入">↓ 從現有模組帶入</button>
         </div>
       </div>
@@ -8424,7 +8429,11 @@
           </div>
           <div class="form-group">
             <label class="form-label">Supabase Anon Key <span style="color:var(--ink-tertiary); text-transform:none;">(Project Settings &gt; API &gt; anon public)</span></label>
-            <textarea class="form-textarea" id="multiSupabaseKey" style="min-height:64px; font-family:var(--mono); font-size:11px; word-break:break-all;" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></textarea>
+            <!-- ⚠ v16.51 從 textarea 換成 input[type=password]：textarea 沒有 type=password 遮不住，
+                 而這正是 v16.20 認定「會被分享連結包在網址裡發給團友」的那一把金鑰——
+                 全站都遮起來、只剩它明碼攤著的話，等於沒做。要看全文按旁邊的 👁。
+                 JS 六個存取點全是 .value，改 tag 一行都不用動。 -->
+            <input type="password" class="form-input" id="multiSupabaseKey" style="font-family:var(--mono); font-size:11px;" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
           </div>
           <div class="form-row">
             <div class="form-group" style="margin:0;">
@@ -9384,7 +9393,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.50 · ϲϲ</div>
+    <div>v 16.51 · ϴϴ</div>
   </footer>
 </div>
 
@@ -32525,9 +32534,10 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   async function submitAiTrip() {
     const apiKey = document.getElementById('wizApiKey').value.trim();
     const userPrompt = document.getElementById('wizAiPrompt').value.trim();
-    if (!apiKey) { setWizStatus('⚠ 請填入 Anthropic API Key', 'error'); return; }
+    // 接了全站 AI 服務就不必填這格（v16.51）
+    if (!apiKey && !aiProviderOn()) { setWizStatus('⚠ 請填入 Anthropic API Key，或到首頁「🤖 AI 服務設定」接你自己的 AI', 'error'); return; }
     if (!userPrompt) { setWizStatus('⚠ 請描述你要什麼樣的旅遊', 'error'); return; }
-    await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
+    if (apiKey) await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
     setWizStatus('AI 正在規劃行程…約 15~30 秒', 'loading');
     const sys = buildTripGenSystem('generate');
     try {
@@ -32541,9 +32551,10 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   async function submitParseTrip() {
     const apiKey = document.getElementById('wizApiKey2').value.trim();
     const text = document.getElementById('wizParseText').value.trim();
-    if (!apiKey) { setWizStatus('⚠ 請填入 Anthropic API Key', 'error'); return; }
+    // 接了全站 AI 服務就不必填這格（v16.51）
+    if (!apiKey && !aiProviderOn()) { setWizStatus('⚠ 請填入 Anthropic API Key，或到首頁「🤖 AI 服務設定」接你自己的 AI', 'error'); return; }
     if (!text || text.length < 50) { setWizStatus('⚠ 行程文字太短，請貼完整一點（至少 50 字）', 'error'); return; }
-    await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
+    if (apiKey) await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
     setWizStatus('AI 正在解析行程…約 15~30 秒', 'loading');
     const sys = buildTripGenSystem('parse');
     try {
@@ -35801,8 +35812,10 @@ ${baseSchema}
     }
 
     const apiKey = await readKey(TRAVEL_STORAGE.butlerKey);
-    if (!apiKey) {
-      body.innerHTML = '<div style="color:var(--danger);">⚠ 需要先在「設定 → 多人功能」或「AI 管家」頁設定 Anthropic API Key。</div>';
+    // ⚠ 接了全站 AI 服務（首頁「🤖 AI 服務設定」）就不需要這把金鑰——
+    //   只認舊金鑰的話，使用者明明設好了 AI 卻在這裡被擋（v10.0 早退守衛同族）
+    if (!apiKey && !aiProviderOn()) {
+      body.innerHTML = '<div style="color:var(--danger);">⚠ 還沒設定 AI。首頁「🤖 AI 服務設定」填你自己的 API，或在「AI 管家」頁填 Anthropic API Key。</div>';
       return;
     }
 
@@ -39460,8 +39473,9 @@ ${daysBrief}${butlerPartyBlock()}
 
     const results = [];
     results.push(`URL: ${url}`);
-    results.push(`Key 長度: ${key.length} (應為 ~200+)`);
-    results.push(`Key 前 30: ${key.slice(0, 30)}`);
+    // ⚠ 以前這裡把金鑰前 30 碼直接印在畫面上——欄位遮起來了，這一行照樣把它露出來（v16.51）。
+    //   除錯要的是「填的是不是同一把、長度對不對」，末 6 碼就夠了。
+    results.push(`Key: ${keyFingerprint(key)} (長度應為 ~200+)`);
 
     // 測試 1：HTTP HEAD 看 Supabase 是否可達
     setMultiStatus('測試 1/3：連線 Supabase…');
@@ -39924,6 +39938,77 @@ ${daysBrief}${butlerPartyBlock()}
   //   而且以後每新增一個視窗都要記得加，遲早會再漏。
   // ⚠ ✕ 呼叫的是「這個視窗原本就有的關閉函式」（底部取消鈕的 onclick），
   //   不是自己去拿掉 active——那樣會跳過各視窗的狀態清理（編輯中的 id、暫存的選取…）。
+  // ===== 金鑰欄位：遮罩 ＋ 一顆 👁（v16.51）=====
+  // 以前全站 24 個金鑰欄位只有 6 個遮起來，其餘（含 13 個 Supabase 同步金鑰、
+  // 旅遊那把會發給團友的）都是明碼攤在螢幕上——旁邊有人、或要截圖時就外洩了。
+  // ⚠ 不寫死 id 清單：判斷條件是「它自己就是 type=password」，
+  //   HTML 改一次這裡自動涵蓋，以後新增的金鑰欄位也自動有 👁（v11.1/v16.41「手寫清單一定會過期」）。
+  function upgradeKeyFields() {
+    let done = 0;
+    document.querySelectorAll('input[type="password"]').forEach(inp => {
+      if (inp.dataset.keyEye) return;
+      inp.dataset.keyEye = '1';
+      // 這些是 API 金鑰不是登入密碼，別讓密碼管理員插手把 JS 填的值蓋掉
+      inp.setAttribute('autocomplete', 'new-password');
+      inp.setAttribute('data-1p-ignore', '');
+      inp.setAttribute('data-lpignore', 'true');
+
+      // ⚠ syncMasterKey 本來就在一個 flex row 裡（旁邊已有「↓ 從現有模組帶入」）。
+      //   無條件再包一層會變巢狀 flex、版面歪掉 → 已經是 row 就直接用它。
+      const p = inp.parentNode;
+      let row;
+      if (/display\s*:\s*flex/.test(p.getAttribute('style') || '')) row = p;
+      else {
+        row = document.createElement('div');
+        row.setAttribute('style', 'display:flex; gap:6px; align-items:center;');
+        p.insertBefore(row, inp);
+        row.appendChild(inp);
+      }
+      inp.style.flex = '1';        // .form-input 有 width:100%，不設會把按鈕擠出去
+
+      const eye = document.createElement('button');
+      eye.type = 'button';          // 不寫 type，在 <form> 裡會變成送出鈕
+      eye.className = 'btn btn-sm';
+      eye.setAttribute('data-tap', '');   // 手機點擊面積（btn-sm 有 min-height 沒 min-width）
+      eye.title = '看一下這串金鑰（游標離開就自動遮回去）';
+      eye.textContent = '👁';
+      eye.onclick = () => {
+        const show = inp.type === 'password';
+        inp.type = show ? 'text' : 'password';
+        eye.textContent = show ? '🙈' : '👁';
+      };
+      row.appendChild(eye);
+      // 不留「一直亮著」的狀態：離開欄位就遮回去（視窗關掉再開也一樣是遮的）
+      inp.addEventListener('blur', () => {
+        if (inp.type !== 'password') { inp.type = 'password'; eye.textContent = '👁'; }
+      });
+      done++;
+    });
+    return done;
+  }
+
+  // 從剪貼簿貼進某個欄位。形狀照 pasteMultiConfigFromClipboard()：
+  // readText 被拒／不支援時退回 prompt()，不要報錯擋人。
+  async function pasteIntoKeyField(id) {
+    let text = '';
+    try { text = await navigator.clipboard.readText(); }
+    catch (e) { text = prompt('請貼上金鑰：') || ''; }
+    text = text.replace(/\s+/g, '').trim();   // 從郵件/LINE 複製常夾換行；金鑰本身不含空白
+    if (!text) { showToast('剪貼簿是空的'); return; }
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = text;
+    showToast('已貼上 · ' + keyFingerprint(text));
+  }
+
+  // 遮起來之後，「我到底貼了/帶入了哪一把」就只剩這個看得出來。
+  // 末 6 碼足以分辨兩把不同的金鑰，又不會把前綴洩出去。
+  function keyFingerprint(k) {
+    k = String(k || '').trim();
+    if (!k) return '（空的）';
+    return k.length + ' 字 · 末 6 碼 ' + k.slice(-6);
+  }
+
   function upgradeModalHeads() {
     let done = 0, fallback = 0;
     document.querySelectorAll('.modal-backdrop > .modal').forEach(box => {
@@ -39951,6 +40036,7 @@ ${daysBrief}${butlerPartyBlock()}
     return { done, fallback };
   }
   upgradeModalHeads();
+  upgradeKeyFields();
   wireRePreviewLive();
 
   initPWA();
