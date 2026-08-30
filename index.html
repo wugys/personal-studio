@@ -9413,7 +9413,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.56 · ЂЂ</div>
+    <div>v 16.57 · ЄЄ</div>
   </footer>
 </div>
 
@@ -12349,6 +12349,18 @@ alter publication supabase_realtime add table party_locations;</pre>
   // ⚠ 上限跟 max_tokens 綁：本機 7B 大約每秒 20~40 tokens，抓每 token 120ms 再給 60 秒底線。
   //   8000 tokens 的生成行程 → 16 分鐘；2500 tokens 的個股分析 → 5 分鐘。寧可寬鬆也不要誤殺。
   function aiTimeoutMs(max) { return Math.max(60000, (Number(max) || 2000) * 120); }
+
+  // 這次的 AI 有沒有「自己上網查」的能力？只有 Anthropic 官方那條路有（web_search 工具）。
+  // ⚠ v16.57：以前提示詞無條件寫「請搜尋並整合最新資料」，但走自架服務時工具會被丟掉——
+  //   等於**叫一個上不了網的模型去搜尋**。它不會說「我做不到」，它會照著模板把每一格填滿，
+  //   給你評分、催化劑、目標價，全部是編的而且格式完美（小模型對「我不知道」的抗拒更弱）。
+  //   而畫面上那句警語跟提示詞是打架的——**模型只讀提示詞**（v16.31「同一個畫面兩句話要能同時成立」）。
+  function aiCanSearch() { return !aiProviderOn(); }
+  const NO_SEARCH_NOTE = `【⚠ 你看得到的資料只有上面那些】
+你**沒有辦法上網**。你沒有新聞、沒有財報全文、沒有法說會、沒有分析師評級與目標價，
+也沒有今天的盤中價格；你的知識有截止日期，可能已經過時。
+**請不要假裝知道你沒看到的東西**——不要編造股價、財報數字、新聞事件或分析師評級。
+需要查證的，寫進最後一段叫我自己去查。`;
   let aiAbort = null;   // 讓「取消」按鈕中斷正在跑的那一次
   function aiCancel() { try { if (aiAbort) aiAbort.abort(); } catch (e) {} }
 
@@ -12398,7 +12410,9 @@ alter publication supabase_realtime add table party_locations;</pre>
       method: 'POST',
       headers: Object.assign({ 'Content-Type': 'application/json' },
         aiProvider.key ? { 'Authorization': 'Bearer ' + aiProvider.key } : {}),
-      body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs }), signal
+      // ⚠ temperature 0：本機小模型預設常是 0.8，拿 0.8 生「嚴格 JSON」（AI 生成行程要 JSON.parse）
+      //   幾乎一定會壞。這個參數對雲端那一路無害，對本機模型是關鍵。
+      body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs, temperature: 0 }), signal
     });
     if (!res.ok) throw new Error(`${aiName()} 回 ${res.status}：${(await res.text()).slice(0, 240)}`);
     const data = await res.json();
@@ -15147,12 +15161,15 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     if (isG) {
       if (!(await readKey(GEMINI_KEY_STORAGE))) { openGeminiKeyModal(); return; }
     } else {
-      if (!(await readKey(AI_KEY_STORAGE))) { showToast('尚未設定 Anthropic API Key（可到「投資翻倍」設定）'); return; }
+      // ⚠ 這是第六個「只認 Anthropic 金鑰」的早退守衛（v16.55 修了美股那顆，這顆漏了——
+      //   又是「修好這一個、沒問還有誰」。顧問工作流抓到的）
+      if (!(await aiReady())) { showToast('尚未設定 AI（首頁「🤖 AI 服務設定」，或到「投資翻倍」填 Anthropic 金鑰）'); return; }
     }
     const origLabel = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 15-40 秒）'; }
+    if (btn) { btn.disabled = true; btn.textContent = '分析中…'; }
     out.style.display = 'block';
-    out.innerHTML = `<div style="color:var(--ink-tertiary);">${isG ? 'Gemini' : 'Claude'} 正在分析…</div>`;
+    const who2 = isG ? 'Gemini' : (aiProviderOn() ? aiName() : 'Claude');
+    out.innerHTML = `<div style="color:var(--ink-tertiary);">${escape(who2)} 正在分析…${(!isG && aiProviderOn()) ? '（本機模型可能要好幾分鐘，請耐心等）' : ''}</div>`;
     try {
       const text = isG ? await callGeminiWithSearch(tvChartPrompt) : await callClaudeWithWebSearch(tvChartPrompt);
       out.innerHTML = usMdLite(text);
@@ -16025,13 +16042,13 @@ CREATE POLICY "Allow all" ON us_transactions FOR ALL USING (true) WITH CHECK (tr
     const stratLine = (strat && strat.focus) ? `\n**分析策略：${strat.name}** — ${strat.focus}\n` : '';
     return `請對美股 ${symbol}（${name || ''}）做一份完整的個股盡職調查與分析（今天 ${today}）。${stratLine}
 ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字）：\n' + snapshot + '\n' : ''}
-請搜尋並整合最新資料：
+${aiCanSearch() ? `請搜尋並整合最新資料：
 1. 最新股價、日/週/月漲跌、52 週高低
 2. 估值：本益比 P/E、預估 P/E、PEG、股價淨值比、殖利率
 3. 基本面：營收與 EPS 成長、毛利率、ROE、自由現金流、負債狀況
 4. 近期財報與重大新聞、法說會重點
 5. 分析師評級與目標價區間
-6. 同業與競爭態勢
+6. 同業與競爭態勢` : NO_SEARCH_NOTE}
 
 請以下列結構回答（繁體中文）：
 
@@ -36981,14 +36998,14 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     const today = todayISO();
     return `請對台股 ${symbol} ${name} 做技術分析（今天日期 ${today}）。
 
-請搜尋並整合：
+${aiCanSearch() ? `請搜尋並整合：
 1. 最新收盤價、5/10/20/60 日均線、成交量
 2. KD、RSI、MACD 技術指標
 3. 三大法人（外資、投信、自營商）近期買賣超
 4. 近期新聞與題材
 5. 籌碼面（融資融券、大戶持股變化）
 
-來源優先採用：${TW_NEWS_SOURCES}。
+來源優先採用：${TW_NEWS_SOURCES}。` : NO_SEARCH_NOTE}
 
 請以下列結構回答（繁體中文）：
 
