@@ -7722,12 +7722,19 @@
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('rebound')">🔄 超跌反彈</button>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('value')">💎 便宜又會賺</button>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('income')">🏦 存股收息</button>
+        <button class="btn btn-sm" type="button" id="usScanPresetChips" style="display:none;" onclick="applyUsScanPreset('chips')">🏛 法人在買</button>
         <button class="btn btn-sm" type="button" onclick="applyUsScanPreset('none')">✕ 全部取消</button>
       </div>
       <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:10px;">
         <input type="checkbox" id="usScanUseFund" onchange="onUsScanFundToggle()" style="margin-top:3px;">
         <span>同時檢查<strong>基本面</strong>（本益比、ROE、股價淨值比、殖利率）
           <span id="usScanFundNote" style="display:block; font-size:11px; color:var(--ink-tertiary); margin-top:2px;"></span>
+        </span>
+      </label>
+      <label id="usScanChipRow" style="display:none; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--ink-secondary); line-height:1.6; margin-bottom:10px;">
+        <input type="checkbox" id="usScanUseChips" onchange="onUsScanChipToggle()" style="margin-top:3px;">
+        <span>同時看<strong>籌碼</strong>（法人買賣超、當沖比、處置股）
+          <span id="usScanChipNote" style="display:block; font-size:11px; color:var(--ink-tertiary); margin-top:2px;"></span>
         </span>
       </label>
       <div id="usScanConds" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:2px 16px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:10px 14px; margin-bottom:14px; max-height:28vh; overflow-y:auto;"></div>
@@ -9480,7 +9487,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.71 · ДД</div>
+    <div>v 16.72 · ЕЕ</div>
   </footer>
 </div>
 
@@ -32019,6 +32026,16 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       + (t.short ? `另有 ${t.short.toLocaleString('en-US')} 檔日 K 不到 ${RS_MIN_BARS} 根，算不出 RS（不是「表現差」，是沒有算）。` : '');
   }
 
+  // 台股籌碼的參數。⚠ 一定要宣告在 US_SCAN_CHIP_CONDS **之前**——
+  //   那份清單的 name/hint 是樣板字串，會在載入時就求值，const 還在 TDZ 裡會整份腳本當場死掉（v15.1）。
+  const CHIPS_DAYS = 5;            // 近 5 個交易日（所以「連買天數」也只看得到這麼多）
+  const CHIPS_STREAK_NEED = 3;     // 「連買」要幾天才算
+  const CHIPS_DT_HIGH = 40;        // 當沖比 ≥ 40% → 標旗標
+  const CHIPS_DT_LOW = 30;         // 「當沖比不高」條件的門檻
+  const CHIPS_MAX_BACK = 12;       // 往回找交易日最多試幾天（春節休市 9 天，留餘裕）
+  let scanChipsInfo = null;        // 這一輪掃描用的那一份（兩個 renderer 與 AI 提示詞共用）
+  let scanUseChips = false;        // 預設關：要連網，而且只有台股有
+
   const US_SCAN_CONDS = [
     { key: 'golden',     name: '出現黃金交叉',   hint: '短期均線剛穿過長期均線，通常代表轉強的起點',       test: c => !!(c.sig.cross && c.sig.cross.type === 'golden') },
     { key: 'bull_stack', name: '多頭排列',       hint: '5日>20日>60日均線，三條線由上往下排好，趨勢明確向上', test: c => !!(c.sig.ma5 && c.sig.ma20 && c.sig.ma60 && c.sig.ma5 > c.sig.ma20 && c.sig.ma20 > c.sig.ma60) },
@@ -32086,8 +32103,34 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'f_pb',      name: '股價淨值比 < 3', fund: true, hint: '公司資產值 1 塊，你付不到 3 塊',              test: c => !!(c.fund && c.fund.pb > 0 && c.fund.pb < 3) },
     { key: 'f_div',     name: '殖利率 ≥ 3%',    fund: true, hint: '有在配息，存股族會看這個',                    test: c => !!(c.fund && c.fund.dy >= 3) }
   ];
-  const usScanAllConds = () => usScanUseFund ? US_SCAN_CONDS.concat(US_SCAN_FUND_CONDS) : US_SCAN_CONDS;
-  const usScanCondByKey = k => US_SCAN_CONDS.concat(US_SCAN_FUND_CONDS).find(c => c.key === k);
+  // 台股籌碼條件（v16.72）：要勾「同時看籌碼」而且要在台股才會出現。
+  // ⚠ 全部標 needChips → 上櫃／興櫃／沒抓到時是「**算不出來**」不是「不符合」。
+  // ⚠ 每一條的說明都要自己講出它的盲點——這一區最容易被讀成「跟著法人買」。
+  const US_SCAN_CHIP_CONDS = [
+    { key: 'chip_fg_buy', name: `外資連買 ${CHIPS_STREAK_NEED} 天`, chip: true, needChips: true,
+      hint: `外資（含外資自營商）最近 ${CHIPS_STREAK_NEED} 個交易日都是買超。⚠ 只看得到 5 天；而且外資買超常常是被動的（指數調整、ETF 申贖），**不一定代表看好這家公司**`,
+      test: c => { const k = scanChipOf(c); return !!k && k.fgStreak >= CHIPS_STREAK_NEED; } },
+    { key: 'chip_it_buy', name: `投信連買 ${CHIPS_STREAK_NEED} 天`, chip: true, needChips: true,
+      hint: `投信（國內基金）最近 ${CHIPS_STREAK_NEED} 個交易日都是買超。投信部位小，同樣張數對股價推力比較大；⚠ 但它們有**季底作帳**的買賣，季末那幾天的訊號要打折`,
+      test: c => { const k = scanChipOf(c); return !!k && k.itStreak >= CHIPS_STREAK_NEED; } },
+    { key: 'chip_inst5', name: '近 5 日法人買超', chip: true, needChips: true,
+      hint: '三大法人（外資、投信、自營商）最近 5 個交易日合計是買超。⚠ 合計會互相抵銷——外資大買、投信大賣，也可能算出一個小小的買超',
+      test: c => { const k = scanChipOf(c); return !!k && k.all5 > 0; } },
+    { key: 'chip_dt_low', name: `當沖比不高（< ${CHIPS_DT_LOW}%）`, chip: true, needChips: true,
+      // 這一條有自己的「算不出來」：分母（當日成交量）拿不到時不可以說「當沖 0%」
+      na: c => { const k = scanChipOf(c); return !k || k.dtPct == null; },
+      hint: `當天的成交量裡，當沖（同一天買進又賣出）佔不到 ${CHIPS_DT_LOW}%。⚠ 當沖比高**不等於不好**，只是那個量是來回沖出來的，不代表有人真的想長期持有`,
+      test: c => { const k = scanChipOf(c); return !!k && k.dtPct != null && k.dtPct < CHIPS_DT_LOW; } }
+  ];
+  // 籌碼條件只在「台股 ＋ 有開籌碼」時才出現（美股完全沒有這份資料）
+  const usScanChipOn = () => scanUseChips && usScanMarket === 'tw';
+  const usScanAllConds = () => {
+    let list = US_SCAN_CONDS;
+    if (usScanUseFund) list = list.concat(US_SCAN_FUND_CONDS);
+    if (usScanChipOn()) list = list.concat(US_SCAN_CHIP_CONDS);
+    return list;
+  };
+  const usScanCondByKey = k => US_SCAN_CONDS.concat(US_SCAN_FUND_CONDS, US_SCAN_CHIP_CONDS).find(c => c.key === k);
 
   // ============================================================
   // 策略模式：一次勾**好幾種策略**，看哪支股票同時符合幾種
@@ -32176,6 +32219,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     value:    ['f_profit', 'f_pe_low', 'f_roe', 'above_ma60', 'kd_turn', 'not_hot'],
     // 存股：有配息、不貴、趨勢沒壞
     income:   ['f_div', 'f_pe_ok', 'f_pb', 'above_ma60', 'not_hot'],
+    // 台股籌碼（v16.72）：投信連買、近 5 日法人合計買超，而且趨勢沒壞、短線還沒過熱。
+    // ⚠ 這一組只在台股 ＋ 有開籌碼時才看得到按鈕；它不是「跟著法人買」的意思，
+    //   兩條技術條件是刻意留著的——只看籌碼會買在已經衝很高的地方。
+    chips:    ['chip_it_buy', 'chip_inst5', 'above_ma60', 'not_hot'],
     none: []
   };
 
@@ -32370,6 +32417,237 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       </div>`;
   }
 
+  // ============================================================
+  // 台股籌碼（v16.72）：法人買賣超 · 當沖比 · 處置股
+  //
+  // 為什麼值得做：這三樣是台股看盤最先看的，而且**全市場一天一個請求就拿得到**，
+  //   證交所官方、免金鑰、有 CORS，完全不吃 FinMind 的每小時額度。
+  //
+  // 🔴 五條界線，缺一條就會出事：
+  //  ① **只有上市**。實測 2026-08-28：T86 回 1,329 檔**全部是上市**，
+  //     上櫃 1,135 檔出現 **0 檔**。櫃買中心的 openapi **沒有 CORS 標頭**
+  //     （實測 access-control-allow-origin 這個標頭根本不存在），瀏覽器直接抓一定被擋。
+  //     → 上櫃／興櫃一律回 `na`（算不出來），**而且抬頭要點名幾檔**。
+  //       寫成「不符合」的話讀起來像「法人沒買它」，而真相是「這份資料裡根本沒有它」。
+  //  ② 🔴 **「沒出現在名單裡」有兩種意思，而資料上長得一模一樣**：
+  //     上市股沒出現 ＝ 當天法人真的沒買賣（＝0，實測那天有 293 檔）；
+  //     上櫃股沒出現 ＝ 這份資料根本沒有它。
+  //     **只能靠 board 分辨，board 不知道時一律 na**（猜不到寧可不顯示，v16.11）。
+  //  ③ **要連網**。所以掛在一個預設關閉的開關後面——「本機已累積的全部」那個範圍
+  //     承諾「一次網路都不打」（v16.42，那支測試會毒化 fetch 驗計數器維持 0），
+  //     勾了就不成立，**畫面上要自己把這件事講出來**。
+  //  ④ 當沖要用**舊路徑** `/exchangeReport/TWTB4U`；新的 `/rwd/zh/afterTrading/TWTB4U` 是 404。
+  //  ⑤ **當沖比的分子與分母一定要是同一天**。T86 是收盤後才發布的，
+  //     盤中 STOCK_DAY_ALL 可能已經是今天、而 T86 還停在昨天——對不上就不給數字。
+  //
+  // ⚠ 這一整區只描述「誰買了幾張」，**不下任何買賣結論**：
+  //   法人也常看錯，而且他們的成本、期限、目的跟散戶完全不同（v16.47 同一條）。
+  // ============================================================
+  const chipNum = s => { const v = Number(String(s == null ? '' : s).replace(/[, ]/g, '')); return isFinite(v) ? v : 0; };
+  const chipYmd = d => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const chipLots = n => n / 1000;  // 股 → 張（台股慣例；顯示一律用張）
+  // 民國 1150828 → 20260828。位數不對就回空字串，不硬湊。
+  const chipRocToYmd = s => {
+    const t = String(s == null ? '' : s).replace(/[^0-9]/g, '');
+    return t.length === 7 ? String(Number(t.slice(0, 3)) + 1911) + t.slice(3) : '';
+  };
+  const chipYmdDash = s => {
+    const t = String(s == null ? '' : s).replace(/[^0-9]/g, '');
+    return t.length === 8 ? `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6)}` : String(s || '');
+  };
+
+  // 三大法人買賣超日報。休市日回 null（stat 不是 OK），**這不是失敗**，往前一天再找。
+  async function chipsFetchT86(ymd) {
+    const r = await fetch(`https://www.twse.com.tw/rwd/zh/fund/T86?date=${ymd}&selectType=ALLBUT0999&response=json`);
+    if (!r.ok) throw new Error(`證交所法人買賣超回 HTTP ${r.status}`);
+    const j = await r.json();
+    if (!j || j.stat !== 'OK' || !Array.isArray(j.data)) return null;   // 休市／還沒發布
+    const map = {};
+    j.data.forEach(row => {
+      const sym = String(row[0] == null ? '' : row[0]).trim();
+      if (!sym) return;
+      map[sym] = {
+        // 外資合計＝外陸資（不含外資自營商）＋ 外資自營商，跟 v16.47 單檔那邊同一個口徑
+        fg: chipNum(row[4]) + chipNum(row[7]),
+        it: chipNum(row[10]),    // 投信
+        dl: chipNum(row[11]),    // 自營商合計（自行買賣 ＋ 避險）
+        all: chipNum(row[18])    // 三大法人合計
+      };
+    });
+    return { date: String(j.date || ymd), map };
+  }
+
+  // 當沖成交股數。⚠ 舊路徑，新的 /rwd/zh/afterTrading/ 是 404（實測）。
+  async function chipsFetchDayTrade(ymd) {
+    const r = await fetch(`https://www.twse.com.tw/exchangeReport/TWTB4U?date=${ymd}&selectType=All&response=json`);
+    if (!r.ok) throw new Error(`證交所當沖回 HTTP ${r.status}`);
+    const j = await r.json();
+    const tb = j && Array.isArray(j.tables) ? j.tables[1] : null;   // [0] 是全市場統計，[1] 才是逐檔
+    if (!j || j.stat !== 'OK' || !tb || !Array.isArray(tb.data)) return null;
+    const map = {};
+    tb.data.forEach(row => {
+      const sym = String(row[0] == null ? '' : row[0]).trim();
+      if (sym) map[sym] = chipNum(row[3]);   // 當日沖銷交易成交股數
+    });
+    return { date: String(j.date || ymd), map };
+  }
+
+  // 當日全市場成交股數（當沖比的分母）。⚠ 這一支回的是 CSV 不是 JSON，
+  //   而且 date 參數無效——它永遠給「最新那一天」，所以日期要從內容自己讀出來比對。
+  async function chipsFetchVolume() {
+    const r = await fetch('https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json');
+    if (!r.ok) throw new Error(`證交所收盤行情回 HTTP ${r.status}`);
+    const txt = await r.text();
+    const lines = String(txt).split('\n');
+    const map = {}; let date = '';
+    for (let i = 1; i < lines.length; i++) {
+      const cells = (lines[i].match(/"([^"]*)"/g) || []).map(s => s.slice(1, -1).trim());
+      if (cells.length < 4) continue;
+      if (!date) date = chipRocToYmd(cells[0]);
+      if (cells[1]) map[cells[1]] = chipNum(cells[3]);
+    }
+    return date ? { date, map } : null;
+  }
+
+  // 處置股（現在正在處置中的）。一個請求就是全部，不分日期。
+  async function chipsFetchPunish() {
+    const r = await fetch('https://www.twse.com.tw/rwd/zh/announcement/punish?response=json');
+    if (!r.ok) throw new Error(`證交所處置股回 HTTP ${r.status}`);
+    const j = await r.json();
+    if (!j || j.stat !== 'OK' || !Array.isArray(j.data)) return null;
+    const map = {};
+    j.data.forEach(row => {
+      const sym = String(row[2] == null ? '' : row[2]).trim();
+      if (!sym) return;
+      map[sym] = { why: String(row[5] || '').trim(), period: String(row[6] || '').trim() };
+    });
+    return { map, n: j.data.length };
+  }
+
+  // 整批建立。回傳的東西一定有 `why` 或 `chips` 其中一個，呼叫端靠它分辨。
+  async function scanChipsBuild() {
+    const days = [];
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    let tries = 0;
+    while (days.length < CHIPS_DAYS && tries < CHIPS_MAX_BACK) {
+      tries++;
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) {          // 週末先跳過（免費的，不用打）
+        const one = await chipsFetchT86(chipYmd(d));
+        if (one) days.push(one);             // null ＝ 休市，繼續往前
+      }
+      d.setDate(d.getDate() - 1);
+    }
+    if (!days.length) return { why: 'nodata', msg: `往前找了 ${tries} 天都沒有法人買賣超資料` };
+
+    const latest = days[0];                  // days[0] 最新（我們是往回走的）
+    // 當沖比：分子分母都要拿到、而且**要是同一天**，否則不給數字
+    let dtOk = false, dtDate = '', dtMap = null, volMap = null, dtWhy = '';
+    try {
+      const [dt, vol] = await Promise.all([chipsFetchDayTrade(latest.date), chipsFetchVolume()]);
+      if (!dt || !vol) dtWhy = '證交所沒有回當沖或收盤行情';
+      else if (dt.date !== vol.date) dtWhy = `當沖是 ${chipYmdDash(dt.date)} 的、成交量是 ${chipYmdDash(vol.date)} 的，不是同一天`;
+      else { dtOk = true; dtDate = dt.date; dtMap = dt.map; volMap = vol.map; }
+    } catch (e) { dtWhy = (e && e.message) || '抓當沖時出錯'; }
+
+    let punish = null, punishWhy = '';
+    try { punish = await chipsFetchPunish(); if (!punish) punishWhy = '證交所沒有回處置股名單'; }
+    catch (e) { punishWhy = (e && e.message) || '抓處置股時出錯'; }
+
+    const syms = new Set();
+    days.forEach(day => Object.keys(day.map).forEach(s => syms.add(s)));
+    if (dtMap) Object.keys(dtMap).forEach(s => syms.add(s));
+    if (punish) Object.keys(punish.map).forEach(s => syms.add(s));
+
+    const chips = {};
+    syms.forEach(s => {
+      let fg5 = 0, it5 = 0, all5 = 0, fgStreak = 0, itStreak = 0, fgEnd = false, itEnd = false;
+      days.forEach(day => {
+        // ⚠ 上市股沒出現在名單裡 ＝ 當天法人沒買賣（0），不是「沒資料」。
+        //   會走到這裡的一定是上市（上櫃在 scanChipOf 就先擋掉了）。
+        const v = day.map[s] || { fg: 0, it: 0, dl: 0, all: 0 };
+        fg5 += v.fg; it5 += v.it; all5 += v.all;
+        if (!fgEnd) { if (v.fg > 0) fgStreak++; else fgEnd = true; }
+        if (!itEnd) { if (v.it > 0) itStreak++; else itEnd = true; }
+      });
+      const tot = volMap ? volMap[s] : null;
+      chips[s] = {
+        fg5, it5, all5, fgStreak, itStreak,
+        d1: latest.map[s] || null,
+        // 分母是 0（那天沒成交）就算不出來 → null，不要寫成 0%
+        dtPct: (dtOk && tot > 0 && dtMap[s] != null) ? (dtMap[s] / tot * 100)
+             : (dtOk && tot > 0) ? 0        // 有成交但不在當沖名單 ＝ 那天沒有人當沖它
+             : null,
+        punish: punish ? (punish.map[s] || null) : null
+      };
+    });
+
+    return {
+      chips, days: days.length, dates: days.map(x => x.date),
+      base: latest.date, at: Date.now(),
+      dtOk, dtDate, dtWhy, punishOk: !!punish, punishWhy,
+      punishN: punish ? punish.n : 0
+    };
+  }
+
+  // 🔴 三種結果，不是兩種：
+  //   有資料 ／ 這一檔不在這份資料裡（上櫃、興櫃、板別不明）→ null ＝ 算不出來 ／ 整批沒抓到 → null
+  function scanChipOf(c) {
+    const info = scanChipsInfo;
+    if (!info || info.why || !info.chips) return null;
+    if (!c || c.market !== 'tw') return null;
+    if (c.board !== 'TWSE') return null;        // 上櫃 TPEx／興櫃／空字串一律算不出來
+    // 上市股不在名單裡 ＝ 這 5 天法人一張都沒買賣，那是**真的資料**不是缺資料
+    return info.chips[c.symbol] || { fg5: 0, it5: 0, all5: 0, fgStreak: 0, itStreak: 0, d1: null, dtPct: null, punish: null };
+  }
+
+  // 一句話，畫面與 AI 提示詞**逐字共用**（v16.63「顯示 ≠ 使用」）。
+  function scanChipsText() {
+    const k = scanChipsInfo;
+    if (!k) return '';
+    if (k.why) return `⚠ 這次沒有抓到台股籌碼（${k.msg || '證交所沒有回資料'}），`
+      + `**籌碼那幾條沒有生效**——那幾條顯示「算不出來」，不是「這些股票不符合」。`;
+    const dt = k.dtOk
+      ? `當沖比是 ${chipYmdDash(k.dtDate)} 的。`
+      : `⚠ 這次沒有當沖比（${k.dtWhy || '沒拿到'}），那一條算不出來。`;
+    const pn = k.punishOk
+      ? (k.punishN ? `證交所現在公告 ${k.punishN} 檔處置股，名單裡有的會標出來。` : '證交所現在沒有公告任何處置股。')
+      : `⚠ 這次沒有拿到處置股名單（${k.punishWhy || '沒拿到'}），所以**沒有標「處置中」不代表它不在處置中**。`;
+    return `台股籌碼：法人買賣超取最近 ${k.days} 個交易日（${chipYmdDash(k.dates[k.dates.length - 1])} ~ ${chipYmdDash(k.base)}）。${dt}${pn}`
+      + `🔴 只有**上市**有這份資料——上櫃與興櫃證交所不提供，瀏覽器也抓不到櫃買中心的，`
+      + `所以那些股票的籌碼條件是「**算不出來**」，不是「不符合」。`
+      + `⚠ 法人買超**不等於**會漲：他們的成本、期限、目的跟你都不一樣，而且他們也常看錯。`;
+  }
+  function scanChipsHeadHtml() {
+    const k = scanChipsInfo;
+    if (!k) return '';
+    // 點名：這一輪掃到的股票裡，有幾檔根本沒有籌碼資料可看（v16.63 那條）
+    const off = usScanRows.filter(c => c && c.market === 'tw' && c.board !== 'TWSE');
+    const byB = {};
+    off.forEach(c => { const b = c.board === 'TPEx' ? '上櫃' : c.board === '興櫃' ? '興櫃' : '板別查不到'; (byB[b] = byB[b] || []).push(c.symbol); });
+    const names = Object.keys(byB).map(b => `${b} ${byB[b].length} 檔`).join('、');
+    const color = k.why ? 'var(--danger)' : 'var(--accent)';
+    const txt = escape(scanChipsText()).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    return `<div style="margin-top:8px; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid ${color}; border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.75;">
+        ${txt}${off.length ? `<div style="margin-top:4px; color:var(--ink-tertiary);">這一輪掃到的裡面有 <strong>${off.length}</strong> 檔看不到籌碼（${escape(names)}），它們的籌碼條件全部顯示「算不出來」。</div>` : ''}
+      </div>`;
+  }
+  // 卡片上那一行（兩個 renderer 與 AI 共用）
+  function scanChipLine(c) {
+    const k = scanChipOf(c);
+    if (!k) return '';
+    const lot = v => `${v >= 0 ? '+' : ''}${Math.round(chipLots(v)).toLocaleString('en-US')} 張`;
+    // ⚠ 天數要用**真的抓到幾天**，不可以寫死 5。遇到連假只抓到 3 天時，
+    //   寫「近 5 日」就是在說假話（而且畫面上完全看不出來）。
+    const nd = (scanChipsInfo && scanChipsInfo.days) || CHIPS_DAYS;
+    // 連買天數頂到上限時要講「只看得到這麼多」——它可能已經連買 10 天了
+    const streak = (n, who) => n >= 2 ? `${who}連買 ${n} 天${n >= nd ? `（只看得到 ${nd} 天，可能更久）` : ''}` : '';
+    const st = [streak(k.fgStreak, '外資'), streak(k.itStreak, '投信')].filter(Boolean).join('、');
+    return `近 ${nd} 日：外資 ${lot(k.fg5)}、投信 ${lot(k.it5)}、三大法人 ${lot(k.all5)}`
+      + (st ? `　${st}` : '')
+      + (k.dtPct != null ? `　當沖 ${k.dtPct.toFixed(0)}%` : '');
+  }
+
   function scanTriedN() { return usScanRows.length + scanSkippedN; }
   function scanSkipNote() {
     if (!scanSkippedN) return '';
@@ -32440,6 +32718,19 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       out.push({ key: 'split', label: '可能有分割或減資', neutral: true,
                  why: `${c.splitAt} 那天的價格跳了超過 40%，多半是分割或減資 —— **本機資料沒有還原它**，所以年線、一年高低這些長天期數字不要信` });
     }
+    // ── v16.72 台股籌碼旗標 ────────────────────────────────
+    // ⚠ 兩個都是**事實陳述**，不是買賣建議：
+    //   處置＝這檔現在很難買賣（對持股同樣要緊，所以不加 !held）；
+    //   當沖比高＝那個量是來回沖出來的，不代表有人真的想長期持有。
+    const kp = scanChipOf(c);
+    if (kp && kp.punish) {
+      out.push({ key: 'punish', label: '處置中',
+        why: `證交所公告處置（${kp.punish.why}${kp.punish.period ? '，' + kp.punish.period : ''}）——處置期間**約每 2 分鐘才撮合一次**，下單還要先付全額。買賣都會很不順，停損可能來不及執行` });
+    }
+    if (kp && kp.dtPct != null && kp.dtPct >= CHIPS_DT_HIGH) {
+      out.push({ key: 'daytrade', label: '當沖佔比高', neutral: true,
+        why: `最近一個交易日的成交量有 ${kp.dtPct.toFixed(0)}% 是當沖（同一天買進又賣出）——**那個量不代表有人真的想長期持有**，明天可能就縮掉` });
+    }
     const cr = c.sig && c.sig.cross;
     if (cr && cr.type === 'golden' && cr.daysAgo >= SCAN_STALE_CROSS_DAYS) {
       out.push(held
@@ -32476,7 +32767,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
         <span style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${inner}</span>
         ${scanAiBtnHtml()}
-      </div>` + scanRegimeHtml() + scanRsHeadHtml() + scanSkipNote();
+      </div>` + scanRegimeHtml() + scanRsHeadHtml() + scanChipsHeadHtml() + scanSkipNote();
   }
   // 台股清單有重複（2308/3661/6669… 出現兩次），一律去重
   function twScanList() {
@@ -32543,7 +32834,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       loadAlog().then(() => { try { renderUsScanResults(); } catch (e) {} }).catch(() => {});
     }
     const m = market === 'tw' ? 'tw' : 'us';
-    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; usScanBlocked = null; usScanScored = null; }   // 換市場先清結果，避免混在一起
+    // 換市場先清結果，避免混在一起。⚠ 籌碼是台股專屬的，跟著一起清——
+    //   留著的話，切到美股再切回來時抬頭會顯示上一輪的日期（看起來像剛抓的）
+    if (m !== usScanMarket) { usScanMarket = m; usScanRows = []; usScanBlocked = null; usScanScored = null; scanChipsInfo = null; }
     const lab = document.getElementById('usScanMarketLabel');
     if (lab) lab.textContent = m === 'tw' ? '台股短線' : '美股短線';
     const src = document.getElementById('usScanSourceLabel');
@@ -32599,6 +32892,36 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             ? '美股走 Finnhub，免費層每分鐘 60 次 → 系統會自動放慢到約 <strong>1 秒/檔</strong>（42 檔約多花 45 秒）。'
             : '⚠ 美股基本面需要 Finnhub 金鑰，請先到工具列「🔑 金鑰」設定。<strong>沒設定的話勾了也抓不到。</strong>');
     }
+    renderUsScanChipRow();
+  }
+  // 籌碼那一列：只有台股才出現（美股沒有這份資料，畫出來只會讓人以為忘了做）
+  function renderUsScanChipRow() {
+    const row = document.getElementById('usScanChipRow');
+    const btn = document.getElementById('usScanPresetChips');
+    const tw = usScanMarket === 'tw';
+    if (row) row.style.display = tw ? 'flex' : 'none';
+    if (btn) btn.style.display = (tw && scanUseChips) ? '' : 'none';
+    const cb = document.getElementById('usScanUseChips');
+    if (cb) cb.checked = scanUseChips;
+    const note = document.getElementById('usScanChipNote');
+    // ⚠ 三件事一定要在勾下去**之前**就講：只有上市、要連網、以及它會打破「不連網」那個承諾
+    if (note) note.innerHTML = '證交所官方資料，免金鑰、沒有次數上限。'
+      + '🔴 <strong>只有上市有</strong>——上櫃與興櫃證交所不提供，那些股票的籌碼條件會顯示「算不出來」，不是「不符合」。'
+      + '<br>⚠ 勾了會<strong>連網抓約 1 MB</strong>（8 個檔案，約 2 秒）。'
+      + '所以掃「本機已累積的全部」時，<strong>「完全不連網」那句話就不成立了</strong>——股價本身仍然只讀本機，多出來的只有這 8 個籌碼檔案。';
+  }
+  function onUsScanChipToggle() {
+    scanUseChips = !!document.getElementById('usScanUseChips').checked;
+    if (!scanUseChips) {
+      // 關掉籌碼 → 把已勾的籌碼條件一起拿掉，不然它們會永遠顯示「算不出來」
+      const keys = US_SCAN_CHIP_CONDS.map(c => c.key);
+      usScanPicked = usScanPicked.filter(k => !keys.includes(k));
+      scanChipsInfo = null;
+    }
+    renderUsScanConds();
+    // 範圍說明裡那句「完全不連網」會因為這個勾而改變，要立刻重畫
+    try { renderUsScanScopeHint(document.getElementById('usScanScope').value); } catch (e) {}
+    renderUsScanResults();
   }
   // ===== 策略模式 UI =====
   function setUsScanMode(m) {
@@ -32679,6 +33002,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     // 套用到含基本面的組合時，自動把基本面開關打開，否則那些條件根本不會出現
     const fundKeys = US_SCAN_FUND_CONDS.map(c => c.key);
     if (usScanPicked.some(x => fundKeys.includes(x))) usScanUseFund = true;
+    // 籌碼同理：套到含籌碼的組合就自動把籌碼打開，否則那些條件根本不會出現在清單裡
+    const chipKeys = US_SCAN_CHIP_CONDS.map(c => c.key);
+    if (usScanPicked.some(x => chipKeys.includes(x))) scanUseChips = true;
     renderUsScanConds();
     renderUsScanResults();
   }
@@ -32720,7 +33046,12 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const why = (v === 'cap100' || v === 'cap250')
       ? '<br><span style="color:var(--ink-muted);">※ 想掃更多請用「本機已累積的全部」——先把日 K 抓下來存著，之後掃描完全不連網、也不吃額度。</span>'
       : '';
-    el.innerHTML = tip ? tip + why : '';
+    // 🔴 勾了籌碼之後，「完全不連網」那句話就不成立了——不補這一句就是畫面在說假話（v16.65 同一條）。
+    const chipWarn = (usScanChipOn() && /_local$/.test(v))
+      ? '<br><span style="color:var(--accent-warm);">※ 你勾了「同時看籌碼」，所以這一輪<strong>不是完全不連網</strong>：'
+        + '股價還是只讀本機，但會另外去證交所抓 8 個籌碼檔案（約 1 MB、約 2 秒）。</span>'
+      : '';
+    el.innerHTML = tip ? tip + why + chipWarn : '';
   }
   function clearUsScanCache() {
     usScanCache = {}; usScanRows = []; usScanBlocked = null;
@@ -32926,9 +33257,21 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }
     usScanRunning = true;
     scanSkipped = []; scanSkippedN = 0;   // 每次掃描重來（不然上一輪的會一直累積）
+    // ⚠ 按鈕狀態要在**抓籌碼之前**就換掉。籌碼要連網約 2 秒，
+    //   那段時間按鈕如果還寫「開始掃描」，再按一次會被 usScanRunning 靜靜擋掉，
+    //   使用者看到的是「按了沒反應」（v16.19 同一種症狀）。
+    const runBtn0 = document.getElementById('usScanRunBtn');
+    if (runBtn0) { runBtn0.disabled = true; runBtn0.textContent = usScanChipOn() ? '抓籌碼資料…' : '掃描中…'; }
     // 大盤濾網：⚠ 只讀本機，**絕對不連網**（「本機已累積的全部」承諾一次網路都不打，v16.42）
     try { scanRegimeInfo = await scanRegime(usScanMarket); } catch (e) { scanRegimeInfo = null; }
     try { await scanRsLoad(usScanMarket); } catch (e) {}   // 有排名表就用，沒有就是「算不出來」
+    // 台股籌碼（v16.72）：⚠ 這一段**會連網**，所以只有使用者自己勾了才跑。
+    //   抓不到不可以讓籌碼條件變成「不符合」——留下 why，畫面與 AI 都會說「算不出來」。
+    scanChipsInfo = null;
+    if (usScanChipOn()) {
+      try { scanChipsInfo = await scanChipsBuild(); }
+      catch (e) { scanChipsInfo = { why: 'fail', msg: (e && e.message) || '連不到證交所' }; }
+    }
     usScanBlocked = null;
     // 「本機已累積的全部」＝ 離線掃描；其他範圍照舊會連網補
     scanLocalOnly = /^(us|tw)_local$/.test(document.getElementById('usScanScope').value || '');
@@ -33089,6 +33432,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (need > 0 && (Number(ctx && ctx.nBars) || 0) < need) return 'na';
     // ⚠ 還沒算過全市場排名表 → 「算不出來」，不是「這一檔不夠強」
     if (c && c.needRs && (ctx && ctx.rs) == null) return 'na';
+    // ⚠ 台股籌碼：沒開籌碼、抓不到、或這一檔是上櫃／興櫃 → 「算不出來」，不是「法人沒買它」
+    if (c && c.needChips && scanChipOf(ctx) == null) return 'na';
+    // 逐條自己說「我這一檔算不出來」（例如當沖比拿不到分母時）
+    if (c && typeof c.na === 'function') { try { if (c.na(ctx)) return 'na'; } catch (e) { return 'na'; } }
     try { return c.test(ctx) ? 'pass' : 'fail'; } catch (e) { return 'na'; }
   }
   function usScanEvaluate(ctx) {
@@ -33139,13 +33486,19 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 　相對強弱 RS ${c.rs}／99（贏過市場上 ${c.rs}% 的股票）` : '';
     const rf = scanRiskFlags(c);
     const riskLine = rf.length ? `\n　⚠ 風險：${rf.map(x => x.label + '（' + x.why + '）').join('；')}` : '';
+    // 籌碼：跟卡片吃同一支 scanChipLine（算兩份一定會分岔）。
+    // ⚠ 有開籌碼、但這一檔是上櫃／興櫃時要**明講看不到**，不要留白讓 AI 自己想像（v16.43）
+    const chipLine = scanChipsInfo && !scanChipsInfo.why && c.market === 'tw'
+      ? (scanChipLine(c) ? `\n　籌碼：${scanChipLine(c)}`
+                         : `\n　籌碼：這一檔看不到（${c.board === 'TPEx' ? '上櫃' : c.board === '興櫃' ? '興櫃' : '板別查不到'}，證交所這份資料只有上市）`)
+      : '';
     return `${i + 1}. ${c.symbol}${(c.zh || c.name) && (c.zh || c.name) !== c.symbol ? '（' + (c.zh || c.name) + '）' : ''}
 　收盤 ${cur}${n(c.price)}（資料日期 ${c.lastDate || '不明'}）　綜合研判：${g.overall || '—'}（分數 ${g.score == null ? '—' : g.score}）
 　${why}
 　均線：MA5 ${n(g.ma5)}／MA20 ${n(g.ma20)}／MA60 ${n(g.ma60)}　RSI ${n(g.rsi, 1)}　MACD柱 ${g.macd ? n(g.macd.hist, 3) : '—'}　KD ${g.kd ? n(g.kd.k, 1) + '/' + n(g.kd.d, 1) : '—'}
 　布林位置 %B ${n(c.pctB, 1)}　量比(5日/20日) ${n(c.volRatio, 2)}　距 60 日高 ${n(c.fromHigh60, 1)}%
 　停損參考 ${stop ? cur + n(stop.v) + '（' + n(stop.pct, 1) + '%）' : '—'}　2:1 目標 ${stop ? cur + n(stop.target2r) + '（+' + n(stop.target2rPct, 1) + '%）' : '—'}${band ? `
-　上檔判讀：${band}` : ''}${rsLine}${liqLine}${riskLine}${fund}`;
+　上檔判讀：${band}` : ''}${rsLine}${liqLine}${chipLine}${riskLine}${fund}`;
   }
 
   // 兩個 renderer（條件模式／策略模式）長得一模一樣，按鈕只寫一份共用——
@@ -33269,6 +33622,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             </div>` : ''}
           </div>
           ${band ? `<div style="font-size:11px; color:var(--ink-secondary); line-height:1.6; margin-bottom:8px; padding:5px 9px; background:var(--bg-elevated); border-left:2px solid ${bandColor}; border-radius:3px;">📏 ${escape(band)}</div>` : ''}
+          ${(() => { const cl = scanChipLine(c); return cl ? `<div style="font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary); line-height:1.6; margin-bottom:8px; padding:5px 9px; background:var(--bg-elevated); border-left:2px solid var(--accent-deep); border-radius:3px;">🏛 ${escape(cl)}</div>` : ''; })()}
           ${liqWarn ? `<div style="font-size:10.5px; color:var(--danger); margin-bottom:8px;">${liq.emg ? '⚠ 興櫃股：流動性差、波動大、沒有漲跌幅限制。' : ''}${liq.low ? '⚠ 日均成交金額偏低（台股 < 3,000 萬／美股 < US$5M）：買得進不一定出得掉，滑價會吃掉停損的精度。' : ''}</div>` : ''}
           ${held ? '' : `<div style="font-size:10.5px; color:var(--ink-tertiary); line-height:1.65; margin-top:5px;">
             ※ 上面那個「賠率 2:1」<strong>是賠率，不是勝率</strong>。2:1 要<strong>勝率超過 33%</strong> 才不會賠錢，
@@ -33301,10 +33655,14 @@ ${scanRegimeText(scanRegimeInfo).replace(/\*\*/g, '')}
 （這一句跟我畫面上看到的**逐字一樣**。挑選時請把它考慮進去，但不要因為它就說「都不要買」——要不要進場是我的決定。）` : ''}${scanRsTable[usScanMarket === 'tw' ? 'tw' : 'us'] ? `
 
 【相對強弱】
-${scanRsNote(usScanMarket).replace(/\*\*/g, '')}` : ''}
+${scanRsNote(usScanMarket).replace(/\*\*/g, '')}` : ''}${scanChipsInfo ? `
+
+【台股籌碼】
+${scanChipsText().replace(/\*\*/g, '')}
+（下面每一檔後面的「籌碼」那一行跟我畫面上看到的逐字一樣。⚠ 標了「處置中」的請一定要講出來——那檔現在很難買賣。）` : ''}
 
 【⚠ 你看得到的資料只有下面這些】
-· 只有技術指標、停損／目標參考價、上檔第一道壓力的判讀、流動性（日均成交金額），以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率。
+· 只有技術指標、停損／目標參考價、上檔第一道壓力的判讀、流動性（日均成交金額），以及（有抓到才附的）本益比、股價淨值比、ROE、殖利率${scanChipsInfo && !scanChipsInfo.why ? '，還有台股上市股的籌碼（法人買賣超、當沖比、處置股）' : ''}。
 · 挑選時請把流動性當一回事：標了「冷門」或「興櫃」的，就算指標再漂亮也要講出這個風險。
 · **你沒有新聞、沒有財報全文、沒有法說會、沒有產業或競爭對手的資料，也沒有今天盤中的價格。**
 · ${dateNote}——如果現在距離那天已經有一段時間，請在回答裡提醒我這件事。
