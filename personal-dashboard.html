@@ -9478,7 +9478,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.66 · ЏЏ</div>
+    <div>v 16.67 · АА</div>
   </footer>
 </div>
 
@@ -27884,12 +27884,352 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return out;
   }
 
+  // ============================================================
+  // 集中度：兩處共用（現金流→績效風險、我的部位）v16.67
+  //
+  // ⚠ 抽出來的時候**一定要把 0 檢查一起搬進來**。原本這幾行靠外面那顆
+  //   `if (allH.length === 0) return` 保護，自己沒有檢查——抽出去之後：
+  //     sorted[0] → TypeError；1/Σw² → **Infinity**，畫面會寫「有效檔數 Infinity 檔」。
+  // ⚠ 算不出來一律回 null（不回 0，也不回 Infinity），讓呼叫端自己講「算不出來」。
+  // items 形狀：[{ symbol, value }]，value 一定要是同一種幣別（呼叫端負責換算）。
+  // ============================================================
+  function concentrationOf(items) {
+    const arr = (items || []).filter(x => x && Number(x.value) > 0)
+      .map(x => ({ ...x, value: Number(x.value) }));
+    const total = arr.reduce((a, x) => a + x.value, 0);
+    if (!arr.length || !(total > 0)) return null;
+    const sorted = arr.slice().sort((a, b) => b.value - a.value);
+    const w = sorted.map(x => x.value / total);
+    const hhi = w.reduce((a, x) => a + x * x, 0);
+    return {
+      n: arr.length, total, sorted,
+      largest: sorted[0],
+      largestPct: w[0] * 100,
+      top3Pct: w.slice(0, 3).reduce((a, x) => a + x, 0) * 100,
+      hhi,
+      // 有效檔數 = 1 / Σw²。5 檔各 20% → 5.0；一檔獨大 → 接近 1。
+      // ⚠ 它**只看金額大小，完全沒有把相關性算進去**——三檔都是電力股也還是算 3 檔。
+      //   所以顯示時一定要寫全名，不可以只寫「有效檔數 3.68」讓人以為已經考慮過分散。
+      effN: hhi > 0 ? 1 / hhi : null
+    };
+  }
+
+  // ============================================================
+  // 兩檔股票的日報酬相關係數（v16.67）
+  //
+  // 🔴 順序寫反會**安靜出錯**：一定要「**先取日期交集 → 再從交集後相鄰的收盤算報酬**」。
+  //    反過來（各自先算報酬、再取日期交集）會把「跨越缺口的多日報酬」當成單日報酬——
+  //    例如 A 缺了 8/20~8/25，交集後 8/19→8/26 那一筆會是 5 天的漲跌，
+  //    卻被拿去跟 B 的單日漲跌配對。數字照樣算得出來，而且看起來很正常。
+  // ⚠ 交集後相鄰兩天差超過 4 天的那一筆要丟掉（連假最多 4 天；再長就不是單日報酬了）。
+  // ⚠ 重疊不足 40 筆回 null 寫「不夠比」，**不硬算**（樣本太少的相關係數幾乎沒有意義）。
+  const CORR_MIN_N = 40;
+  function corrOf(barsA, barsB, win) {
+    const mA = new Map(), mB = new Map();
+    (barsA || []).forEach(b => { const c = Number(b.close); if (c > 0) mA.set(String(b.time), c); });
+    (barsB || []).forEach(b => { const c = Number(b.close); if (c > 0) mB.set(String(b.time), c); });
+    let dates = Array.from(mA.keys()).filter(d => mB.has(d)).sort();
+    if (win > 0 && dates.length > win + 1) dates = dates.slice(-(win + 1));
+    const ra = [], rb = [];
+    for (let i = 1; i < dates.length; i++) {
+      const gap = (Date.parse(dates[i] + 'T00:00:00Z') - Date.parse(dates[i - 1] + 'T00:00:00Z')) / 86400000;
+      if (!(gap >= 1 && gap <= 4)) continue;              // 缺口太大 → 那不是單日報酬
+      const a0 = mA.get(dates[i - 1]), a1 = mA.get(dates[i]);
+      const b0 = mB.get(dates[i - 1]), b1 = mB.get(dates[i]);
+      if (!(a0 > 0) || !(b0 > 0)) continue;
+      ra.push(a1 / a0 - 1); rb.push(b1 / b0 - 1);
+    }
+    const n = ra.length;
+    if (n < CORR_MIN_N) return null;
+    const ma = ra.reduce((a, x) => a + x, 0) / n, mb = rb.reduce((a, x) => a + x, 0) / n;
+    let sab = 0, saa = 0, sbb = 0, same = 0;
+    for (let i = 0; i < n; i++) {
+      const da = ra[i] - ma, db = rb[i] - mb;
+      sab += da * db; saa += da * da; sbb += db * db;
+      if ((ra[i] >= 0) === (rb[i] >= 0)) same++;
+    }
+    if (!(saa > 0) || !(sbb > 0)) return null;            // 有一邊完全不動 → 算不出來
+    return { r: sab / Math.sqrt(saa * sbb), n, samePct: same / n * 100,
+             from: dates[0], to: dates[dates.length - 1] };
+  }
+
+  // 產業：使用者自己填的最大，沒填就退回內建清單，都沒有就是「未分類」。
+  // ⚠ 不准硬掰（`|| '科技'` 那種）——猜錯的分類會讓「產業佔比」整個失真，
+  //   而畫面上完全看不出來（v16.11 同一條）。
+  function industryOf(h) {
+    const own = String((h && h.industry) || '').trim();
+    if (own) return own;
+    const sym = String((h && h.symbol) || '').toUpperCase();
+    const ref = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === sym);
+    const ind = ref && String(ref.industry || '').trim();
+    return ind || '';
+  }
+
+  // ── 區 2：你以為買了幾種生意 ────────────────────────────────
+  //
+  // 🔴 這一區最容易變成「指控」。三條規矩：
+  //   ① **平衡句必須跟指控句同一段**——放整區最後等於沒人讀到。
+  //   ② 「有效檔數」一律寫全名「（只看金額大小，沒有把相關性算進去）」，
+  //      不然使用者會以為那個數字已經考慮過分散。
+  //   ③ **涵蓋率要寫出來**：算不到的那幾檔正好可能是最痛的那一塊
+  //      （Kevin 的 SMX -55% 如果日 K 不足就不在樣本裡）。
+  function adviceSec2(d) {
+    if (!d.holdings.length) return '';
+    const H = adviceH('03', '你以為買了幾種生意');
+    const items = d.holdings.map(h => ({ symbol: h.symbol, value: holdingValue(h), h }));
+    const con = concentrationOf(items);
+    if (!con) return H + adviceBox('算不出來：這幾檔的市值都是 0（可能是還沒抓到現價）。');
+
+    // ── 上半：產業佔比。⚠ 分母要含「未分類」，不然佔比會被灌水 ──
+    const byInd = {};
+    let unclassN = 0, unclassVal = 0;
+    items.forEach(it => {
+      const ind = industryOf(it.h) || '未分類';
+      if (ind === '未分類') { unclassN++; unclassVal += it.value; }
+      (byInd[ind] = byInd[ind] || { v: 0, syms: [] });
+      byInd[ind].v += it.value;
+      byInd[ind].syms.push(it.symbol);
+    });
+    const indRows = Object.keys(byInd).sort((a, b) => byInd[b].v - byInd[a].v).map(k => {
+      const pct = con.total > 0 ? byInd[k].v / con.total * 100 : 0;
+      return `<div style="display:flex; align-items:center; gap:9px; margin-bottom:5px;">
+          <span style="font-size:11.5px; min-width:86px;${k === '未分類' ? ' color:var(--ink-tertiary);' : ''}">${escape(k)}</span>
+          <div style="flex:1; height:9px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:2px; overflow:hidden;">
+            <div style="height:100%; width:${pct.toFixed(1)}%; background:${k === '未分類' ? 'var(--ink-muted)' : 'var(--accent-deep)'};"></div></div>
+          <span style="font-family:var(--mono); font-size:11px; min-width:48px; text-align:right;">${pct.toFixed(1)}%</span>
+          <span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); min-width:96px;">${escape(byInd[k].syms.join('、'))}</span>
+        </div>`;
+    }).join('');
+    const unclassNote = unclassN
+      ? `<div style="font-size:11.5px; color:var(--ink-tertiary); margin-top:6px; line-height:1.75;">
+          其中 <strong>${unclassN} 檔沒有填產業</strong>（佔 ${(unclassVal / con.total * 100).toFixed(1)}%），它們<strong>照樣算在分母裡</strong>。<br>
+          要讓上面這張圖準一點，去持股卡按「編輯」把「產業」那格填一填。</div>`
+      : '';
+
+    // ── 下半：相關係數。只用有日 K 的那幾檔 ──
+    const syms = d.holdings.map(h => String(h.symbol).toUpperCase()).filter(s => d.ctx[s]);
+    const pairs = [];
+    for (let i = 0; i < syms.length; i++) {
+      for (let j = i + 1; j < syms.length; j++) {
+        const c = corrOf(d.ctx[syms[i]].bars, d.ctx[syms[j]].bars, 60);
+        if (c) pairs.push({ a: syms[i], b: syms[j], ...c });
+      }
+    }
+    let corrHtml = '';
+    if (!pairs.length) {
+      corrHtml = `<div style="font-size:12px; color:var(--ink-tertiary); line-height:1.8;">
+        相關性算不出來：${syms.length < 2 ? '至少要有 2 檔算得出日 K 的股票。' : `這幾檔的日 K 重疊不到 ${CORR_MIN_N} 天，樣本太少，硬算出來的數字沒有意義。`}</div>`;
+    } else {
+      // 涵蓋率：算不到的那幾檔要點名（被漏掉的可能正好是最痛的那一塊）
+      const covered = new Set();
+      pairs.forEach(p => { covered.add(p.a); covered.add(p.b); });
+      const covVal = items.filter(it => covered.has(String(it.symbol).toUpperCase())).reduce((a, x) => a + x.value, 0);
+      const miss = d.holdings.map(h => String(h.symbol).toUpperCase()).filter(s => !covered.has(s));
+      const top = pairs.slice().sort((x, y) => y.r - x.r).slice(0, 6);
+      const rows = top.map(p => {
+        const strong = p.r >= 0.7;
+        return `<div style="display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-bottom:1px solid var(--line); font-size:12px;">
+            <span style="font-family:var(--mono);">${escape(p.a)} ↔ ${escape(p.b)}</span>
+            <span><span style="font-family:var(--mono); font-size:12.5px;${strong ? ' color:var(--accent-warm);' : ''}">${p.r.toFixed(2)}</span>
+              <span style="color:var(--ink-tertiary); font-size:11px;">　10 天裡有 ${(p.samePct / 10).toFixed(0)} 天同方向</span></span>
+          </div>`;
+      }).join('');
+      const sample = pairs[0];
+      const strongPairs = pairs.filter(p => p.r >= 0.7);
+      // 🔴 指控句與平衡句**同一段**
+      const verdict = strongPairs.length
+        ? `<div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.9;">
+            上面有 <strong>${strongPairs.length} 組</strong>的相關係數在 0.7 以上（1.00 是完全同進同出）。
+            從分散風險的角度看，它們<strong>比較接近 1 個部位而不是 ${strongPairs.length + 1} 個</strong> ——
+            <strong style="color:var(--ink-primary);">這是統計，不是說你買錯。</strong>
+            集中不等於做錯，很多人就是靠集中賺到錢。它只代表<strong>你賭的東西比較少樣</strong>。</div>`
+        : `<div style="margin-top:10px; font-size:12px; color:var(--ink-secondary); line-height:1.9;">
+            沒有任何一組的相關係數到 0.7，這幾檔<strong>過去這段時間並沒有很同步</strong>。</div>`;
+      corrHtml = `${rows}${verdict}
+        <div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.8; margin-top:8px;">
+          ※ 樣本：<strong>${escape(sample.from)} ~ ${escape(sample.to)}</strong>，共 ${sample.n} 個交易日。
+          ${covered.size < d.holdings.length
+            ? `<br>※ <strong style="color:var(--accent-warm);">這個數字只涵蓋 ${d.holdings.length} 檔裡的 ${covered.size} 檔</strong>（佔市值 ${(covVal / con.total * 100).toFixed(0)}%）；<span style="font-family:var(--mono);">${escape(miss.join('、'))}</span> 沒有算進去。`
+            : ''}
+          <br>※ 這是「<strong>過去真的發生過的事</strong>」，不是預測。而且<strong>大跌的時候，本來不相關的東西也常常一起跌</strong>
+          —— 最需要分散的那一天，分散最容易失效。
+        </div>`;
+    }
+
+    // 有效檔數。⚠ 全名一定要寫出來
+    const effTxt = con.effN == null ? '算不出來'
+      : `<strong style="font-family:var(--serif); font-size:16px; color:var(--accent);">${con.effN.toFixed(2)}</strong> 檔`;
+
+    return H + adviceBox(`
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary); margin-bottom:7px;">產業佔比</div>
+      ${indRows}${unclassNote}
+      <div style="margin:14px 0 7px; padding-top:11px; border-top:1px solid var(--line);">
+        <span style="font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-tertiary);">它們會不會一起漲一起跌</span>
+      </div>
+      ${corrHtml}
+      <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line); font-size:12px; color:var(--ink-secondary); line-height:1.85;">
+        有效檔數（<strong>只看金額大小，沒有把相關性算進去</strong>）：${effTxt}
+        <span style="color:var(--ink-tertiary);">　你實際有 ${con.n} 檔</span><br>
+        <span style="font-size:11.5px; color:var(--ink-tertiary);">
+          意思是：金額分布得像 ${con.effN == null ? '—' : con.effN.toFixed(1)} 檔平均下注。
+          最大一檔 ${escape(con.largest.symbol)} 佔 ${con.largestPct.toFixed(1)}%、前三大佔 ${con.top3Pct.toFixed(1)}%。<br>
+          ⚠ 這個數字<strong>不知道</strong>上面那幾檔是不是同一種生意 —— 三檔都是電力股，它照樣算 3 檔。
+        </span>
+      </div>`);
+  }
+
+  // ── 區 6：如果你要動（v16.67）──────────────────────────────
+  //
+  // 🔴 **沒有輸入金額之前，畫面上不准出現「平均成本」四個字。**
+  //    主動端上來就是在暗示攤平。使用者先打一個數字，才算給他看。
+  // 🔴 每一列都是 before → after 的**算術結果**，不准加「（變低了）」這種形容詞，
+  //    也不准做「虧損 > X% 就跳警告」的硬門檻（那是懸崖，而且是變相的建議）。
+  // 🔴 方向一律 `after − before` 現算，不准寫死——實測加碼 NRG 之後
+  //    「有效檔數」會**變多**（稀釋掉 CEG 的 41.4%），而「產業佔比」同時**變差**。
+  //    兩個指標方向相反是正常的，要各自標，並且明講「這兩個講的不是同一件事」。
+  let adviceSim = {};        // { SYM: 股數 }，正數＝加買、負數＝賣出
+
+  // ⚠ 一定要跟 recomputeUsHolding 同一條規則（買進 cost = shares×price + fee），
+  //   否則模擬說 137.31、他真的下單記完交易模組顯示 137.45。
+  // ⚠ h.shares / h.avgCost 可能是 toFixed() 出來的**字串**："80" + 49 = "8049"，一律先 Number()。
+  function avgCostAfterBuy(h, addShares, price) {
+    const s0 = Number(h.shares) || 0, c0 = Number(h.avgCost) || 0, n = Number(addShares) || 0, p = Number(price) || 0;
+    if (!(n > 0) || !(p > 0)) return null;
+    const total = s0 * c0 + n * p;            // ⚠ 這裡沒有算手續費，畫面要講
+    const s1 = s0 + n;
+    return s1 > 0 ? total / s1 : null;
+  }
+
+  function setAdviceSim(sym, v) {
+    const n = Number(v);
+    if (!isFinite(n) || n === 0) delete adviceSim[String(sym).toUpperCase()];
+    else adviceSim[String(sym).toUpperCase()] = n;
+    const box = document.getElementById('adviceSimOut');
+    if (box) box.innerHTML = adviceSimRows(usAdviceData);
+  }
+
+  function adviceSimRows(d) {
+    const keys = Object.keys(adviceSim);
+    if (!keys.length) {
+      return `<div style="font-size:12px; color:var(--ink-tertiary); line-height:1.8;">
+        在上面填一個股數，這裡才會算。<strong>正數是加買、負數是賣出。</strong><br>
+        沒填之前這裡什麼都不算 —— 主動把「再買之後的平均成本」端出來，本身就是一種暗示。</div>`;
+    }
+    const f = usMoney;
+    const st = d.stats;
+    const base = d.holdings.map(h => ({ symbol: h.symbol, value: holdingValue(h), h }));
+    const conB = concentrationOf(base);
+    // after：假設這筆錢是從投資組合**外面**拿進來的（同一個假設套在三列上）
+    const after = d.holdings.map(h => {
+      const sym = String(h.symbol).toUpperCase();
+      const dn = Number(adviceSim[sym]) || 0;
+      const px = Number(h.currentPrice) || 0;
+      const s1 = Math.max(0, (Number(h.shares) || 0) + dn);
+      return { symbol: h.symbol, value: s1 * px, h, dn };
+    });
+    const conA = concentrationOf(after);
+    // fmt = 'money' 走 usMoneySign（帶 $ 與千分位）；否則 toFixed + 後綴
+    const arrow = (b, a, digits, suffix) => {
+      const one = v => v == null ? '—'
+        : suffix === '$' ? usMoneySign(v)      // 損益：要帶 +/−
+        : suffix === 'px' ? usMoney(v)         // 價格：不帶正負號（成本沒有「正的成本」這種事）
+        : v.toFixed(digits) + (suffix || '');
+      return `<span style="font-family:var(--mono);">${one(b)}</span> <span style="color:var(--ink-tertiary);">→</span> <span style="font-family:var(--mono); color:var(--ink-primary);">${one(a)}</span>`;
+    };
+    const line = (lb, val, note) => `<div style="display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--line); font-size:12px;">
+        <span>${lb}</span><span>${val}</span></div>${note ? `<div style="font-size:11px; color:var(--ink-tertiary); padding:2px 0 5px 12px; line-height:1.65;">↑ ${note}</div>` : ''}`;
+
+    const per = keys.map(sym => {
+      const h = d.holdings.find(x => String(x.symbol).toUpperCase() === sym);
+      if (!h) return '';
+      const dn = Number(adviceSim[sym]) || 0;
+      const px = Number(h.currentPrice) || 0;
+      const s0 = Number(h.shares) || 0;
+      if (!(px > 0)) return `<div style="padding:8px 0; font-size:12px; color:var(--accent-warm);">${escape(sym)}：沒有抓到現價，算不出來。</div>`;
+      // 減碼要夾在持有市值——你只有這麼多可以賣
+      const capped = dn < 0 && Math.abs(dn) > s0;
+      const dnUse = capped ? -s0 : dn;
+      const money = Math.abs(dnUse) * px;
+      const beA = holdingBreakeven(h);
+      const ac1 = dnUse > 0 ? avgCostAfterBuy(h, dnUse, px) : (Number(h.avgCost) || 0);
+      const be1 = ac1 > 0 && px > 0 ? (ac1 / px - 1) * 100 : null;
+      const pctB = st.val > 0 ? holdingValue(h) / st.val * 100 : 0;
+      const s1 = Math.max(0, s0 + dnUse);
+      const valA = conA ? conA.total : 0;
+      const pctA = valA > 0 ? s1 * px / valA * 100 : 0;
+      const dropB = holdingValue(h) * 0.2, dropA = s1 * px * 0.2;
+      return `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:11px 13px; margin-bottom:9px;">
+        <div style="font-size:12.5px; margin-bottom:7px;">
+          <strong style="font-family:var(--mono); color:var(--accent);">${escape(sym)}</strong>
+          ${dnUse > 0 ? `加買 ${usShares(dnUse)} 股` : `賣出 ${usShares(-dnUse)} 股`}
+          <span style="color:var(--ink-tertiary);">＝ ${f(money)}</span>
+          ${capped ? `<br><span style="color:var(--accent-warm); font-size:11.5px;">⚠ 你這一檔只有 ${usShares(s0)} 股可以賣，已經照 ${usShares(s0)} 股算。</span>` : ''}
+        </div>
+        ${line('回本要漲', arrow(beA, be1, 2, '%'))}
+        ${line('這檔的未實現虧損', arrow(holdingPnL(h), holdingPnL(h), 2, '$'),
+          dnUse > 0 ? '加碼<strong>不會讓已經賠掉的錢回來</strong>，只會讓部位變大。' : '')}
+        ${line('再跌 20% 會賠', arrow(-dropB, -dropA, 0, '$'))}
+        ${line('這檔佔你美股部位', arrow(pctB, pctA, 1, '%'))}
+        ${dnUse > 0 && ac1 ? line('再買之後的平均成本', arrow(Number(h.avgCost) || 0, ac1, 2, 'px'),
+          '這是<strong>算術結果</strong>，不代表這檔會漲回來。這一格<strong>沒有算手續費</strong>。') : ''}
+      </div>`;
+    }).join('');
+
+    // 組合層級：有效檔數 vs 產業佔比可能方向相反
+    const effB = conB && conB.effN, effA = conA && conA.effN;
+    const indPct = (list, con) => {
+      if (!con) return null;
+      const by = {};
+      list.forEach(it => { const k = industryOf(it.h) || '未分類'; by[k] = (by[k] || 0) + it.value; });
+      const top = Object.keys(by).sort((a, b) => by[b] - by[a])[0];
+      return top ? { name: top, pct: by[top] / con.total * 100 } : null;
+    };
+    const ib = indPct(base, conB), ia = indPct(after, conA);
+    const dirTxt = (b, a) => (b == null || a == null) ? '' : (a > b ? '（變多）' : a < b ? '（變少）' : '（沒變）');
+    return `${per}
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:3px; padding:11px 13px;">
+        <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-bottom:6px;">整個組合會變成</div>
+        ${line('有效檔數（只看金額大小，沒有把相關性算進去）',
+          arrow(effB, effA, 2) + `<span style="color:var(--ink-tertiary); font-size:11px;">${dirTxt(effB, effA)}</span>`)}
+        ${ib && ia ? line(`最大產業（${escape(ia.name)}）佔比`,
+          arrow(ib.pct, ia.pct, 1, '%') + `<span style="color:var(--ink-tertiary); font-size:11px;">${dirTxt(ib.pct, ia.pct)}</span>`) : ''}
+        <div style="font-size:11px; color:var(--ink-tertiary); line-height:1.75; margin-top:7px;">
+          ⚠ 這兩個<strong>講的不是同一件事</strong>，方向相反是正常的：加碼小部位會讓金額分散得比較平均（有效檔數變多），
+          但如果加的是同一個產業，產業集中度會同時變差。<br>
+          ⚠ 這裡假設這筆錢是<strong>從投資組合外面拿進來的</strong>（不是賣掉別檔換來的）。
+        </div>
+      </div>`;
+  }
+
+  function adviceSec6(d) {
+    if (!d.holdings.length) return '';
+    const H = adviceH('06', '如果你要動', '這一區只做算術。填一個股數，看數字會變成什麼樣子 —— <strong>它不會告訴你該不該填</strong>。');
+    const inputs = d.holdings.slice().sort((a, b) => holdingValue(b) - holdingValue(a)).map(h => {
+      const sym = String(h.symbol).toUpperCase();
+      const px = Number(h.currentPrice) || 0;
+      return `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+          <span style="font-family:var(--mono); font-size:11.5px; min-width:56px;">${escape(sym)}</span>
+          <input type="number" class="form-input" placeholder="股數" value="${adviceSim[sym] || ''}"
+                 oninput="setAdviceSim('${escape(sym)}', this.value)"
+                 style="width:110px; padding:4px 8px; font-size:12px;">
+          <span style="font-size:11px; color:var(--ink-tertiary);">現價 ${px > 0 ? usMoney(px) : '—'} · 你有 ${usShares(h.shares)} 股</span>
+        </div>`;
+    }).join('');
+    return H + adviceBox(`
+      <div style="font-size:11.5px; color:var(--ink-tertiary); line-height:1.75; margin-bottom:9px;">
+        正數＝加買，負數＝賣出。<strong>不填就什麼都不算。</strong>
+      </div>
+      ${inputs}
+      <div id="adviceSimOut" style="margin-top:12px; padding-top:11px; border-top:1px solid var(--line);">${adviceSimRows(d)}</div>`);
+  }
+
   // ⚠ 主函式：一個 return 都沒有。每一區各自處理自己的空狀態。
   function renderUsAdvice() {
     const box = document.getElementById('usAdviceBody');
     if (!box) return;
     const d = usAdviceData || { holdings: [], ctx: {}, meta: {}, bad: [], errs: [], noPrice: [], adjOld: [], plans: [] };
-    box.innerHTML = adviceSec0(d) + adviceSec1(d) + adviceSec3(d) + adviceSec4(d) + adviceFoot();
+    adviceSim = {};   // 每次重畫都清掉模擬，不要沿用上一輪的數字
+    box.innerHTML = adviceSec0(d) + adviceSec1(d) + adviceSec2(d) + adviceSec3(d) + adviceSec4(d) + adviceSec6(d) + adviceFoot();
   }
   const adviceH = (n, t, sub) => `<div style="margin:18px 0 9px;">
       <div style="font-family:var(--mono); font-size:9.5px; letter-spacing:0.18em; color:var(--ink-tertiary);">${n}</div>
@@ -28055,7 +28395,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   // ── 區 3：每一檔現在在哪裡 ────────────────────────────────
   function adviceSec3(d) {
-    const H = adviceH('03', '每一檔現在在哪裡', '照市值由大到小排。<strong>排序也是一種判斷，所以這裡只按大小排，不排「誰最該處理」。</strong>');
+    const H = adviceH('04', '每一檔現在在哪裡', '照市值由大到小排。<strong>排序也是一種判斷，所以這裡只按大小排，不排「誰最該處理」。</strong>');
     if (!d.holdings.length) return '';
     if (!Object.keys(d.ctx).length) {
       return H + adviceBox(`本機還沒有累積任何日 K，所以支撐、壓力、趨勢、停損位置這一區<strong>整個算不出來</strong>。<br>
@@ -28160,7 +28500,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   function adviceSec4(d) {
     if (!d.holdings.length) return '';
-    const H = adviceH('04', '如果都不動，會怎樣');
+    const H = adviceH('05', '如果都不動，會怎樣');
     const st = d.stats;
     const row = (lb, amt, after, c) => `<div style="display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--line);">
         <span>${lb}</span>
