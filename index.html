@@ -3181,6 +3181,8 @@
         <p>持股管理、平均成本、未實現/已實現損益、交易記錄。</p>
       </div>
       <div class="api-actions">
+        <!-- 累積資料以前只藏在掃描視窗裡的一顆小按鈕，找不到（v16.60 拉到這裡） -->
+        <button class="btn" id="twBarsBtn" onclick="openBarsModal('tw')" title="把台股的歷史日 K 下載到這台裝置。下載過之後，機會掃描完全不用連網、幾秒就跑完">📥 下載台股資料</button>
         <button class="btn" onclick="openTvChartModal('2330','台積電','TWSE')">📈 看盤</button>
         <button class="btn" onclick="openUsScanModal('tw')" title="用多種技術條件掃描台股，找出短線值得關注的">🎯 機會掃描</button>
         <button class="btn" onclick="openTxnModal()">+ 新交易</button>
@@ -3873,11 +3875,26 @@
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn btn-sm" id="aiProvProbeBtn" type="button" onclick="probeAiProvider()" title="只填主機網址就好，會自動找出 API 路徑與可用的模型">🔍 自動偵測</button>
-          <button class="btn btn-sm" id="aiProvTestBtn" type="button" onclick="testAiProvider()">🔌 測試連線</button>
+          <button class="btn btn-sm" id="aiProvTestBtn" type="button" onclick="testAiProvider()" title="快篩：30 秒，只確認叫不叫得動">🔌 測試連線</button>
+          <button class="btn btn-sm" type="button" onclick="openAiTestAllModal()" title="體檢：用每個功能真正在送的提示詞各打一次，看全站會不會壞">🧪 全站逐項實測</button>
         </div>
         <div class="form-actions-right">
           <button class="btn" type="button" onclick="closeAiProviderModal()">取消</button>
           <button class="btn btn-primary" type="button" onclick="saveAiProviderSettings()">儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="aiTestAllModal">
+    <div class="modal" style="max-width:700px;">
+      <h2>🧪 全站 AI <em>逐項實測</em></h2>
+      <div id="aiTestAllBody"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" id="aiTestStopBtn" type="button" onclick="aiTestStopNow()" style="display:none; color:var(--danger); border-color:var(--danger);">■ 停止</button>
+        <div class="form-actions-right">
+          <button class="btn" type="button" onclick="closeAiTestAllModal()">關閉</button>
+          <button class="btn btn-primary" id="aiTestRunBtn" type="button" onclick="runAiTestAll()">▶ 開始實測</button>
         </div>
       </div>
     </div>
@@ -7707,6 +7724,20 @@
       </div>
 
       <div id="usScanResults" style="max-height:46vh; overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- 掃描結果專用視窗（v16.60）：以前結果擠在條件下方 46vh 的小框裡，
+       掃完要一直捲、條件又佔掉大半個畫面。掃完直接開這個，整個視窗都給結果。 -->
+  <div class="modal-backdrop" id="usScanResultModal">
+    <div class="modal" style="max-width:1100px;">
+      <h2>🎯 掃描 <em>結果</em></h2>
+      <div id="usScanResultHead" style="font-size:11.5px; color:var(--ink-tertiary); margin-bottom:10px; line-height:1.7;"></div>
+      <div id="usScanResultBody"></div>
+      <div class="form-actions" style="margin-top:14px;">
+        <button class="btn" type="button" onclick="closeUsScanResultModal()">關閉</button>
+        <button class="btn btn-primary" type="button" onclick="closeUsScanResultModal(); openUsScanModal(usScanMarket)">↻ 改條件重掃</button>
+      </div>
 
       <div style="margin-top:12px; padding:9px 12px; background:rgba(201,123,106,0.08); border-left:2px solid var(--danger); border-radius:3px; font-size:11.5px; color:var(--ink-secondary); line-height:1.6;">
         ⚠ 這裡找出來的是<strong>「值得你花時間研究的候選名單」，不是「該買的股票」</strong>。技術面只描述「過去發生了什麼」，不預測未來。進場價與停損價都是規則算出來的參考值。<strong>不構成投資建議。</strong>
@@ -9414,7 +9445,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.59 · ЈЈ</div>
+    <div>v 16.61 · ЊЊ</div>
   </footer>
 </div>
 
@@ -12393,8 +12424,12 @@ alter publication supabase_realtime add table party_locations;</pre>
 也沒有今天的盤中價格；你的知識有截止日期，可能已經過時。
 **請不要假裝知道你沒看到的東西**——不要編造股價、財報數字、新聞事件或分析師評級。
 需要查證的，寫進最後一段叫我自己去查。`;
-  let aiAbort = null;   // 讓「取消」按鈕中斷正在跑的那一次
-  function aiCancel() { try { if (aiAbort) aiAbort.abort(); } catch (e) {} }
+  let aiAbort = null;        // 讓「取消」按鈕中斷正在跑的那一次
+  let aiUserCancelled = false;
+  // ⚠ 一定要分得出「使用者按取消」跟「伺服器死了」（v16.61）：
+  //   兩者都是 AbortError，如果混為一談，`aiChat` 的 catch 會以為服務掛了 →
+  //   **自動改打 Anthropic**（要花錢）。等於「取消鍵」變成「付費鍵」。
+  function aiCancel() { aiUserCancelled = true; try { if (aiAbort) aiAbort.abort(); } catch (e) {} }
 
   // 打「你自己的 AI 服務」。失敗一律 throw，讓上層決定要不要換備援。
   async function aiCallCustom({ system, msgs, max, tools }) {
@@ -12410,6 +12445,11 @@ alter publication supabase_realtime add table party_locations;</pre>
       try { return await p; }
       catch (e) {
         if (e && e.name === 'AbortError') {
+          if (aiUserCancelled) {                       // 使用者自己按的取消 → 不准觸發付費備援
+            const c = new Error('你按了取消');
+            c.userCancelled = true;
+            throw c;
+          }
           throw new Error(`${aiName()} 超過 ${Math.round(ms / 1000)} 秒沒有回應（本機模型跑長提示詞會很慢，或機器睡著了）`);
         }
         throw e;
@@ -12482,18 +12522,36 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   // 打 Anthropic 官方（也是備援那一路）
+  // ⚠ v16.61：這一路以前**完全沒有逾時也沒有 signal**——網路卡住時會永遠等下去，
+  //   而且使用者按不掉（只能關分頁）。自訂服務那一路早就有了，這裡漏掉。
   async function aiCallAnthropic({ system, msgs, max, tools, key }) {
     const body = { model: 'claude-sonnet-5', max_tokens: max, messages: msgs };
     if (system) body.system = system;
     if (tools && tools.length) body.tools = tools;
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json', 'x-api-key': key,
-        'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(body)
-    });
+    const ms = aiTimeoutMs(max);
+    const ctl = new AbortController();
+    aiAbort = ctl;
+    const timer = setTimeout(() => ctl.abort(), ms);
+    let res;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'x-api-key': key,
+          'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify(body), signal: ctl.signal
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') {
+        if (aiUserCancelled) { const c = new Error('你按了取消'); c.userCancelled = true; throw c; }
+        throw new Error(`Anthropic 超過 ${Math.round(ms / 1000)} 秒沒有回應`);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+      if (aiAbort === ctl) aiAbort = null;
+    }
     if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 240)}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error.message || 'API error');
@@ -12509,10 +12567,12 @@ alter publication supabase_realtime add table party_locations;</pre>
     if (!msgs.length) throw new Error('沒有要問的內容');
     const max = Number(maxTokens) || 2000;
 
+    aiUserCancelled = false;   // 每次呼叫重置，不然上一次的取消會影響這一次
     if (aiProviderOn()) {
       try {
         return await aiCallCustom({ system, msgs, max, tools });
       } catch (e) {
+        if (e && e.userCancelled) throw e;   // 使用者按的取消：照實丟回去，不要改打 Anthropic（那要花錢）
         // ⚠ 備援要花錢（Anthropic 是按用量計費），所以：
         //   ① 使用者沒開「自動接手」就照實把錯誤丟出去，不要偷偷換人
         //   ② 真的接手了一定要講出來——不然他以為是自己的 AI 回答的，帳單卻在長
@@ -12735,6 +12795,218 @@ alter publication supabase_realtime add table party_locations;</pre>
       </div>`;
   }
 
+  // ===== 🧪 全站 AI 逐項實測（v16.61）=====
+  // 「🔌 測試連線」只證明「叫得動」；這一支證明「**每個功能真正在送的那份提示詞**，你的 AI 吃不吃得下」。
+  //
+  // ⚠ 設計上最重要的一條：**只碰兩層**——`buildXxx*()`（純字串）與 `aiChat()`（純網路）。
+  //   絕對不呼叫 runAiAnalysis / runScanAi / sendButler / submitAiTrip / generateSpotDeepIntro 這些 UI 入口，
+  //   因為它們會寫 storage（建立行程、覆蓋金鑰、毒化景點快取、蓋掉新聞），而且綁死動態 DOM 與全域狀態，
+  //   沒有前置狀態時會**用錯的理由報失敗**。
+  // ⚠ 不用 dryRun 旗標：那是一份手寫的「哪些地方要尊重旗標」清單，而手寫的清單一定會過期（v11.1/v16.41）。
+  //   結構上只走純函式，比旗標可靠。
+  let aiTestRunning = false, aiTestStop = false;
+
+  function aiTestItems() {
+    const F = [];
+    const add = (key, name, hint, build, opt) => F.push(Object.assign({ key, name, hint, build }, opt || {}));
+    add('conn', '接得通', '送 ~15 字',
+      () => ({ messages: [{ role: 'user', content: '請只回覆兩個字：成功' }], maxTokens: 32 }),
+      { must: true, check: r => r.text ? null : '沒有回任何內容', fail: '網址／金鑰／模型名稱／CORS 四者之一錯。後面每一項都會用同一個理由紅字，先修這個。' });
+    add('ctx', '吃得下真正的長提示詞', '送 ~11,000 字',
+      () => {
+        // 用**真的掃描提示詞**當本體（不是隨便的填充字），末尾問一個只有讀得到開頭才答得出的問題
+        const bak = usScanScored, bakRows = usScanRows, bakPicked = usScanPicked, bakMkt = usScanMarket;
+        let body = '';
+        try {
+          usScanMarket = 'tw';
+          usScanPicked = ['ma_golden', 'ma_bull', 'above_ma60'];
+          usScanRows = AI_TEST_SCAN_FIXTURE.map(x => x.ctx);
+          // ⚠ list 的每一筆要有 .ctx（buildScanAiPrompt 讀 r.ctx.lastDate）——
+          //   形狀給錯的話它會回空字串，而測試會顯示「✅ 送 36 字」＝**在說謊**（實測抓到）
+          usScanScored = { mode: 'cond', need: 3, list: AI_TEST_SCAN_FIXTURE };
+          body = buildScanAiPrompt();
+        } catch (e) { body = ''; }
+        finally { usScanScored = bak; usScanRows = bakRows; usScanPicked = bakPicked; usScanMarket = bakMkt; }
+        return { messages: [{ role: 'user', content: body + '\n\n【最後一個問題】上面列出的第一檔股票代號是什麼？只回代號，不要解釋。' }], maxTokens: 32,
+                 __minSent: 3000 };   // 送出去的字數低於這個 → 代表 fixture 壞了，不准算通過
+      },
+      { check: r => /1101/.test(r.text) ? null : `問「第一檔代號」，它答「${String(r.text).slice(0, 20)}」——沒答對`,
+        fail: '模型記憶體（context）不夠，前面的內容被默默丟掉了，而且不會有任何錯誤訊息。掃描挑前 5 名、台股／美股分析會答得很正常但內容是編的。Ollama：PARAMETER num_ctx 16384（預設常常只有 2048~4096）。' });
+    add('opp', '投資機會評估', '送 ~420 字',
+      () => ({ messages: [{ role: 'user', content: buildAiPrompt('NVDA 值不值得買') }], maxTokens: 2000 }),
+      { check: r => (String(r.text).match(/【/g) || []).length >= 4 ? null : '六段結構沒出來（找不到 4 個【】標題）',
+        fail: '「✦ 用 AI 分析」按下去會給一坨不分段的字，畫面會變成一整塊灰字。' });
+    add('tw', '台股單檔分析（2330）', '送 ~450 字',
+      () => ({ messages: [{ role: 'user', content: buildAnalysisPrompt('2330', '台積電') }], maxTokens: 2500 }),
+      { check: r => r.text && r.text.length > 50 ? null : '回得太短，不像分析',
+        fail: '所有台股／ETF／債券卡片的「🤖 Claude」都不能用。' });
+    add('us', '美股單檔分析（NVDA）', '送 ~450 字',
+      () => ({ messages: [{ role: 'user', content: buildUsAnalysisPrompt('NVDA', 'NVIDIA', '現價 $180', '') }], maxTokens: 2500 }),
+      { check: r => r.text && r.text.length > 50 ? null : '回得太短，不像分析',
+        fail: '美股「📊 分析 → 🤖 Claude」不能用。' });
+    add('butler', '旅遊 AI 管家', '送 ~720 字 · ⚠ 會把團員的飲食禁忌與身體狀況送出去（真功能本來就會送）',
+      () => (typeof ITINERARY === 'undefined' || !ITINERARY) ? null
+          : ({ system: buildButlerSystem(), messages: [{ role: 'user', content: '成都物價大概多少？' }], maxTokens: 2000 }),
+      { off: true, skipWhen: () => (typeof ITINERARY === 'undefined' || !ITINERARY) ? '沒有載入行程' : null,
+        check: r => r.text ? null : '沒有回應', fail: 'AI 管家分頁按送出只會得到「⚠ 呼叫失敗」。' });
+    add('trip', 'AI 生成行程（唯一要嚴格 JSON）', '送 ~1,700 字 · ⚠ 逾時上限 16 分鐘',
+      null,
+      { off: true, custom: true, fail: '「AI 生成行程」會失敗，或生出半殘的行程（天數對不上、類型寫錯）。' });
+    return F;
+  }
+  // 給 ctx 那一項用的假掃描結果——形狀照真的 ctx（sym/price/hit/lv/sig），才生得出真的提示詞
+  // ⚠ 形狀要跟真的掃描結果一樣：外層 { ctx, hits/score }，ctx 裡才是 sym/price/lv/sig。
+  //   給錯形狀 buildScanAiPrompt 會回空字串，測試就變成「送 36 字還說 ✅」（實測踩過）。
+  // ⚠ 欄位名要跟真的掃描結果一字不差：外層 r.matched（不是 hits）、ctx.symbol（不是 sym）。
+  //   任何一個對不上，buildScanAiPrompt 就丟錯 → 提示詞是空的 → 測試會用 36 字假通過（實測踩兩次）。
+  const AI_TEST_SCAN_FIXTURE = Array.from({ length: 30 }, (_, i) => ({
+    matched: [{ key: 'ma_golden', name: '出現黃金交叉' }, { key: 'ma_bull', name: '多頭排列' }, { key: 'above_ma60', name: '站上季線' }],
+    score: 3, n: 3,
+    ctx: {
+      symbol: String(1101 + i), sym: String(1101 + i), name: '測試股' + (i + 1), zh: '測試股' + (i + 1),
+      market: 'tw', price: 100 + i,
+      lastDate: '2026-08-29', turnover20: 5e8, board: 'tse',
+      lv: { stops: [{ key: 'atr', label: '波動型停損', how: 'x', v: 92 + i, pct: -8, why: 'y', target2r: 116 + i, target2rPct: 16 }],
+            resists: [{ label: '近 60 日高', v: 110 + i, pct: 10 }], supports: [{ label: '月線', v: 95 + i, pct: -5 }] },
+      sig: { overall: '偏多', rsi: 55, kd: { k: 60, d: 55 }, ma5: 101 + i, ma20: 98 + i, ma60: 95 + i,
+             macdHist: 0.5, bbPctB: 0.7, volRatio: 1.4, fromHigh60: -3 },
+      fund: null
+    }
+  }));
+
+  async function openAiTestAllModal() {
+    await loadAiProvider();
+    const items = aiTestItems();
+    const body = document.getElementById('aiTestAllBody');
+    const ready = await aiReady();
+    if (!ready) {
+      // ⚠ 完全沒設 AI 的人按下去不可以滿江紅——那條路本來就不需要測（v12.1b）
+      body.innerHTML = `<div style="padding:20px; border:1px dashed var(--line); border-radius:4px; font-size:12.5px; color:var(--ink-secondary); line-height:1.9;">
+        你還沒設定任何 AI。全站 AI 功能本來就走「📋 複製提示詞 → 貼到 Claude.ai」那條路——
+        <strong>那條路不需要測、也不會壞</strong>。要在 App 內直接跑才需要設定。</div>`;
+      openModalOnTop('aiTestAllModal');
+      return;
+    }
+    body.innerHTML = `
+      <div style="font-size:12px; color:var(--ink-secondary); line-height:1.8; margin-bottom:10px;">
+        用<strong>每個功能真正在送的那一份提示詞</strong>，對你現在設定的 AI 各打一次。<br>
+        目前會打：<strong style="color:var(--accent);">${escape(aiProviderLabel())}</strong><br>
+        <span style="color:var(--ink-tertiary);">這一輪<strong>不會寫入任何資料</strong>：不建立行程、不動管家對話、不動景點快取、不碰新聞快取、不動你的金鑰。
+        測的是「AI 那一段」，存檔那一段不在這顆按鈕的範圍裡。</span>
+      </div>
+      ${items.map(f => `
+        <label style="display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); cursor:pointer;">
+          <input type="checkbox" class="ai-test-pick" data-key="${escape(f.key)}" ${f.off ? '' : 'checked'} ${f.must ? 'checked disabled' : ''} style="margin-top:3px;">
+          <span style="flex:1; font-size:12.5px;">${escape(f.name)}
+            <span style="display:block; font-size:10.5px; color:var(--ink-tertiary); margin-top:2px;">${escape(f.hint)}</span>
+            <span class="ai-test-row" data-row="${escape(f.key)}" style="display:block; font-size:11.5px; margin-top:4px; line-height:1.7;"></span>
+          </span>
+        </label>`).join('')}
+      <div id="aiTestSummary" style="margin-top:12px; font-size:12px; line-height:1.8;"></div>`;
+    openModalOnTop('aiTestAllModal');
+  }
+  function closeAiTestAllModal() { if (aiTestRunning) { aiTestStop = true; aiCancel(); } closeModalRestore('aiTestAllModal'); }
+  function aiTestStopNow() { aiTestStop = true; aiCancel(); showToast('停止中…'); }
+
+  async function runAiTestAll() {
+    if (aiTestRunning) return;
+    const picked = [...document.querySelectorAll('.ai-test-pick')].filter(c => c.checked).map(c => c.dataset.key);
+    if (!picked.length) { showToast('至少勾一項'); return; }
+    aiTestRunning = true; aiTestStop = false;
+    const runBtn = document.getElementById('aiTestRunBtn');
+    const stopBtn = document.getElementById('aiTestStopBtn');
+    if (runBtn) runBtn.disabled = true;
+    if (stopBtn) stopBtn.style.display = '';
+    const items = aiTestItems().filter(f => picked.includes(f.key));
+    const results = [];
+    const paint = (key, html) => { const el = document.querySelector(`[data-row="${key}"]`); if (el) el.innerHTML = html; };
+    try {
+      for (const f of items) {
+        if (aiTestStop) { paint(f.key, '<span style="color:var(--ink-muted);">— 未執行</span>'); continue; }
+        const skip = f.skipWhen && f.skipWhen();
+        if (skip) { paint(f.key, `<span style="color:var(--ink-muted);">— 跳過 · ${escape(skip)}</span>`); results.push({ f, skipped: true }); continue; }
+        paint(f.key, '<span style="color:var(--ink-tertiary);">◌ 進行中…</span>');
+        const t0 = Date.now();
+        try {
+          let r, sent = 0;
+          if (f.custom && f.key === 'trip') {
+            const sys = buildTripGenSystem('generate');
+            const usr = '東京 3 天賞櫻，兩個大人，預算中等';
+            sent = sys.length + usr.length;
+            const trip = await callAiForTrip(null, sys, usr);   // ⚠ 只到這裡，絕不呼叫 acceptGeneratedTrip
+            const warn = (trip && trip.__warn) || [];
+            r = { text: JSON.stringify(trip).slice(0, 200), viaCustom: aiProviderOn(), __warn: warn };
+          } else {
+            const args = f.build();
+            if (!args) { paint(f.key, '<span style="color:var(--ink-muted);">— 跳過</span>'); results.push({ f, skipped: true }); continue; }
+            sent = (args.system || '').length + args.messages.map(m => m.content.length).reduce((a, b) => a + b, 0);
+            // ⚠ 自我防護：這一項本來就該送很長的提示詞，送太少代表「產生提示詞那一步壞了」，
+            //   不是「AI 通過了」。沒有這道檢查，測試會用 36 字的假提示詞回報 ✅（實測踩過）。
+            if (args.__minSent && sent < args.__minSent) {
+              throw new Error(`測試自己有問題：這一項應該送 ${args.__minSent.toLocaleString('en-US')} 字以上，實際只組出 ${sent} 字——提示詞沒生出來，這一輪不算數`);
+            }
+            r = await aiChat(args);
+          }
+          const sec = ((Date.now() - t0) / 1000).toFixed(0);
+          const who = r.fellBack ? `<strong style="color:var(--danger);">Anthropic 接手</strong>（你的 AI 沒回應：${escape(String(r.fallbackWhy || '').slice(0, 60))}）`
+                    : (r.viaCustom ? escape(aiName()) : 'Anthropic');
+          const problem = (r.__warn && r.__warn.length) ? r.__warn.join('；') : (f.check ? f.check(r) : null);
+          const icon = problem ? '⚠' : '✅';
+          const col = problem ? 'var(--accent-warm)' : 'var(--accent)';
+          paint(f.key, `<span style="color:${col};">${icon} 送 ${sent.toLocaleString('en-US')} 字 → 收 ${String(r.text || '').length.toLocaleString('en-US')} 字 · ${sec} 秒 · 走 ${who}</span>`
+            + (problem ? `<br><span style="color:var(--ink-secondary);">${escape(problem)}</span>
+                          <br><span style="color:var(--ink-tertiary);">→ ${escape(f.fail || '')}</span>` : '')
+            + (r.toolsDropped ? '<br><span style="color:var(--ink-tertiary);">（這個 AI 沒有上網查資料的能力，答案來自它自己的知識）</span>' : ''));
+          results.push({ f, ok: !problem, warn: !!problem, fellBack: !!r.fellBack, toolsDropped: !!r.toolsDropped, sec: +sec });
+        } catch (e) {
+          const sec = ((Date.now() - t0) / 1000).toFixed(0);
+          const cancelled = e && e.userCancelled;
+          paint(f.key, `<span style="color:${cancelled ? 'var(--ink-muted)' : 'var(--danger)'};">${cancelled ? '— 已取消' : '❌ 失敗'} · ${sec} 秒</span>`
+            + (cancelled ? '' : `<br><span style="color:var(--ink-secondary);">${escape(e.message)}</span>
+                                 <br><span style="color:var(--ink-tertiary);">→ ${escape(f.fail || '')}</span>`));
+          results.push({ f, ok: false, cancelled });
+          if (f.must && !cancelled) {   // 接不通就別再測了——後面每一項都會用同一個理由紅字
+            items.slice(items.indexOf(f) + 1).forEach(x => paint(x.key, '<span style="color:var(--ink-muted);">— 未執行（先修上面那一項）</span>'));
+            break;
+          }
+          if (cancelled) break;
+        }
+      }
+    } finally {
+      aiTestRunning = false;
+      if (runBtn) runBtn.disabled = false;
+      if (stopBtn) stopBtn.style.display = 'none';
+    }
+    renderAiTestSummary(results);
+  }
+
+  // ⚠ 總結不是只有「全部通過」一種說法（這一格最重要）
+  function renderAiTestSummary(results) {
+    const el = document.getElementById('aiTestSummary');
+    if (!el) return;
+    const done = results.filter(r => !r.skipped && !r.cancelled);
+    const ok = done.filter(r => r.ok).length;
+    const skipped = results.filter(r => r.skipped).length;
+    const fell = done.filter(r => r.fellBack).length;
+    const dropped = done.some(r => r.toolsDropped);
+    const bits = [];
+    if (fell) {
+      // 全綠但其實是 Anthropic 在撐——這是這顆按鈕最會騙人的地方
+      bits.push(`<div style="color:var(--danger);"><strong>🔴 有 ${fell} 項是 Anthropic 接手回答的</strong>（會用掉你的額度、要花錢）。
+        這一輪的「通過」有一部分不是${escape(aiName())}通過的。</div>`);
+    }
+    bits.push(`<div>${ok} 項通過${done.length - ok ? ` · ${done.length - ok} 項有問題` : ''}${skipped ? ` · ${skipped} 項跳過（不算通過也不算失敗）` : ''}</div>`);
+    if (dropped) {
+      bits.push(`<div style="color:var(--accent-warm);">⚠ 這個 AI 沒有上網能力——台股/美股分析、掃描挑前 5 名的答案來自它自己的知識，可能過時。</div>`);
+    }
+    bits.push(`<div style="color:var(--ink-tertiary); margin-top:5px;">
+      ⚠ 綠燈只代表<strong>叫得動、格式對得上</strong>，<strong>不代表答得好</strong>——那要你自己讀。<br>
+      這一輪測的是${aiProviderOn() ? '「你自己的 AI」那條路；改回 Anthropic 官方後提示詞會換一份（多了「請搜尋」那段），要再測一次' : 'Anthropic 官方那條路'}。<br>
+      Gemini 是完全獨立的第二條路（不吃這裡的設定），要測請用 Gemini 金鑰視窗的「🔍 測試金鑰」。
+    </div>`);
+    el.innerHTML = bits.join('');
+  }
+
   // 真的打一次，把「實際用的網址」與「真正的錯誤」顯示出來——
   // 不要只回一句「失敗」，那查不出是網址、金鑰、還是模型名稱的問題
   async function testAiProvider() {
@@ -12855,8 +13127,11 @@ alter publication supabase_realtime add table party_locations;</pre>
     closeModalRestore('aiModal');
   }
 
-  function buildAiPrompt() {
-    const userQuery = document.getElementById('aiPrompt').value.trim();
+  // qOverride：給「🧪 全站逐項實測」用的（v16.61）——不傳就照舊讀畫面上的輸入框。
+  // ⚠ 一定要讓測試用**正式流程真的在用的這一支**產生提示詞，不能自己抄一份（v16.21）。
+  function buildAiPrompt(qOverride) {
+    const userQuery = qOverride != null ? String(qOverride).trim()
+                                        : (document.getElementById('aiPrompt') || {}).value?.trim() || '';
     if (!userQuery) return null;
 
     const role = currentAiType === 'double'
@@ -27337,8 +27612,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   // ===== 累積歷史資料 Modal =====
-  async function openBarsModal() {
+  // mkt 可指定預選市場（從台股頁的「📥 下載台股資料」進來就直接選台股，v16.60）
+  async function openBarsModal(mkt) {
     openModalOnTop('barsModal');
+    if (mkt === 'tw' || mkt === 'us') {
+      const sel = document.getElementById('barsMarket');
+      if (sel) sel.value = mkt;
+    }
     await renderBarsPanel();
   }
   function closeBarsModal() { closeModalRestore('barsModal'); }
@@ -30367,6 +30647,29 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     } else {
       showToast(`🎯 掃描完成 · ${rows.length} 檔有資料${failed ? ` / ${failed} 檔查無` : ''}`);
     }
+    // 掃完就把結果搬到獨立視窗（v16.60）。⚠ 一檔都沒掃到時不要開一個空視窗——
+    //   那時候使用者需要看到的是掃描視窗裡的「為什麼沒有」與條件，不是一片空白。
+    if (rows.length) { try { openUsScanResultModal(); } catch (e) {} }
+  }
+
+  // 結果要畫在哪：獨立的結果視窗開著就畫那邊（整個視窗都給結果），否則畫原本掃描視窗裡那一格。
+  // ⚠ 兩處共用一個判斷——不然改條件重算時，一邊更新一邊沒更新（本專案付過很多次代價的那條）。
+  function scanResultBox() {
+    const modal = document.getElementById('usScanResultModal');
+    if (modal && modal.classList.contains('active')) return document.getElementById('usScanResultBody');
+    return document.getElementById('usScanResults');
+  }
+  function closeUsScanResultModal() { closeModalRestore('usScanResultModal'); }
+  // 掃完自動開結果視窗（v16.60）：以前結果擠在條件下方 46vh 的小框裡，要一直捲
+  function openUsScanResultModal() {
+    const head = document.getElementById('usScanResultHead');
+    if (head) {
+      const n = (usScanRows || []).length;
+      head.innerHTML = `${escape(usScanMarket === 'tw' ? '台股' : '美股')} · 掃到 <strong style="color:var(--accent);">${n}</strong> 檔有資料`
+        + `<span style="color:var(--ink-muted);"> · 排序與條件跟掃描視窗一致，改條件請按下面「↻ 改條件重掃」</span>`;
+    }
+    openModalOnTop('usScanResultModal');
+    try { renderUsScanResults(); } catch (e) {}
   }
 
   // 拉不到資料而提前停下時，把「發生什麼事、已經拿到什麼、什麼時候可以再試」一次講完。
@@ -30379,7 +30682,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   //     這時候斷定「額度用完了」是在猜——也可能是真的斷線。猜錯了反而害使用者白等一小時，
   //     所以這裡講「最可能是…也可能是…」，跟 finmindFetch 那邊的語氣一致。
   function showQuotaNotice(got, left, retryMins, sure, scope) {
-    const box = document.getElementById('usScanResults');
+    const box = scanResultBox();
     if (!box) return;
     // 別叫人家「改用小一點的範圍」却把他剛剛跑的那個也列進去。
     const smaller = [
@@ -30634,6 +30937,11 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
     const btn = document.getElementById('scanAiRunBtn');
     // ⚠ 這裡以前只認 Anthropic 金鑰，接了自己的 AI 服務照樣被擋（v10.0「早退守衛」同族）
     if (!(await aiReady())) { showToast('還沒設定 AI——首頁選單「🤖 AI 服務設定」，或用左邊「📋 複製提示詞」貼到 Claude.ai 也一樣'); return; }
+    // ⚠ 沒掃描過就直接讀 usScanScored.list 會丟未捕捉的 TypeError（而且在 try 之前）。
+    //   openScanAiModal() 有這道守衛、runScanAi() 沒有（v16.61 補）
+    if (!usScanScored || !Array.isArray(usScanScored.list) || !usScanScored.list.length) {
+      showToast('先掃描出結果，才有東西可以讓 AI 挑'); return;
+    }
     const orig = btn ? btn.textContent : '';
     // ⚠ 「約 20-60 秒」是雲端模型的速度；自架小模型讀 30 檔可能要好幾分鐘（v16.55）
     if (btn) { btn.disabled = true; btn.textContent = aiProviderOn() ? '分析中…（本機模型可能要幾分鐘）' : '分析中…（約 20-60 秒）'; }
@@ -30650,7 +30958,7 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
   }
 
   function renderUsScanResults() {
-    const box = document.getElementById('usScanResults');
+    const box = scanResultBox();
     if (!box) return;
     if (!usScanRows.length) {
       // 被擋住的時候不能講「還沒掃描」——上面的紅框剛說完「掃描提前停在 0 檔」，
@@ -38535,7 +38843,10 @@ ${aiCanSearch() ? `請搜尋並整合：
     const q = input.value.trim();
     if (!q) return;
     const apiKey = document.getElementById('butlerApiKey').value.trim();
-    await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
+    // 🔴 一定要有 if：butlerKey 就是全站那把 studio_ai_key_v1，而 #butlerApiKey 是靜態 HTML、
+    //   在首頁或沒開行程時是空的 → 空字串會把使用者的 Anthropic 金鑰整個洗掉（v16.61）。
+    //   旁邊三處（:12915 / :32946 / :32963）本來就有守衛，**只有這裡漏了**。
+    if (apiKey) await writeKey(TRAVEL_STORAGE.butlerKey, apiKey);
     trvButlerHistory.push({ role: 'user', content: q });
     renderButlerChat();
     input.value = '';
@@ -40279,6 +40590,10 @@ ${daysBrief}${butlerPartyBlock()}
       if (!enterId) return;
       if (enterId === 'ungrouped' || groups.find(g => g.id === enterId)) {
         enterGroup(enterId === 'ungrouped' ? '' : enterId);
+      } else if (enterId === 'ai' || enterId === 'aiProvider') {
+        // 直接打開「AI 服務設定」（v16.60）——設定 AI 時常常要反覆開關，
+        // 給一個網址可以直接跳到那一格，不用每次從首頁找按鈕
+        setTimeout(() => { try { openAiProviderModal(); } catch (e) {} }, 300);
       } else if (document.getElementById(enterId)) {
         showView(enterId);
       }
