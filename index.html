@@ -3182,6 +3182,7 @@
       </div>
       <div class="api-actions">
         <!-- 累積資料以前只藏在掃描視窗裡的一顆小按鈕，找不到（v16.60 拉到這裡） -->
+        <button class="btn" onclick="openUsAdvice('tw')" title="把你已經買進的台股部位攤開：成本、損益、自己寫的規則與日 K 位置">📊 我的部位</button>
         <button class="btn" id="twBarsBtn" onclick="openBarsModal('tw')" title="把台股的歷史日 K 下載到這台裝置。下載過之後，機會掃描完全不用連網、幾秒就跑完">📥 下載台股資料</button>
         <button class="btn" onclick="openTvChartModal('2330','台積電','TWSE')">📈 看盤</button>
         <button class="btn" onclick="openUsScanModal('tw')" title="用多種技術條件掃描台股，找出短線值得關注的">🎯 機會掃描</button>
@@ -3439,7 +3440,13 @@
   <div class="modal-backdrop" id="usAdviceModal">
     <div class="modal" style="max-width: 1020px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; position:sticky; top:0; background:var(--bg-elevated); z-index:2; padding-bottom:8px;">
-        <h2 style="margin:0;">📊 我的<em>部位</em></h2>
+        <div>
+          <h2 style="margin:0;">📊 我的<em>部位</em></h2>
+          <div style="display:flex; gap:6px; margin-top:9px;" aria-label="切換部位市場">
+            <button class="btn btn-sm" id="adviceMarketTw" onclick="openUsAdvice('tw')">台股</button>
+            <button class="btn btn-sm" id="adviceMarketUs" onclick="openUsAdvice('us')">美股</button>
+          </div>
+        </div>
         <button class="btn btn-sm" onclick="closeUsAdvice()">✕</button>
       </div>
       <div id="usAdviceBody" style="max-height:74vh; overflow-y:auto;"></div>
@@ -9494,7 +9501,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.73 · ЖЖ</div>
+    <div>v 16.74 · ЗЗ</div>
   </footer>
 </div>
 
@@ -27880,19 +27887,57 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   //    集中度、波動、資料過期一律中性色。一頁全紅等於在喊快賣。
   // ============================================================
   let usAdviceData = null;
+  let adviceMarket = 'us';
+  let adviceBuildSeq = 0;
   const ADVICE_STALE_PCT = 3;        // 日 K 跟即時價差幾 % 就要講「這幾格算出來的位置不是現在的位置」
 
+  function adviceMarketKey(mkt) { return mkt === 'tw' ? 'tw' : 'us'; }
+  function adviceMarketLabel(d) { return adviceMarketKey(d && d.market) === 'tw' ? '台股' : '美股'; }
+  function adviceMoney(d, n) {
+    if (adviceMarketKey(d && d.market) === 'tw')
+      return 'NT$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    return usMoney(n);
+  }
+  function adviceMoneySign(d, n) {
+    const v = Number(n) || 0;
+    if (adviceMarketKey(d && d.market) === 'tw')
+      return (v >= 0 ? '+' : '−') + 'NT$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    return usMoneySign(v);
+  }
+  function adviceShares(n) { return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 4 }); }
+  function adviceBarsOpen(d) { return `openBarsModal('${adviceMarketKey(d && d.market)}')`; }
+  function adviceScanOpen(d) { return `closeUsAdvice(); openUsScanModal('${adviceMarketKey(d && d.market)}');`; }
+  function adviceRefreshAction(d) {
+    return adviceMarketKey(d && d.market) === 'tw' ? 'refreshAllPrices()' : 'refreshUsQuotes()';
+  }
+  function syncAdviceMarketButtons() {
+    ['tw', 'us'].forEach(m => {
+      const el = document.getElementById(m === 'tw' ? 'adviceMarketTw' : 'adviceMarketUs');
+      if (!el) return;
+      el.classList.toggle('btn-primary', adviceMarket === m);
+      el.setAttribute('aria-pressed', adviceMarket === m ? 'true' : 'false');
+    });
+  }
+
   function openUsAdvice(mkt) {
+    adviceMarket = adviceMarketKey(mkt || adviceMarket);
+    const seq = ++adviceBuildSeq;
     openModalOnTop('usAdviceModal');
+    syncAdviceMarketButtons();
     const box = document.getElementById('usAdviceBody');
     if (box) box.innerHTML = '<div style="padding:40px; text-align:center; color:var(--ink-tertiary);">整理中…</div>';
-    buildUsAdvice().then(d => { usAdviceData = d; renderUsAdvice(); })
+    buildUsAdvice(adviceMarket).then(d => {
+      if (seq !== adviceBuildSeq) return; // 快速切換時，舊市場比較晚回來也不能蓋掉新市場
+      usAdviceData = d;
+      renderUsAdvice();
+    })
       .catch(e => {
+        if (seq !== adviceBuildSeq) return;
         // ⚠ 連 build 都爆掉時也要講得出真原因，而且要說「不是你的資料不見了」
         if (box) box.innerHTML = `<div style="padding:24px; font-size:12.5px; color:var(--ink-secondary); line-height:1.8;">
           這一頁整理到一半出錯了：<span style="color:var(--danger);">${escape((e && e.message) || String(e))}</span><br>
           這通常是資料格式的問題，<strong>不是你的持股不見了</strong>。
-          <div style="margin-top:10px;"><button class="btn btn-sm" onclick="openUsAdvice('us')">↻ 再試一次</button></div></div>`;
+          <div style="margin-top:10px;"><button class="btn btn-sm" onclick="openUsAdvice('${adviceMarket}')">↻ 再試一次</button></div></div>`;
       });
   }
   function closeUsAdvice() { closeModalRestore('usAdviceModal'); }
@@ -27905,20 +27950,24 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     return (cost / px - 1) * 100;     // 正數＝還要漲幾 % 才回本；負數＝已經高於成本
   }
 
-  async function buildUsAdvice() {
+  async function buildUsAdvice(mkt) {
+    mkt = adviceMarketKey(mkt || adviceMarket);
     const out = { holdings: [], stats: null, plans: [], ctx: {}, meta: {}, bad: [], errs: [],
-                  noPrice: [], adjOld: [], buildError: '' };
-    await loadUsStock().catch(() => {});
+                  noPrice: [], adjOld: [], buildError: '', market: mkt };
+    if (mkt === 'tw') await loadTwStock().catch(() => {});
+    else await loadUsStock().catch(() => {});
     await loadAdviceCfg().catch(() => {});
     // 全站別的地方填過的「錢」——只讀對照，明講系統不會互相扣。
     // ⚠ us_check_v1[sym].budget 的單位是**台幣**（stop 卻是美元，同一個物件裡兩種幣別），
     //   所以標籤一定要把 NT$ 寫出來，不可以跟上面的 US$ 混在一起。
     out.otherMoney = [];
     try {
-      const ck = await readJson('us_check_v1', {}) || {};
-      let bsum = 0, bn = 0;
-      Object.keys(ck).forEach(k => { const v = Number(ck[k] && ck[k].budget); if (v > 0) { bsum += v; bn++; } });
-      if (bn) out.otherMoney.push(`新手體檢裡你替 ${bn} 檔各填過投入金額，合計 NT$${Math.round(bsum).toLocaleString('en-US')}`);
+      if (mkt === 'us') {
+        const ck = await readJson('us_check_v1', {}) || {};
+        let bsum = 0, bn = 0;
+        Object.keys(ck).forEach(k => { const v = Number(ck[k] && ck[k].budget); if (v > 0) { bsum += v; bn++; } });
+        if (bn) out.otherMoney.push(`新手體檢裡你替 ${bn} 檔各填過投入金額，合計 NT$${Math.round(bsum).toLocaleString('en-US')}`);
+      }
       const cfg = await readJson(ALLOC_STORAGE, null);
       if (cfg && Number(cfg.cash) > 0) out.otherMoney.push(`資產配置頁的「現金／活存」是 NT$${Math.round(Number(cfg.cash)).toLocaleString('en-US')}（那是**資產**，不是可動用現金，兩格不是同一件事）`);
       const plans = await readJson(DCA_STORAGE.plans, []);
@@ -27927,10 +27976,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         if (m > 0) out.otherMoney.push(`定期定額每月會自動扣 NT$${Math.round(m).toLocaleString('en-US')}`);
       }
     } catch (e) {}
-    const hs = (usHoldings || []).filter(h => Number(h.shares) > 0);
+    const allHoldings = mkt === 'tw' ? (twHoldings || []) : (usHoldings || []);
+    const hs = allHoldings.filter(h => Number(h.shares) > 0);
     out.holdings = hs;
-    out.watchN = (typeof usWatchSymbols === 'function' ? usWatchSymbols() : []).length;
-    out.allN = (usHoldings || []).length;
+    out.watchN = (mkt === 'tw'
+      ? (typeof twWatchSymbols === 'function' ? twWatchSymbols() : [])
+      : (typeof usWatchSymbols === 'function' ? usWatchSymbols() : [])).length;
+    out.allN = allHoldings.length;
     if (!hs.length) return out;
 
     let cost = 0, val = 0;
@@ -27945,7 +27997,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     try {
       const pw = await buildPlanWatch();
       const heldSet = new Set(hs.map(h => String(h.symbol).toUpperCase()));
-      out.plans = (pw || []).filter(r => String(r.market || '') !== 'tw' && heldSet.has(String(r.symbol).toUpperCase()));
+      out.plans = (pw || []).filter(r => (mkt === 'tw' ? String(r.market || '') === 'tw' : String(r.market || '') !== 'tw')
+        && heldSet.has(String(r.symbol).toUpperCase()));
     } catch (e) { out.plans = []; }
     try { await loadAlog(); } catch (e) {}
 
@@ -27954,13 +28007,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     // ⚠「資料本身不合格」與「這次抓不到」是**相反的原因**，一定要分兩組
     //   （v16.13：空的有兩種相反的原因）。
     const keepMkt = usScanMarket;
-    usScanMarket = 'us';               // usScanCtx 讀這個全域決定幣別與流動性門檻
+    usScanMarket = mkt;                // usScanCtx 讀這個全域決定幣別與流動性門檻
     try {
       for (const h of hs) {
         const sym = String(h.symbol).toUpperCase();
         const meta = {};
         try {
-          const bars = await scanFetch('us', sym, meta);
+          const bars = await scanFetch(mkt, sym, meta);
           const dq = scanDataOk(bars, sym);
           if (!dq.ok) { out.bad.push({ sym, why: dq.why }); continue; }
           const c = usScanCtx({ symbol: sym, name: h.name || sym }, bars);
@@ -28049,11 +28102,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // 產業：使用者自己填的最大，沒填就退回內建清單，都沒有就是「未分類」。
   // ⚠ 不准硬掰（`|| '科技'` 那種）——猜錯的分類會讓「產業佔比」整個失真，
   //   而畫面上完全看不出來（v16.11 同一條）。
-  function industryOf(h) {
+  function industryOf(h, d) {
     const own = String((h && h.industry) || '').trim();
     if (own) return own;
     const sym = String((h && h.symbol) || '').toUpperCase();
-    const ref = (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []).find(x => x.symbol === sym);
+    const stocks = adviceMarketKey(d && d.market) === 'tw'
+      ? (typeof TW_STOCKS !== 'undefined' ? TW_STOCKS : [])
+      : (typeof US_STOCKS !== 'undefined' ? US_STOCKS : []);
+    const ref = stocks.find(x => String(x.symbol).toUpperCase() === sym);
     const ind = ref && String(ref.industry || '').trim();
     return ind || '';
   }
@@ -28077,7 +28133,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const byInd = {};
     let unclassN = 0, unclassVal = 0;
     items.forEach(it => {
-      const ind = industryOf(it.h) || '未分類';
+      const ind = industryOf(it.h, d) || '未分類';
       if (ind === '未分類') { unclassN++; unclassVal += it.value; }
       (byInd[ind] = byInd[ind] || { v: 0, syms: [] });
       byInd[ind].v += it.value;
@@ -28208,7 +28264,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         在上面填一個股數，這裡才會算。<strong>正數是加買、負數是賣出。</strong><br>
         沒填之前這裡什麼都不算 —— 主動把「再買之後的平均成本」端出來，本身就是一種暗示。</div>`;
     }
-    const f = usMoney;
+    const f = n => adviceMoney(d, n);
     const st = d.stats;
     const base = d.holdings.map(h => ({ symbol: h.symbol, value: holdingValue(h), h }));
     const conB = concentrationOf(base);
@@ -28221,11 +28277,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       return { symbol: h.symbol, value: s1 * px, h, dn };
     });
     const conA = concentrationOf(after);
-    // fmt = 'money' 走 usMoneySign（帶 $ 與千分位）；否則 toFixed + 後綴
+    // fmt = 'money' 走目前市場的幣別（帶正負號與千分位）；否則 toFixed + 後綴
     const arrow = (b, a, digits, suffix) => {
       const one = v => v == null ? '—'
-        : suffix === '$' ? usMoneySign(v)      // 損益：要帶 +/−
-        : suffix === 'px' ? usMoney(v)         // 價格：不帶正負號（成本沒有「正的成本」這種事）
+        : suffix === '$' ? adviceMoneySign(d, v) // 損益：要帶 +/−
+        : suffix === 'px' ? adviceMoney(d, v)    // 價格：不帶正負號（成本沒有「正的成本」這種事）
         : v.toFixed(digits) + (suffix || '');
       return `<span style="font-family:var(--mono);">${one(b)}</span> <span style="color:var(--ink-tertiary);">→</span> <span style="font-family:var(--mono); color:var(--ink-primary);">${one(a)}</span>`;
     };
@@ -28254,15 +28310,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       return `<div style="background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; padding:11px 13px; margin-bottom:9px;">
         <div style="font-size:12.5px; margin-bottom:7px;">
           <strong style="font-family:var(--mono); color:var(--accent);">${escape(sym)}</strong>
-          ${dnUse > 0 ? `加買 ${usShares(dnUse)} 股` : `賣出 ${usShares(-dnUse)} 股`}
+          ${dnUse > 0 ? `加買 ${adviceShares(dnUse)} 股` : `賣出 ${adviceShares(-dnUse)} 股`}
           <span style="color:var(--ink-tertiary);">＝ ${f(money)}</span>
-          ${capped ? `<br><span style="color:var(--accent-warm); font-size:11.5px;">⚠ 你這一檔只有 ${usShares(s0)} 股可以賣，已經照 ${usShares(s0)} 股算。</span>` : ''}
+          ${capped ? `<br><span style="color:var(--accent-warm); font-size:11.5px;">⚠ 你這一檔只有 ${adviceShares(s0)} 股可以賣，已經照 ${adviceShares(s0)} 股算。</span>` : ''}
         </div>
         ${line('回本要漲', arrow(beA, be1, 2, '%'))}
         ${line('這檔的未實現虧損', arrow(holdingPnL(h), holdingPnL(h), 2, '$'),
           dnUse > 0 ? '加碼<strong>不會讓已經賠掉的錢回來</strong>，只會讓部位變大。' : '')}
         ${line('再跌 20% 會賠', arrow(-dropB, -dropA, 0, '$'))}
-        ${line('這檔佔你美股部位', arrow(pctB, pctA, 1, '%'))}
+        ${line(`這檔佔你${adviceMarketLabel(d)}部位`, arrow(pctB, pctA, 1, '%'))}
         ${dnUse > 0 && ac1 ? line('再買之後的平均成本', arrow(Number(h.avgCost) || 0, ac1, 2, 'px'),
           '這是<strong>算術結果</strong>，不代表這檔會漲回來。這一格<strong>沒有算手續費</strong>。') : ''}
       </div>`;
@@ -28273,7 +28329,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const indPct = (list, con) => {
       if (!con) return null;
       const by = {};
-      list.forEach(it => { const k = industryOf(it.h) || '未分類'; by[k] = (by[k] || 0) + it.value; });
+      list.forEach(it => { const k = industryOf(it.h, d) || '未分類'; by[k] = (by[k] || 0) + it.value; });
       const top = Object.keys(by).sort((a, b) => by[b] - by[a])[0];
       return top ? { name: top, pct: by[top] / con.total * 100 } : null;
     };
@@ -28305,7 +28361,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           <input type="number" class="form-input" placeholder="股數" value="${adviceSim[sym] || ''}"
                  oninput="setAdviceSim('${escape(sym)}', this.value)"
                  style="width:110px; padding:4px 8px; font-size:12px;">
-          <span style="font-size:11px; color:var(--ink-tertiary);">現價 ${px > 0 ? usMoney(px) : '—'} · 你有 ${usShares(h.shares)} 股</span>
+          <span style="font-size:11px; color:var(--ink-tertiary);">現價 ${px > 0 ? adviceMoney(d, px) : '—'} · 你有 ${adviceShares(h.shares)} 股</span>
         </div>`;
     }).join('');
     return H + adviceBox(`
@@ -28480,38 +28536,42 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   const ADVICE_SCAN_STALE_DAYS = 3;
   function adviceSizeRows(d) {
     const sc = usScanScored;
+    const market = adviceMarketKey(d && d.market);
+    const marketLabel = adviceMarketLabel(d);
+    const requiredCcy = market === 'tw' ? 'TWD' : 'USD';
+    const requiredCcyLabel = market === 'tw' ? 'NT$' : 'US$';
     const btn = (t, fn) => `<div style="margin-top:9px;"><button class="btn btn-sm" onclick="${fn}">${t}</button></div>`;
     const note = (txt, b) => `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.85;">${txt}</div>${b || ''}`;
     // 🔴 三種狀態的 list 都可能是 []，要分開判斷——
     //   「掃過但一檔都沒過」跟「從來沒掃過」的下一步完全不同（前者要調條件，後者要先掃）。
-    if (!sc) return note('你還沒跑過機會掃描，所以這一區沒有東西。', btn('🎯 去掃描', "closeUsAdvice(); openUsScanModal('us');"));
-    if (sc.mkt === 'tw') return note('你上次掃的是<strong>台股</strong>，這一區只看美股。', btn('🎯 掃美股', "closeUsAdvice(); openUsScanModal('us');"));
+    if (!sc) return note('你還沒跑過機會掃描，所以這一區沒有東西。', btn('🎯 去掃描', adviceScanOpen(d)));
+    if (adviceMarketKey(sc.mkt) !== market) return note(`你上次掃的是<strong>${adviceMarketKey(sc.mkt) === 'tw' ? '台股' : '美股'}</strong>，現在這一頁看的是${marketLabel}。`, btn(`🎯 掃${marketLabel}`, adviceScanOpen(d)));
     if (!Array.isArray(sc.list) || !sc.list.length)
-      return note('你上次掃完<strong>一檔都沒有符合</strong>你勾的條件（不是沒掃，是掃了沒中）。', btn('🎯 調條件重掃', "closeUsAdvice(); openUsScanModal('us');"));
+      return note('你上次掃完<strong>一檔都沒有符合</strong>你勾的條件（不是沒掃，是掃了沒中）。', btn('🎯 調條件重掃', adviceScanOpen(d)));
     const age = sc.at ? (Date.now() - sc.at) / 86400000 : null;
     if (age != null && age > ADVICE_SCAN_STALE_DAYS)
       return note(`這份掃描是 <strong>${Math.round(age)} 天前</strong>跑的，裡面的進場價<strong>已經不是現在的價格</strong>。<br>用舊價算出來的股數會騙你，所以<strong>我不算</strong>。`,
-        btn('🎯 重新掃描', "closeUsAdvice(); openUsScanModal('us');"));
+        btn('🎯 重新掃描', adviceScanOpen(d)));
 
     const held = new Set(d.holdings.map(h => String(h.symbol).toUpperCase()));
     const fresh = sc.list.filter(r => !held.has(String(r.ctx.symbol).toUpperCase()));
     if (!fresh.length)
       return note(`你上次掃出來的 ${sc.list.length} 檔<strong>你都已經有了</strong>，所以這一區沒有新的標的。`,
-        btn('🎯 換個範圍重掃', "closeUsAdvice(); openUsScanModal('us');"));
+        btn('🎯 換個範圍重掃', adviceScanOpen(d)));
 
     const c = adviceCfg;
     const lack = [];
     if (!(c.pool > 0)) lack.push('你能拿出來的錢');
     if (!(c.riskPct > 0)) lack.push('一次最多願意賠幾 %');
     // ⚠ 幣別不同就不算——這一行是整段最容易把股數算成 32 倍的地方
-    const ccyBad = c.ccy !== 'USD';
+    const ccyBad = c.ccy !== requiredCcy;
     const top = fresh.slice(0, 2);
     const listOnly = top.map(r => {
       const x = r.ctx;
       return `<div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px;">
           <strong style="font-family:var(--mono); color:var(--accent);">${escape(x.symbol)}</strong>
           <span style="color:var(--ink-tertiary);"> ${escape(x.name || '')}</span>
-          <span style="font-family:var(--mono); font-size:11.5px;">　${usMoney(x.price)}</span>
+          <span style="font-family:var(--mono); font-size:11.5px;">　${adviceMoney(d, x.price)}</span>
           <span style="color:var(--ink-tertiary); font-size:11px;">（${escape(x.lastDate || '')} 收盤）</span>
         </div>`;
     }).join('');
@@ -28520,7 +28580,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         <strong>「排在前面」的意思只是「符合的條件比較多」，不是「比較好」。</strong></div>`;
     if (lack.length || ccyBad) {
       return headTxt + listOnly + `<div style="margin-top:10px; font-size:12px; color:var(--accent-warm); line-height:1.85;">
-        ${ccyBad ? '上面那一格你選的是 <strong>NT$</strong>，但美股的價格是美元 —— <strong>幣別不一樣不能直接除</strong>，所以我不算股數。把幣別改成 US$ 就會算。'
+        ${ccyBad ? `上面那一格選的是 <strong>${c.ccy === 'TWD' ? 'NT$' : 'US$'}</strong>，但${marketLabel}價格要用 ${requiredCcyLabel} —— <strong>幣別不一樣不能直接除</strong>，所以我不算股數。把幣別改成 ${requiredCcyLabel} 就會算。`
                  : `還不能算股數：你還沒填「<strong>${escape(lack.join('</strong>」與「<strong>'))}</strong>」。<br>
         <span style="color:var(--ink-tertiary);">這兩個數字系統裡沒有，只有你知道。填在上面那一區。</span>`}</div>`;
     }
@@ -28542,9 +28602,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         </div>
         <div style="font-size:12px; color:var(--ink-secondary); line-height:1.9;">
           照<strong>你填的</strong> ${adviceCcy(c.pool)}、<strong>你設的</strong>單筆風險 ${c.riskPct}%、
-          停損 ${stop ? usMoney(stop.v) : '—'}<span style="color:var(--ink-tertiary);">（${stop ? '程式用 ATR 算的，你還沒設過' : '算不出來'}）</span><br>
+          停損 ${stop ? adviceMoney(d, stop.v) : '—'}<span style="color:var(--ink-tertiary);">（${stop ? '程式用 ATR 算的，你還沒設過' : '算不出來'}）</span><br>
           → 這幾個數字算出來是
-          <strong style="font-family:var(--serif); font-size:17px; color:${zero ? 'var(--ink-tertiary)' : 'var(--accent)'};">${res.n}</strong> 股${res.n > 0 ? `，${usMoney(res.money)}` : ''}
+          <strong style="font-family:var(--serif); font-size:17px; color:${zero ? 'var(--ink-tertiary)' : 'var(--accent)'};">${res.n}</strong> 股${res.n > 0 ? `，${adviceMoney(d, res.money)}` : ''}
         </div>
         <div style="margin-top:7px; padding-top:6px; border-top:1px solid var(--line);">${capLines}</div>
         <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.75; margin-top:6px;">
@@ -28552,7 +28612,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             ? `算出來 <strong>0 股</strong>。<strong style="color:var(--ink-primary);">不是因為這一檔不好</strong> —— 是「${escape((res.binding && res.binding.label) || '')}」這一道夾住了。
                ${res.binding && res.binding.key === 'weight' ? '（你設的單一檔上限是 ' + c.maxPosPct + '%，而這一筆會超過。）' : ''}`
             : `生效的是「<strong>${escape((res.binding && res.binding.label) || '')}</strong>」那一道。<strong>改掉上面任何一個數字，這裡就會變。</strong>`}
-          ${res.riskTotal ? `<br>如果停損被打到，這一筆會賠 <strong>${usMoney(res.riskTotal)}</strong>（佔你填的錢 ${(res.riskTotal / c.pool * 100).toFixed(2)}%）。` : ''}
+          ${res.riskTotal ? `<br>如果停損被打到，這一筆會賠 <strong>${adviceMoney(d, res.riskTotal)}</strong>（佔你填的錢 ${(res.riskTotal / c.pool * 100).toFixed(2)}%）。` : ''}
         </div>
       </div>`;
     }).join('');
@@ -28566,7 +28626,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }, 0);
     return headTxt + rows + `
       <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.85; padding-top:9px; border-top:1px solid var(--line);">
-        ${totRisk > 0 ? `兩檔都走到停損，你會賠 <strong>${usMoney(totRisk)}</strong>，佔你填的錢 ${(totRisk / c.pool * 100).toFixed(2)}%。<br>
+        ${totRisk > 0 ? `兩檔都走到停損，你會賠 <strong>${adviceMoney(d, totRisk)}</strong>，佔你填的錢 ${(totRisk / c.pool * 100).toFixed(2)}%。<br>
         <span style="color:var(--ink-tertiary);">⚠ 這個算法<strong>假設兩檔各走各的</strong>。如果它們是同一種生意，比較可能同一天一起被打到 —— 上面「你以為買了幾種生意」那一區有算相關係數。</span><br>` : ''}
         <span style="color:var(--ink-tertiary);">
         ⚠ 股數一律<strong>無條件捨去</strong>（不做碎股）。這裡<strong>沒有算手續費</strong>，也<strong>沒有算匯率</strong>。<br>
@@ -28578,7 +28638,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function renderUsAdvice() {
     const box = document.getElementById('usAdviceBody');
     if (!box) return;
-    const d = usAdviceData || { holdings: [], ctx: {}, meta: {}, bad: [], errs: [], noPrice: [], adjOld: [], plans: [] };
+    const d = usAdviceData || { holdings: [], ctx: {}, meta: {}, bad: [], errs: [], noPrice: [], adjOld: [], plans: [], market: adviceMarket };
+    syncAdviceMarketButtons();
     adviceSim = {};   // 每次重畫都清掉模擬，不要沿用上一輪的數字
     box.innerHTML = adviceSec0(d) + adviceSec1(d) + adviceSec2(d) + adviceSec3(d) + adviceSec4(d)
       + adviceSec6(d) + adviceSec7(d) + adviceSec8(d) + adviceFoot();
@@ -28609,7 +28670,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         ${d.bad.map(b => `<span style="font-family:var(--mono);">${escape(b.sym)}</span>：${escape(b.why)}`).join('<br>')}<br>
         <span style="color:var(--ink-tertiary);">這不是「它沒問題」，是<strong>我根本沒有算它</strong>。
         它在下面的「你手上這一把」與「如果都不動」裡照樣有。</span>
-        <button class="btn btn-sm" style="margin-left:6px;" onclick="openBarsModal('us')">📥 累積歷史資料</button></div>`;
+        <button class="btn btn-sm" style="margin-left:6px;" onclick="${adviceBarsOpen(d)}">📥 累積歷史資料</button></div>`;
     }
     let errTxt = '';
     if (d.errs.length) {
@@ -28617,7 +28678,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         <strong style="color:var(--accent-warm);">這 ${d.errs.length} 檔這次抓不到（跟股票本身無關）</strong><br>
         ${d.errs.map(b => `<span style="font-family:var(--mono);">${escape(b.sym)}</span>：${escape(b.why)}`).join('<br>')}<br>
         <span style="color:var(--ink-tertiary);">等一下再按一次試試。</span>
-        <button class="btn btn-sm" style="margin-left:6px;" onclick="openUsAdvice('us')">↻ 重試</button></div>`;
+        <button class="btn btn-sm" style="margin-left:6px;" onclick="openUsAdvice('${adviceMarketKey(d.market)}')">↻ 重試</button></div>`;
     }
     // v16.64：本機還是舊格式（沒還原除息）的那幾檔要點名
     let adjTxt = '';
@@ -28625,9 +28686,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       adjTxt = `<div style="margin-top:10px; padding-top:9px; border-top:1px solid var(--line); color:var(--accent-warm);">
         <strong>這 ${d.adjOld.length} 檔用的是舊版日 K（沒有還原除息）：</strong>
         <span style="font-family:var(--mono);">${escape(d.adjOld.join('、'))}</span><br>
-        <span style="color:var(--ink-secondary);">除息當天股價會掉一段，那不是跌。用它算出來的 RSI 會偏低、距 60 日高會偏遠。
-        美股影響很小（一年不到 0.2%），但數字就是不精準。</span>
-        <button class="btn btn-sm" style="margin-left:6px;" onclick="openBarsModal('us')">📥 更新</button></div>`;
+        <span style="color:var(--ink-secondary);">除息當天股價會掉一段，那不是跌。用它算出來的 RSI 會偏低、距 60 日高會偏遠，數字就是不精準。</span>
+        <button class="btn btn-sm" style="margin-left:6px;" onclick="${adviceBarsOpen(d)}">📥 更新</button></div>`;
     }
 
     return adviceH('MY · POSITIONS', '我的部位') + adviceBox(`
@@ -28636,7 +28696,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       <span style="color:var(--ink-tertiary);">要不要動，是你的決定。</span>
       <div style="margin-top:10px; padding-top:9px; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px; line-height:1.9;">
         現價：${agoTxt}
-        ${ago == null || ago >= 2 ? '<button class="btn btn-sm" style="margin-left:6px;" onclick="refreshUsQuotes()">⚡ 更新現價</button>' : ''}<br>
+        ${ago == null || ago >= 2 ? `<button class="btn btn-sm" style="margin-left:6px;" onclick="${adviceRefreshAction(d)}">⚡ 更新現價</button>` : ''}<br>
         ${dateLine ? `價位與指標（本機日 K）：${dateLine}` : '價位與指標：<span style="color:var(--accent-warm);">本機還沒有日 K</span>'}
       </div>
       <div style="font-size:11px; color:var(--ink-tertiary); margin-top:5px;">
@@ -28648,13 +28708,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // ── 區 1：你手上這一把 ＋ 規則對帳 ───────────────────────────
   function adviceSec1(d) {
     const H = adviceH('01', '你手上這一把');
+    const marketLabel = adviceMarketLabel(d);
     if (!d.holdings.length) {
       // ⚠ 三種空狀態，原因完全不同（v16.13：空的有兩種相反的原因）
       const why = d.allN > 0
-        ? `你的美股目前<strong>一股都沒有</strong>（清單裡有 ${d.allN} 檔，股數都是 0）。這一頁只看手上還有的部位。`
+        ? `你的${marketLabel}目前<strong>一股都沒有</strong>（清單裡有 ${d.allN} 檔，股數都是 0）。這一頁只看手上還有的部位。`
         : d.watchN > 0
           ? `你有 <strong>${d.watchN} 檔自選股（還沒買）</strong>。這一頁分析的是<strong>已經買進的部位</strong>，所以這裡是空的。<br>自選股的價位對帳在「我的下單計畫」。`
-          : '你還沒有美股持股。這一頁是拿你買了什麼去算的，沒有東西就算不出來。';
+          : `你還沒有${marketLabel}持股。這一頁是拿你買了什麼去算的，沒有東西就算不出來。`;
       const btn = d.watchN > 0
         ? '<button class="btn btn-sm" onclick="closeUsAdvice(); openPlanWatch();">開下單看守</button>'
         : '<button class="btn btn-sm" onclick="closeUsAdvice();">＋ 先去新增持股</button>';
@@ -28676,16 +28737,16 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     }).join('');
     const noPx = d.noPrice.length
       ? `<div style="margin-top:8px; font-size:11.5px; color:var(--accent-warm);">⚠ 其中 ${d.noPrice.length} 檔（${escape(d.noPrice.join('、'))}）沒有抓到現價，市值是用<strong>成本</strong>代替的，上面每一個百分比都會失真。
-         <button class="btn btn-sm" style="margin-left:6px;" onclick="refreshUsQuotes()">⚡ 更新現價</button></div>` : '';
+         <button class="btn btn-sm" style="margin-left:6px;" onclick="${adviceRefreshAction(d)}">⚡ 更新現價</button></div>` : '';
 
     return H + adviceBox(`
       <div style="display:flex; gap:9px; flex-wrap:wrap; margin-bottom:12px;">
-        ${pill('總投入', usMoney(st.cost))}${pill('現值', usMoney(st.val))}
-        ${pill('未實現', usMoneySign(st.pnl), pc)}${pill('報酬率', (st.pct >= 0 ? '+' : '') + st.pct.toFixed(2) + '%', pc)}
+        ${pill('總投入', adviceMoney(d, st.cost))}${pill('現值', adviceMoney(d, st.val))}
+        ${pill('未實現', adviceMoneySign(d, st.pnl), pc)}${pill('報酬率', (st.pct >= 0 ? '+' : '') + st.pct.toFixed(2) + '%', pc)}
       </div>
       ${barsHtml}${noPx}
       <div style="font-size:11px; color:var(--ink-tertiary); margin-top:8px; line-height:1.75;">
-        ※ 這一區的百分比，分母都是「<strong>你這 ${st.n} 檔美股加起來的市值</strong>」。<br>
+        ※ 這一區的百分比，分母都是「<strong>你這 ${st.n} 檔${marketLabel}加起來的市值</strong>」。<br>
         　全站的集中度（含台股、ETF、加密貨幣…）在「現金流 → 績效風險」那一頁，那裡的分母是所有模組加起來的台幣。<strong>兩個數字不一樣是正常的。</strong>
       </div>`) + adviceRules(d);
   }
@@ -28716,7 +28777,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       if (src === 'check') return '你在新手體檢寫的' + age;
       return '下單計畫裡的（來源不明，可能是掃描帶入的）' + age;
     };
-    const f = usMoney;
+    const f = n => adviceMoney(d, n);
     const body = rows.map(r => {
       const st = r.state || planStateOf(r.price, r.low, r.high);
       const dt = r.priceDate ? `（${escape(String(r.priceDate).slice(5).replace('-', '/'))}）` : '';
@@ -28752,9 +28813,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!Object.keys(d.ctx).length) {
       return H + adviceBox(`本機還沒有累積任何日 K，所以支撐、壓力、趨勢、停損位置這一區<strong>整個算不出來</strong>。<br>
         <span style="color:var(--ink-tertiary);">上面的損益、佔比，跟下面的「如果都不動」<strong>不受影響</strong>。</span>
-        <div style="margin-top:9px;"><button class="btn btn-sm" onclick="openBarsModal('us')">📥 累積歷史資料</button></div>`);
+        <div style="margin-top:9px;"><button class="btn btn-sm" onclick="${adviceBarsOpen(d)}">📥 累積歷史資料</button></div>`);
     }
-    const f = usMoney;
+    const f = n => adviceMoney(d, n);
     const cards = d.holdings.slice().sort((a, b) => holdingValue(b) - holdingValue(a)).map(h => {
       const sym = String(h.symbol).toUpperCase();
       const c = d.ctx[sym];
@@ -28766,13 +28827,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       const head = `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap;">
           <div><span style="font-family:var(--serif); font-size:17px; color:var(--accent);">${escape(sym)}</span>
             <span style="font-size:11.5px; color:var(--ink-tertiary); margin-left:6px;">${escape(h.name || '')}${h.mktBoard ? ' · ' + escape(h.mktBoard) : ''}</span></div>
-          <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">佔你美股部位 ${pctOf.toFixed(1)}%</span>
+          <span style="font-family:var(--mono); font-size:11px; color:var(--ink-tertiary);">佔你${adviceMarketLabel(d)}部位 ${pctOf.toFixed(1)}%</span>
         </div>
         <div style="font-size:12px; color:var(--ink-secondary); line-height:1.9; margin-top:6px;">
-          你的成本 ${f(cost)} × ${usShares ? usShares(h.shares) : h.shares} 股 = ${f(holdingCost(h))}<br>
+          你的成本 ${f(cost)} × ${adviceShares(h.shares)} 股 = ${f(holdingCost(h))}<br>
           現在　　 ${px > 0 ? f(px) : '<span style="color:var(--accent-warm);">沒抓到現價</span>'}
             ${h.priceAsOfDate ? `<span style="color:var(--ink-tertiary); font-size:11px;">（${escape(String(h.priceAsOfDate).slice(5).replace('-', '/'))}）</span>` : ''}
-            <span style="color:${pc};">　${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%　${usMoneySign(holdingPnL(h))}</span><br>
+            <span style="color:${pc};">　${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%　${adviceMoneySign(d, holdingPnL(h))}</span><br>
           ${be == null ? '' : be > 0
             ? `<strong>回本要漲 +${be.toFixed(2)}%</strong>`
             : `已高於成本 +${(-be).toFixed(2)}%`}
@@ -28793,7 +28854,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         ? `<div style="margin:8px 0; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; font-size:11.5px; color:var(--accent-warm); line-height:1.75;">
             ⚠ 下面的價位與指標用的是本機日 K，最後一根 ${escape(c.lastDate || '?')}（收 ${f(c.price)}），跟上面的現價差 ${drift.toFixed(1)}%。<br>
             <span style="color:var(--ink-secondary);">這幾格算出來的位置<strong>已經不是現在的位置</strong>。</span>
-            <button class="btn btn-sm" style="margin-left:6px;" onclick="openBarsModal('us')">📥 更新</button></div>`
+            <button class="btn btn-sm" style="margin-left:6px;" onclick="${adviceBarsOpen(d)}">📥 更新</button></div>`
         : `<div style="font-size:11px; color:var(--ink-tertiary); margin:7px 0 4px;">下面這幾格以 ${escape(c.lastDate || '?')} 的收盤 ${f(c.price)} 為基準。</div>`;
 
       // ⚠ 只取 trend（那是均線排列的事實描述）。
@@ -28860,7 +28921,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const mk = p => {
       const delta = stressDrop(d.holdings, p);
       return row(p < 0 ? `全部再跌 ${-p}%` : `全部再漲 ${p}%`,
-        usMoneySign(delta), usMoney(st.val + delta), p < 0 ? 'var(--danger)' : 'var(--accent)');
+        adviceMoneySign(d, delta), adviceMoney(d, st.val + delta), p < 0 ? 'var(--danger)' : 'var(--accent)');
     };
     const noPx = d.noPrice.length
       ? `<div style="font-size:11.5px; color:var(--accent-warm); margin-top:8px;">⚠ 其中 ${d.noPrice.length} 檔沒有抓到現價，市值是用成本代替的，下面的金額會失真。</div>` : '';
@@ -28871,8 +28932,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       </div>
       ${mk(-10)}${mk(-20)}${mk(-30)}${mk(10)}
       <div style="font-size:11.5px; color:var(--ink-secondary); line-height:1.8; margin-top:10px; padding-top:9px; border-top:1px solid var(--line);">
-        你現在的未實現是 <strong style="color:${st.pnl >= 0 ? 'var(--accent)' : 'var(--danger)'};">${usMoneySign(st.pnl)}</strong>。
-        再跌 20% 的話，總共會是 <strong>${usMoneySign(st.pnl + stressDrop(d.holdings, -20))}</strong>。<br>
+        你現在的未實現是 <strong style="color:${st.pnl >= 0 ? 'var(--accent)' : 'var(--danger)'};">${adviceMoneySign(d, st.pnl)}</strong>。
+        再跌 20% 的話，總共會是 <strong>${adviceMoneySign(d, st.pnl + stressDrop(d.holdings, -20))}</strong>。<br>
         <span style="color:var(--ink-tertiary);">看得下去，就是你能承受的範圍；看不下去，那是現在就該想的事，不是跌下去才想。</span>
       </div>${noPx}`);
   }
@@ -29365,11 +29426,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       barsAutoCfg.off = !!o.off;
       ['tw', 'us'].forEach(k => {
         const v = o[k];
-        if (v && typeof v === 'object') barsAutoCfg[k] = {
-          on: v.on !== false,
-          h: Math.min(23, Math.max(0, Number(v.h) || BARS_AUTO_DEFAULT[k].h)),
-          m: Math.min(59, Math.max(0, Number(v.m) || 0))
-        };
+        if (v && typeof v === 'object') {
+          const h = Number(v.h), m = Number(v.m);
+          barsAutoCfg[k] = {
+            on: v.on !== false,
+            // 0 點是合法時間，不能用 `|| 預設值`，否則 00:xx 會悄悄變回 14:xx／06:xx。
+            h: Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : BARS_AUTO_DEFAULT[k].h,
+            m: Number.isFinite(m) ? Math.min(59, Math.max(0, m)) : 0
+          };
+        }
       });
       if (Number(o.usTop) > 0) barsAutoCfg.usTop = Number(o.usTop);
       if (o.last && typeof o.last === 'object' && !Array.isArray(o.last)) barsAutoCfg.last = o.last;
