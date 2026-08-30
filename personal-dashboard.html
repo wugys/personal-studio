@@ -3811,6 +3811,52 @@
   </div>
 
   <!-- ============ Gemini AI 金鑰 Modal ============ -->
+  <div class="modal-backdrop" id="aiProviderModal">
+    <div class="modal" style="max-width:620px;">
+      <h2>🤖 AI <em>服務設定</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:12px;">
+        把全站的 AI 功能（投資機會評估、台股／美股分析、掃描挑前 5 名、旅遊管家、行程生成、景點導覽）
+        改成呼叫<strong>你自己的 AI 服務</strong>。設定只存這台裝置的瀏覽器、不上傳。
+      </div>
+      <div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); padding:9px 12px; margin-bottom:14px; font-size:11.5px; color:var(--ink-secondary); line-height:1.65;">
+        <strong>不填就完全照舊</strong>（用 Anthropic 官方 API）。填了之後全站 AI 都走你的服務。<br>
+        網址只填到 <code>/v1</code> 也可以，會自動補上標準路徑；按「🔌 測試連線」會<strong>真的打一次</strong>並把實際用的網址與真正的錯誤顯示出來。
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--ink-primary); margin-bottom:12px;">
+        <input type="checkbox" id="aiProvEnabled"> <span>啟用我自己的 AI 服務</span>
+      </label>
+      <div class="form-group">
+        <label class="form-label">API 網址</label>
+        <input type="text" class="form-input" id="aiProvUrl" placeholder="https://你的伺服器/v1/chat/completions" autocomplete="off" style="font-family:var(--mono);">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">API 格式</label>
+          <select class="form-input" id="aiProvFormat">
+            <option value="openai">OpenAI 相容（最常見 · /v1/chat/completions）</option>
+            <option value="anthropic">Anthropic 相容（/v1/messages）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">模型名稱</label>
+          <input type="text" class="form-input" id="aiProvModel" placeholder="例如 gpt-4o-mini" autocomplete="off" style="font-family:var(--mono);">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">API 金鑰（服務不需要就留空）</label>
+        <input type="text" class="form-input" id="aiProvKey" placeholder="sk-..." autocomplete="off" style="font-family:var(--mono); word-break:break-all;">
+      </div>
+      <div id="aiProvTestResult" style="font-size:11.5px; line-height:1.7; margin-top:6px;"></div>
+      <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
+        <button class="btn btn-sm" id="aiProvTestBtn" type="button" onclick="testAiProvider()">🔌 測試連線</button>
+        <div class="form-actions-right">
+          <button class="btn" type="button" onclick="closeAiProviderModal()">取消</button>
+          <button class="btn btn-primary" type="button" onclick="saveAiProviderSettings()">儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="geminiKeyModal">
     <div class="modal" style="max-width:580px;">
       <h2>✦ Gemini <em>AI 分析金鑰</em></h2>
@@ -9338,7 +9384,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.48 · ϮϮ</div>
+    <div>v 16.49 · ϰϰ</div>
   </footer>
 </div>
 
@@ -9862,7 +9908,11 @@ alter publication supabase_realtime add table party_locations;</pre>
   // 不要用視窗 id 的命名規則去猜。v16.20 寫 /SyncModal$/，結果**剛好漏掉最重要的那一個**：
   // 「雲端同步總管」（syncMasterModal，一次設定 13 個模組的金鑰）——
   // 那正是使用者最可能把旅遊金鑰貼進理財模組的地方，卻是唯一不會警告的地方。
+  // ⚠ 只看「有沒有網址欄＋金鑰欄」會誤抓（v16.49：AI 服務設定也是網址＋金鑰，
+  //   被當成同步視窗就會掛上文不對題的「跟旅遊共用金鑰」紅框——會誤報的保護比沒保護糟，v12.1b）。
+  //   這個警告針對的是 **Supabase** 金鑰外流，所以視窗本身必須真的在講 Supabase。
   function looksLikeSyncModal(box) {
+    if (!/supabase/i.test(box.textContent || '')) return false;
     return !!(box.querySelector('input[id*="upabase"][id*="rl"], input[id$="Url"], input[id$="URL"]')
            && box.querySelector('input[id*="upabase"][id*="ey"], input[id$="Key"]'));
   }
@@ -9975,6 +10025,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       console.warn(e);
       setSyncStatus('local', '◐ 本地模式');
     }
+    try { await loadAiProvider(); } catch (e) {}   // 自訂 AI 服務設定（v16.49）：aiChat 要用
     applyViewMode();
     renderDashboard();
     renderApis();
@@ -10186,6 +10237,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     items.push({ icon: '☁', label: '雲端同步總管（一次設定全部模組）', action: 'openSyncMasterModal()' });
     items.push({ icon: '📥', label: '累積歷史資料（掃描就不用每檔連網）', action: 'openBarsModal()' });
     items.push({ icon: '💾', label: '全站備份 / 還原（一個檔存全部）', action: 'openBackupModal()' });
+    items.push({ icon: '🤖', label: 'AI 服務設定（改用你自己的 API）', action: 'openAiProviderModal()' });
 
     const html = items.map(it => {
       if (it.sep) return '<div style="height:1px; background:var(--line); margin:6px 0;"></div>';
@@ -12202,6 +12254,196 @@ alter publication supabase_realtime add table party_locations;</pre>
   let lastAiPrompt = '';
   const AI_KEY_STORAGE = 'studio_ai_key_v1';
 
+  // ===== 自訂 AI 服務（v16.49）=====
+  // 以前 5 個 AI 功能各自寫死 fetch('https://api.anthropic.com/v1/messages')，
+  // 所以只能用 Anthropic。改成：全部走 aiChat() 這一支，要換供應商只改一個地方。
+  // ⚠ 這裡刻意做成「不設定就完全照舊」——沒填自訂服務時，行為跟以前一模一樣（Anthropic）。
+  const AI_PROVIDER_STORAGE = 'studio_ai_provider_v1';
+  let aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai' };
+
+  // ⚠ 一律先重設成預設，再套用讀到的合法值。
+  //   不這樣做的話，storage 壞掉或被清空時會**沿用記憶體裡的舊設定**——
+  //   使用者以為已經關掉／已經清掉了，AI 卻還在往舊網址送（測試抓到的）。
+  async function loadAiProvider() {
+    aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai' };
+    const o = await readJson(AI_PROVIDER_STORAGE, null);
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      aiProvider = {
+        enabled: !!o.enabled, url: String(o.url || '').trim(), key: String(o.key || '').trim(),
+        model: String(o.model || '').trim(), format: o.format === 'anthropic' ? 'anthropic' : 'openai'
+      };
+    }
+    return aiProvider;
+  }
+  async function saveAiProvider() { await writeKey(AI_PROVIDER_STORAGE, JSON.stringify(aiProvider)); }
+
+  // 三個欄位都填齊才算「接上了」——少一個就退回 Anthropic，不要半殘地送出去
+  function aiProviderOn() {
+    return !!(aiProvider.enabled && aiProvider.url && aiProvider.model);
+  }
+
+  // 使用者可能只填到 https://my.server/v1 —— 幫他補上標準路徑，但**要講出來補了什麼**
+  function aiEndpointUrl(url, format) {
+    const u = String(url || '').trim().replace(/\/+$/, '');
+    if (!u) return '';
+    if (/\/(chat\/completions|messages|responses)$/.test(u)) return u;
+    return u + (format === 'anthropic' ? '/messages' : '/chat/completions');
+  }
+
+  function aiProviderLabel() {
+    if (!aiProviderOn()) return 'Anthropic Claude（claude-sonnet-5）';
+    let host = aiProvider.url;
+    try { host = new URL(aiEndpointUrl(aiProvider.url, aiProvider.format)).host; } catch (e) {}
+    return `你的 AI 服務（${host} · ${aiProvider.model}）`;
+  }
+
+  // 共用的 AI 呼叫。回 { text, viaCustom, toolsDropped }
+  // ⚠ tools（Anthropic 的 web_search）只有官方 Anthropic 支援；走自訂服務時會被丟掉，
+  //   而且一定要回報 toolsDropped，讓呼叫端老實告訴使用者「這次沒有上網查」（v16.43 那條）。
+  async function aiChat({ system, messages, maxTokens, tools, apiKey }) {
+    const msgs = (messages || []).filter(m => m && m.content);
+    if (!msgs.length) throw new Error('沒有要問的內容');
+    const max = Number(maxTokens) || 2000;
+
+    if (aiProviderOn()) {
+      const url = aiEndpointUrl(aiProvider.url, aiProvider.format);
+      const toolsDropped = !!(tools && tools.length);
+      if (aiProvider.format === 'anthropic') {
+        const body = { model: aiProvider.model, max_tokens: max, messages: msgs };
+        if (system) body.system = system;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
+            aiProvider.key ? { 'x-api-key': aiProvider.key, 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message || 'API error');
+        const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+        return { text, viaCustom: true, toolsDropped };
+      }
+      // OpenAI 相容（絕大多數自架服務都是這種：Ollama / LM Studio / vLLM / one-api…）
+      const oMsgs = system ? [{ role: 'system', content: system }].concat(msgs) : msgs;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+          aiProvider.key ? { 'Authorization': 'Bearer ' + aiProvider.key } : {}),
+        body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs })
+      });
+      if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error).slice(0, 200));
+      const text = String(data.choices?.[0]?.message?.content ?? '').trim();
+      if (!text) throw new Error('你的 AI 服務有回應，但取不到內容（預期 choices[0].message.content）。回應開頭：' + JSON.stringify(data).slice(0, 200));
+      return { text, viaCustom: true, toolsDropped };
+    }
+
+    // 沒設自訂服務 → 完全照舊走 Anthropic
+    const key = apiKey || await readKey(AI_KEY_STORAGE);
+    if (!key) throw new Error('尚未設定 AI：可在首頁選單「🤖 AI 服務設定」填你自己的 API，或填 Anthropic API Key');
+    const body = { model: 'claude-sonnet-5', max_tokens: max, messages: msgs };
+    if (system) body.system = system;
+    if (tools && tools.length) body.tools = tools;
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', 'x-api-key': key,
+        'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 240)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'API error');
+    const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+    return { text, viaCustom: false, toolsDropped: false };
+  }
+
+  // 「現在有沒有 AI 可用」——自訂服務或 Anthropic 金鑰，兩者有一個就算有
+  async function aiReady() {
+    if (aiProviderOn()) return true;
+    return !!(await readKey(AI_KEY_STORAGE));
+  }
+
+  async function openAiProviderModal() {
+    await loadAiProvider();
+    document.getElementById('aiProvEnabled').checked = !!aiProvider.enabled;
+    document.getElementById('aiProvUrl').value = aiProvider.url || '';
+    document.getElementById('aiProvKey').value = aiProvider.key || '';
+    document.getElementById('aiProvModel').value = aiProvider.model || '';
+    document.getElementById('aiProvFormat').value = aiProvider.format || 'openai';
+    document.getElementById('aiProvTestResult').innerHTML = '';
+    openModalOnTop('aiProviderModal');
+  }
+  function closeAiProviderModal() { closeModalRestore('aiProviderModal'); }
+
+  function readAiProviderForm() {
+    return {
+      enabled: document.getElementById('aiProvEnabled').checked,
+      url: document.getElementById('aiProvUrl').value.trim(),
+      key: document.getElementById('aiProvKey').value.trim(),
+      model: document.getElementById('aiProvModel').value.trim(),
+      format: document.getElementById('aiProvFormat').value === 'anthropic' ? 'anthropic' : 'openai'
+    };
+  }
+
+  async function saveAiProviderSettings() {
+    const f = readAiProviderForm();
+    // ⚠ 勾了啟用卻沒填齊 → 擋下來並講清楚少什麼。存下去的話全站 AI 會安靜地退回 Anthropic，
+    //   使用者只會覺得「我明明設定了」（本專案最常見的那種假話）
+    if (f.enabled) {
+      const miss = [];
+      if (!f.url) miss.push('API 網址');
+      if (!f.model) miss.push('模型名稱');
+      if (miss.length) { alert('還缺：' + miss.join('、') + '\n\n沒填齊的話，AI 功能會退回用 Anthropic，而畫面上看不出來。'); return; }
+    }
+    aiProvider = f;
+    await saveAiProvider();
+    showToast(f.enabled ? '✓ 全站 AI 改用你的服務' : '✓ 已存（未啟用，仍用 Anthropic）');
+    closeAiProviderModal();
+  }
+
+  // 真的打一次，把「實際用的網址」與「真正的錯誤」顯示出來——
+  // 不要只回一句「失敗」，那查不出是網址、金鑰、還是模型名稱的問題
+  async function testAiProvider() {
+    const f = readAiProviderForm();
+    const box = document.getElementById('aiProvTestResult');
+    const btn = document.getElementById('aiProvTestBtn');
+    if (!f.url || !f.model) {
+      box.innerHTML = '<span style="color:var(--danger);">先填 API 網址與模型名稱。</span>';
+      return;
+    }
+    const url = aiEndpointUrl(f.url, f.format);
+    const note = url !== f.url.replace(/\/+$/, '')
+      ? `<div style="color:var(--ink-tertiary); margin-bottom:4px;">實際呼叫：<code>${escape(url)}</code>（你填的網址沒有標準路徑，已自動補上）</div>` : '';
+    box.innerHTML = note + '<span style="color:var(--ink-tertiary);">◌ 測試中…</span>';
+    btn.disabled = true;
+    // 暫時套用表單上的設定去打，測完還原（不要因為按了測試就把設定存下去）
+    const backup = aiProvider;
+    aiProvider = Object.assign({}, f, { enabled: true });
+    try {
+      const t0 = Date.now();
+      const r = await aiChat({ messages: [{ role: 'user', content: '請只回覆兩個字：成功' }], maxTokens: 32 });
+      box.innerHTML = note + `<span style="color:var(--accent);">✓ 接通了（${Date.now() - t0} ms）</span>
+        <div style="color:var(--ink-secondary); margin-top:4px;">它回答：「${escape(String(r.text).slice(0, 80))}」</div>
+        <div style="color:var(--ink-tertiary); margin-top:4px;">按「儲存」之後，全站 AI 功能就會走這個服務。</div>`;
+    } catch (e) {
+      box.innerHTML = note + `<span style="color:var(--danger);">✗ 接不通：${escape(e.message)}</span>
+        <div style="color:var(--ink-tertiary); margin-top:5px; line-height:1.7;">
+          常見原因：<br>
+          · <strong>404</strong>：網址或路徑不對（OpenAI 相容通常是 <code>/v1/chat/completions</code>）<br>
+          · <strong>401 / 403</strong>：金鑰不對，或該服務不需要金鑰卻填了<br>
+          · <strong>400</strong>：模型名稱打錯，或格式選錯（試試切換上面的「API 格式」）<br>
+          · <strong>Failed to fetch</strong>：你的伺服器沒開放跨網域（CORS）——要在伺服器加上
+            <code>Access-Control-Allow-Origin</code>，允許 <code>${escape(location.origin)}</code>
+        </div>`;
+    } finally {
+      aiProvider = backup;
+      btn.disabled = false;
+    }
+  }
+
   const AI_PRESETS = {
     double: [
       '尋找未來 3-5 年具備翻倍潛力的科技股',
@@ -12294,13 +12536,14 @@ ${userQuery}`;
     const prompt = buildAiPrompt();
     if (!prompt) { showToast('請先輸入問題'); return; }
 
-    if (!apiKey) {
+    // 沒有金鑰、也沒接自己的 AI 服務 → 退回「複製提示詞」（免金鑰那條路，不要報錯擋人）
+    if (!apiKey && !aiProviderOn()) {
       copyAiPrompt();
       return;
     }
 
     // Save key for next time
-    await writeKey(AI_KEY_STORAGE, apiKey);
+    if (apiKey) await writeKey(AI_KEY_STORAGE, apiKey);
 
     const resultEl = document.getElementById('aiResult');
     resultEl.style.display = 'block';
@@ -12311,28 +12554,8 @@ ${userQuery}`;
     runBtn.textContent = '◌ 分析中...';
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5',
-          max_tokens: 2000,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`API 錯誤 ${response.status}: ${errText.slice(0, 200)}`);
-      }
-
-      const data = await response.json();
-      const text = data.content?.[0]?.text || '（無回應）';
+      const r = await aiChat({ messages: [{ role: 'user', content: prompt }], maxTokens: 2000, apiKey });
+      const text = r.text || '（無回應）';
       resultEl.innerHTML = formatAiResult(text);
       lastAiPrompt = document.getElementById('aiPrompt').value;
       document.getElementById('aiSaveBtn').style.display = '';
@@ -28792,6 +29015,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   const BACKUP_SECRET_MATCH = k =>
     /_sync_v\d+$/.test(k) || k === 'studio_sync_master_v1' ||
     k === 'studio_ai_key_v1' || k === 'studio_finnhub_key_v1' || k === 'studio_gemini_key_v1' ||
+    k === 'studio_ai_provider_v1' ||   // ⚠ 自訂 AI 服務含網址與金鑰 → 一定要算「金鑰組」，預設不匯出（v16.49）
     k === 'tw_news_worker_url_v1' || k === 'travel_multi_config_v1';
   const BACKUP_GROUPS = [
     { key: 'core',    name: '儀表板與模組設定', test: k => /^studio_(groups|modules|viewmode)/.test(k) },
@@ -30035,12 +30259,12 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
   async function runScanAi() {
     const out = document.getElementById('scanAiResult');
     const btn = document.getElementById('scanAiRunBtn');
-    const ak = await readKey(AI_KEY_STORAGE);
-    if (!ak) { showToast('還沒設定 Anthropic API Key——用左邊「📋 複製提示詞」貼到 Claude.ai 也一樣'); return; }
+    // ⚠ 這裡以前只認 Anthropic 金鑰，接了自己的 AI 服務照樣被擋（v10.0「早退守衛」同族）
+    if (!(await aiReady())) { showToast('還沒設定 AI——首頁選單「🤖 AI 服務設定」，或用左邊「📋 複製提示詞」貼到 Claude.ai 也一樣'); return; }
     const orig = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 20-60 秒）'; }
     out.style.display = 'block';
-    out.innerHTML = '<div style="color:var(--ink-tertiary);">Claude 正在讀這 ' + Math.min(SCAN_AI_MAX, usScanScored.list.length) + ' 檔…</div>';
+    out.innerHTML = '<div style="color:var(--ink-tertiary);">' + escape(aiProviderOn() ? '你的 AI' : 'Claude') + ' 正在讀這 ' + Math.min(SCAN_AI_MAX, usScanScored.list.length) + ' 檔…</div>';
     try {
       const text = await callClaudeWithWebSearch(usScanAiPrompt);
       out.innerHTML = usMdLite(text);
@@ -32402,24 +32626,8 @@ ${baseSchema}
   }
 
   async function callAiForTrip(apiKey, system, userInput) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 8000,
-        system,
-        messages: [{ role: 'user', content: userInput }]
-      })
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'API error');
-    let text = data.content?.[0]?.text || '';
+    const r = await aiChat({ system, messages: [{ role: 'user', content: userInput }], maxTokens: 8000, apiKey });
+    let text = r.text || '';
     // 移除可能的 markdown 程式碼框
     text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
     // 嘗試找 JSON 物件起點
@@ -35616,24 +35824,8 @@ ${baseSchema}
 ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5',
-          max_tokens: 2500,
-          system,
-          messages: [{ role: 'user', content: userPrompt }]
-        })
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      const text = data.content?.[0]?.text || '';
+      const r = await aiChat({ system, messages: [{ role: 'user', content: userPrompt }], maxTokens: 2500, apiKey });
+      const text = r.text || '';
       cache[cacheKey] = text;
       saveSpotAiCache(cache);
       body.textContent = text;
@@ -36439,33 +36631,22 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
 
   const TW_NEWS_SOURCES = '證交所（twse.com.tw）、公開資訊觀測站（mops.twse.com.tw）、鉅亨網（cnyes.com）、經濟日報（money.udn.com）、工商時報（ctee.com.tw）、中央社（cna.com.tw）、Yahoo 股市（tw.stock.yahoo.com）、MoneyDJ（moneydj.com）、自由時報財經';
 
-  // 共用：呼叫 Anthropic API + web_search tool
+  // 共用：呼叫 AI + web_search tool（走自訂服務時沒有搜尋能力，要講出來）
+  // ⚠ web_search 是 Anthropic 官方特有的工具。改用自己的 AI 服務時它會被丟掉——
+  //   那代表「這次的回答沒有上網查過」，**一定要讓使用者知道**（v16.43：不能讓 AI 裝作知道它沒看到的東西）。
   async function callClaudeWithWebSearch(prompt) {
-    const apiKey = await readKey(AI_KEY_STORAGE);
-    if (!apiKey) throw new Error('尚未設定 Anthropic API Key。請至「投資翻倍」或「以小搏大」設定');
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 2500,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
-        messages: [{ role: 'user', content: prompt }]
-      })
+    if (!(await aiReady())) throw new Error('尚未設定 AI。可在首頁選單「🤖 AI 服務設定」填你自己的 API，或設定 Anthropic API Key');
+    const r = await aiChat({
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 2500,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]
     });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`API ${response.status}: ${errText.slice(0, 240)}`);
+    if (r.toolsDropped) {
+      return '⚠ 這一份是用你自己的 AI 服務產生的，**它沒有上網查資料的能力**——\n'
+           + '下面的內容來自它自己的知識，可能過時或有誤，新聞與數字請自行查證。\n'
+           + '（要讓 AI 自動上網查，需要用 Anthropic 官方 API。）\n\n' + r.text;
     }
-    const data = await response.json();
-    // 取出所有 text block（過濾掉 tool_use、tool_result）拼成回應
-    const textBlocks = (data.content || []).filter(c => c.type === 'text').map(c => c.text);
-    return textBlocks.join('\n').trim();
+    return r.text;
   }
 
   // 從 text 抽出 JSON 物件
@@ -37921,7 +38102,8 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     input.value = '';
     saveTravelKey(TRAVEL_STORAGE.butler, trvButlerHistory);
 
-    if (!apiKey) {
+    // 沒金鑰、也沒接自己的 AI 服務 → 給提示詞讓他貼到別的 AI（免金鑰那條路）
+    if (!apiKey && !aiProviderOn()) {
       const prompt = buildButlerPrompt(q);
       trvButlerHistory.push({ role: 'bot', content: `（未設定 API Key · 已產生提示詞，請貼到 Claude / ChatGPT 使用）\n\n${prompt}` });
       renderButlerChat();
@@ -37932,26 +38114,15 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     trvButlerHistory.push({ role: 'bot', content: '思考中…' });
     renderButlerChat();
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5',
-          max_tokens: 2000,
-          system: buildButlerSystem(),
-          messages: trvButlerHistory.filter(m => m.content !== '思考中…').slice(-10).map(m => ({
-            role: m.role === 'bot' ? 'assistant' : 'user',
-            content: m.content
-          }))
-        })
+      const r = await aiChat({
+        system: buildButlerSystem(),
+        messages: trvButlerHistory.filter(m => m.content !== '思考中…').slice(-10).map(m => ({
+          role: m.role === 'bot' ? 'assistant' : 'user',
+          content: m.content
+        })),
+        maxTokens: 2000, apiKey
       });
-      const data = await res.json();
-      const text = data.content?.[0]?.text || data.error?.message || '（無回應）';
+      const text = r.text || '（無回應）';
       trvButlerHistory[trvButlerHistory.length - 1] = { role: 'bot', content: text };
       renderButlerChat();
       saveTravelKey(TRAVEL_STORAGE.butler, trvButlerHistory);
