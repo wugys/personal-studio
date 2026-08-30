@@ -3841,6 +3841,7 @@
           <select class="form-input" id="aiProvFormat">
             <option value="openai">OpenAI 相容（最常見 · /v1/chat/completions）</option>
             <option value="anthropic">Anthropic 相容（/v1/messages）</option>
+            <option value="session">自訂 · session 型（送 session_id ＋ message）</option>
           </select>
         </div>
         <div class="form-group">
@@ -9413,7 +9414,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.57 · ЄЄ</div>
+    <div>v 16.58 · ІІ</div>
   </footer>
 </div>
 
@@ -12306,7 +12307,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       aiProvider = {
         enabled: !!o.enabled, name: String(o.name || '').trim().slice(0, 20),
         url: String(o.url || '').trim(), key: String(o.key || '').trim(),
-        model: String(o.model || '').trim(), format: o.format === 'anthropic' ? 'anthropic' : 'openai',
+        model: String(o.model || '').trim(), format: aiFmtOf(o.format),
         // 舊資料沒有這個欄位 → 預設開（使用者要的就是「掛了有人接手」）
         fallback: o.fallback === undefined ? true : !!o.fallback
       };
@@ -12316,6 +12317,8 @@ alter publication supabase_realtime add table party_locations;</pre>
   async function saveAiProvider() { await writeKey(AI_PROVIDER_STORAGE, JSON.stringify(aiProvider)); }
 
   // 三個欄位都填齊才算「接上了」——少一個就退回 Anthropic，不要半殘地送出去
+  // ⚠ 只認 openai/anthropic 的話，新增的格式會被默默當成 openai（測試抓到的）
+  function aiFmtOf(v) { return (v === 'anthropic' || v === 'session') ? v : 'openai'; }
   function aiProviderOn() {
     return !!(aiProvider.enabled && aiProvider.url && aiProvider.model);
   }
@@ -12328,8 +12331,37 @@ alter publication supabase_realtime add table party_locations;</pre>
     const u = String(url || '').trim().replace(/\/+$/, '');
     if (!u) return '';
     if (/\/(chat\/completions|messages|responses)$/.test(u)) return u;   // 已經是完整端點
+    // session 型是自訂 API，路徑不照 OpenAI 慣例——只給主機時補 /api/chat（v16.58）
+    if (format === 'session') return /\/api\/chat$/.test(u) ? u : u + '/api/chat';
     const base = /\/v\d+$/.test(u) ? u : u + '/v1';                       // 沒有 /v1 就補上
     return base + (format === 'anthropic' ? '/messages' : '/chat/completions');
+  }
+
+  // session 型 API 只吃「一段文字」，所以把 system ＋ 對話歷史攤平成一則訊息。
+  // ⚠ 刻意每次都用新的 session_id：不同功能（個股分析／旅遊管家）如果共用一個 session，
+  //   伺服器記著的上一輪內容會污染下一個問題——**寧可無狀態也不要看不見的串話**。
+  function aiFlattenToMessage(system, msgs) {
+    const parts = [];
+    if (system) parts.push(system);
+    (msgs || []).forEach(m => {
+      const who = m.role === 'assistant' ? '（你先前的回答）' : '';
+      parts.push(who ? who + '\n' + m.content : m.content);
+    });
+    return parts.join('\n\n');
+  }
+  // 各家自訂 API 回應的欄位名沒有標準，常見的都試一遍
+  function aiTextFromAny(j) {
+    if (j == null) return '';
+    if (typeof j === 'string') return j.trim();
+    const cand = [j.reply, j.message, j.response, j.answer, j.text, j.content, j.output, j.result,
+                  j.data && j.data.reply, j.data && j.data.message, j.data && j.data.content,
+                  j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content];
+    for (const c of cand) {
+      if (typeof c === 'string' && c.trim()) return c.trim();
+      // message 有時是物件 { role, content }
+      if (c && typeof c === 'object' && typeof c.content === 'string' && c.content.trim()) return c.content.trim();
+    }
+    return '';
   }
 
   function aiProviderLabel() {
@@ -12388,6 +12420,33 @@ alter publication supabase_realtime add table party_locations;</pre>
   }
 
   async function aiCallCustomInner({ url, system, msgs, max, toolsDropped, signal }) {
+    // ===== session 型（自訂 API：{ session_id, message } ＋ Authorization 標頭）=====
+    if (aiProvider.format === 'session') {
+      const body = {
+        session_id: 'studio-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        message: aiFlattenToMessage(system, msgs)
+      };
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+          // ⚠ 金鑰原封不動送出：有些自訂 API 要的是原始字串、有些要 "Bearer xxx"。
+          //   使用者自己填哪一種就送哪一種（他填 "Bearer sk-..." 就照送）——我們不替他猜。
+          aiProvider.key ? { 'Authorization': aiProvider.key } : {}),
+        body: JSON.stringify(body), signal
+      });
+      if (!res.ok) {
+        const raw = (await res.text()).slice(0, 300);
+        // 422 是「路徑對了但欄位不合」——講清楚它在抱怨什麼，不要只回一個數字
+        const hint = res.status === 422 ? '（路徑是對的，但它要的欄位跟我送的不一樣）'
+                   : (res.status === 401 || res.status === 403) ? '（金鑰不對——注意有些服務要填「Bearer 空格 金鑰」，有些只要金鑰本身）' : '';
+        throw new Error(`${aiName()} 回 ${res.status}${hint}：${raw}`);
+      }
+      const j = await res.json().catch(() => null);
+      const text = aiTextFromAny(j);
+      if (!text) throw new Error(`${aiName()} 有回應，但我讀不出內容。它回的是：${JSON.stringify(j).slice(0, 200)}`);
+      return { text, viaCustom: true, toolsDropped };
+    }
+
     if (aiProvider.format === 'anthropic') {
       const body = { model: aiProvider.model, max_tokens: max, messages: msgs };
       if (system) body.system = system;
@@ -12524,7 +12583,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       key: document.getElementById('aiProvKey').value.trim(),
       model: document.getElementById('aiProvModel').value.trim(),
       name: document.getElementById('aiProvName').value.trim().slice(0, 20),
-      format: document.getElementById('aiProvFormat').value === 'anthropic' ? 'anthropic' : 'openai',
+      format: aiFmtOf(document.getElementById('aiProvFormat').value),
       fallback: document.getElementById('aiProvFallback').checked
     };
   }
@@ -12606,6 +12665,38 @@ alter publication supabase_realtime add table party_locations;</pre>
 
     const list = rows.map(r => `<div style="font-family:var(--mono); font-size:10.5px; color:${r.code === 200 ? 'var(--accent)' : 'var(--ink-tertiary)'};">
         ${r.code === 200 ? '✓' : '·'} ${escape(r.p.list)} → ${escape(String(r.code))}${r.models.length ? '（' + r.models.length + ' 個模型）' : ''}</div>`).join('');
+
+    // 沒有標準的模型清單端點時，再試「自訂 session 型」——這種 API 沒有 /v1/models，
+    // 但送一個空的 body 給它，它會用 422 告訴你「這條路徑存在、只是欄位不對」（v16.58）。
+    if (!hit) {
+      for (const path of ['/api/chat', '/chat']) {
+        try {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 8000);
+          const res = await fetch(host + path, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: '{}', signal: ctl.signal
+          });
+          clearTimeout(timer);
+          if (res.status === 422 || res.status === 400) {
+            const raw = await res.text().catch(() => '');
+            if (/session_id|message/.test(raw)) {
+              document.getElementById('aiProvUrl').value = host + path;
+              document.getElementById('aiProvFormat').value = 'session';
+              box.innerHTML = `<div style="color:var(--accent); margin-bottom:6px;">✓ 找到了：這是<strong>自訂 · session 型</strong>的 API（不是 OpenAI 格式）</div>${list}
+                <div style="color:var(--ink-secondary); margin-top:8px; line-height:1.75;">
+                  網址已填成 <code>${escape(host + path)}</code>，格式已切成「自訂 · session 型」。<br>
+                  它要的欄位：<code>${escape(raw.slice(0, 160))}</code><br>
+                  <strong>模型名稱這一格它用不到</strong>（隨便填一個字就好，例如 <code>mini</code>）。<br>
+                  <strong>金鑰要原封不動填</strong>——如果你的服務要「Bearer 金鑰」，就連 <code>Bearer </code> 一起填進去。<br>
+                  接著按「🔌 測試連線」。
+                </div>`;
+              return;
+            }
+          }
+        } catch (e) { /* 這條不通就算了 */ }
+      }
+    }
 
     if (!hit) {
       // ⚠ 全部 404 ≠ 網址打錯。也可能是服務沒開、或 Tailscale/反向代理把這個網域指到別的服務。
