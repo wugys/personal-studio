@@ -3828,6 +3828,10 @@
         <input type="checkbox" id="aiProvEnabled"> <span>啟用我自己的 AI 服務</span>
       </label>
       <div class="form-group">
+        <label class="form-label">AI 名稱　<span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">你自己取的，畫面上會用這個名字稱呼它</span></label>
+        <input type="text" class="form-input" id="aiProvName" placeholder="例如 mini ai" autocomplete="off" maxlength="20">
+      </div>
+      <div class="form-group">
         <label class="form-label">API 網址</label>
         <input type="text" class="form-input" id="aiProvUrl" placeholder="https://你的伺服器/v1/chat/completions" autocomplete="off" style="font-family:var(--mono);">
       </div>
@@ -3866,7 +3870,10 @@
       </div>
       <div id="aiProvTestResult" style="font-size:11.5px; line-height:1.7; margin-top:6px;"></div>
       <div class="form-actions" style="justify-content:space-between; margin-top:14px;">
-        <button class="btn btn-sm" id="aiProvTestBtn" type="button" onclick="testAiProvider()">🔌 測試連線</button>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-sm" id="aiProvProbeBtn" type="button" onclick="probeAiProvider()" title="只填主機網址就好，會自動找出 API 路徑與可用的模型">🔍 自動偵測</button>
+          <button class="btn btn-sm" id="aiProvTestBtn" type="button" onclick="testAiProvider()">🔌 測試連線</button>
+        </div>
         <div class="form-actions-right">
           <button class="btn" type="button" onclick="closeAiProviderModal()">取消</button>
           <button class="btn btn-primary" type="button" onclick="saveAiProviderSettings()">儲存</button>
@@ -9406,7 +9413,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.53 · ϼϼ</div>
+    <div>v 16.56 · ЂЂ</div>
   </footer>
 </div>
 
@@ -12284,17 +12291,21 @@ alter publication supabase_realtime add table party_locations;</pre>
   // 所以只能用 Anthropic。改成：全部走 aiChat() 這一支，要換供應商只改一個地方。
   // ⚠ 這裡刻意做成「不設定就完全照舊」——沒填自訂服務時，行為跟以前一模一樣（Anthropic）。
   const AI_PROVIDER_STORAGE = 'studio_ai_provider_v1';
-  let aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai', fallback: true };
+  let aiProvider = { enabled: false, name: '', url: '', key: '', model: '', format: 'openai', fallback: true };
+  // 畫面上怎麼稱呼使用者的 AI：他取了名字就用他的（例如「mini ai」），沒取就用中性說法。
+  // ⚠ 名稱是給人看的，不影響任何 API 呼叫——不要拿它去組網址或當模型名。
+  function aiName() { return (aiProvider.name || '').trim() || '你的 AI'; }
 
   // ⚠ 一律先重設成預設，再套用讀到的合法值。
   //   不這樣做的話，storage 壞掉或被清空時會**沿用記憶體裡的舊設定**——
   //   使用者以為已經關掉／已經清掉了，AI 卻還在往舊網址送（測試抓到的）。
   async function loadAiProvider() {
-    aiProvider = { enabled: false, url: '', key: '', model: '', format: 'openai', fallback: true };
+    aiProvider = { enabled: false, name: '', url: '', key: '', model: '', format: 'openai', fallback: true };
     const o = await readJson(AI_PROVIDER_STORAGE, null);
     if (o && typeof o === 'object' && !Array.isArray(o)) {
       aiProvider = {
-        enabled: !!o.enabled, url: String(o.url || '').trim(), key: String(o.key || '').trim(),
+        enabled: !!o.enabled, name: String(o.name || '').trim().slice(0, 20),
+        url: String(o.url || '').trim(), key: String(o.key || '').trim(),
         model: String(o.model || '').trim(), format: o.format === 'anthropic' ? 'anthropic' : 'openai',
         // 舊資料沒有這個欄位 → 預設開（使用者要的就是「掛了有人接手」）
         fallback: o.fallback === undefined ? true : !!o.fallback
@@ -12325,16 +12336,46 @@ alter publication supabase_realtime add table party_locations;</pre>
     if (!aiProviderOn()) return 'Anthropic Claude（claude-sonnet-5）';
     let host = aiProvider.url;
     try { host = new URL(aiEndpointUrl(aiProvider.url, aiProvider.format)).host; } catch (e) {}
-    return `你的 AI 服務（${host} · ${aiProvider.model}）`;
+    return `${aiName()}（${host} · ${aiProvider.model}）`;
   }
 
   // 共用的 AI 呼叫。回 { text, viaCustom, toolsDropped }
   // ⚠ tools（Anthropic 的 web_search）只有官方 Anthropic 支援；走自訂服務時會被丟掉，
   //   而且一定要回報 toolsDropped，讓呼叫端老實告訴使用者「這次沒有上網查」（v16.43 那條）。
+  // 自架服務的逾時（v16.55）。
+  // ⚠ 這是「自動接手」能不能真的生效的關鍵：備援只在 aiCallCustom **throw** 時才觸發，
+  //   而「慢」不會 throw——沒有逾時就永遠不會拋例外，畫面只會無限轉圈、連取消都沒有。
+  //   而本機小模型最常見的失敗正好都是「掛住」型（Mac 睡著、模型冷啟動、長提示詞跑很久）。
+  // ⚠ 上限跟 max_tokens 綁：本機 7B 大約每秒 20~40 tokens，抓每 token 120ms 再給 60 秒底線。
+  //   8000 tokens 的生成行程 → 16 分鐘；2500 tokens 的個股分析 → 5 分鐘。寧可寬鬆也不要誤殺。
+  function aiTimeoutMs(max) { return Math.max(60000, (Number(max) || 2000) * 120); }
+  let aiAbort = null;   // 讓「取消」按鈕中斷正在跑的那一次
+  function aiCancel() { try { if (aiAbort) aiAbort.abort(); } catch (e) {} }
+
   // 打「你自己的 AI 服務」。失敗一律 throw，讓上層決定要不要換備援。
   async function aiCallCustom({ system, msgs, max, tools }) {
     const url = aiEndpointUrl(aiProvider.url, aiProvider.format);
     const toolsDropped = !!(tools && tools.length);
+    const ms = aiTimeoutMs(max);
+    const ctl = new AbortController();
+    aiAbort = ctl;
+    const timer = setTimeout(() => ctl.abort(), ms);
+    const done = () => { clearTimeout(timer); if (aiAbort === ctl) aiAbort = null; };
+    // 逾時／取消都轉成講人話的錯誤（AbortError 的原文是英文的，使用者看不懂）
+    const wrap = async (p) => {
+      try { return await p; }
+      catch (e) {
+        if (e && e.name === 'AbortError') {
+          throw new Error(`${aiName()} 超過 ${Math.round(ms / 1000)} 秒沒有回應（本機模型跑長提示詞會很慢，或機器睡著了）`);
+        }
+        throw e;
+      }
+      finally { done(); }
+    };
+    return await wrap(aiCallCustomInner({ url, system, msgs, max, toolsDropped, signal: ctl.signal }));
+  }
+
+  async function aiCallCustomInner({ url, system, msgs, max, toolsDropped, signal }) {
     if (aiProvider.format === 'anthropic') {
       const body = { model: aiProvider.model, max_tokens: max, messages: msgs };
       if (system) body.system = system;
@@ -12342,13 +12383,13 @@ alter publication supabase_realtime add table party_locations;</pre>
         method: 'POST',
         headers: Object.assign({ 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
           aiProvider.key ? { 'x-api-key': aiProvider.key, 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
-        body: JSON.stringify(body)
+        body: JSON.stringify(body), signal
       });
-      if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
+      if (!res.ok) throw new Error(`${aiName()} 回 ${res.status}：${(await res.text()).slice(0, 240)}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error.message || 'API error');
       const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
-      if (!text) throw new Error('你的 AI 服務有回應，但內容是空的');
+      if (!text) throw new Error(aiName() + ' 有回應，但內容是空的');
       return { text, viaCustom: true, toolsDropped };
     }
     // OpenAI 相容（絕大多數自架服務都是這種：Ollama / LM Studio / vLLM / one-api…）
@@ -12357,13 +12398,13 @@ alter publication supabase_realtime add table party_locations;</pre>
       method: 'POST',
       headers: Object.assign({ 'Content-Type': 'application/json' },
         aiProvider.key ? { 'Authorization': 'Bearer ' + aiProvider.key } : {}),
-      body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs })
+      body: JSON.stringify({ model: aiProvider.model, max_tokens: max, messages: oMsgs }), signal
     });
-    if (!res.ok) throw new Error(`你的 AI 服務回 ${res.status}：${(await res.text()).slice(0, 240)}`);
+    if (!res.ok) throw new Error(`${aiName()} 回 ${res.status}：${(await res.text()).slice(0, 240)}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error).slice(0, 200));
     const text = String(data.choices?.[0]?.message?.content ?? '').trim();
-    if (!text) throw new Error('你的 AI 服務有回應，但取不到內容（預期 choices[0].message.content）。回應開頭：' + JSON.stringify(data).slice(0, 200));
+    if (!text) throw new Error(aiName() + ' 有回應，但取不到內容（預期 choices[0].message.content）。回應開頭：' + JSON.stringify(data).slice(0, 200));
     return { text, viaCustom: true, toolsDropped };
   }
 
@@ -12405,7 +12446,7 @@ alter publication supabase_realtime add table party_locations;</pre>
         const key = apiKey || await readKey(AI_KEY_STORAGE);
         if (!aiProvider.fallback || !key) throw e;
         lastAiFallback = { at: Date.now(), why: String(e.message || e) };
-        try { showToast('⚠ 你的 AI 沒回應，這次改用 Anthropic 備援（會計費）'); } catch (x) {}
+        try { showToast('⚠ ' + aiName() + ' 沒回應，這次改用 Anthropic 備援（會計費）'); } catch (x) {}
         const r = await aiCallAnthropic({ system, msgs, max, tools, key });
         return Object.assign(r, { fellBack: true, fallbackWhy: lastAiFallback.why });
       }
@@ -12426,6 +12467,7 @@ alter publication supabase_realtime add table party_locations;</pre>
   async function openAiProviderModal() {
     await loadAiProvider();
     document.getElementById('aiProvEnabled').checked = !!aiProvider.enabled;
+    document.getElementById('aiProvName').value = aiProvider.name || '';
     document.getElementById('aiProvUrl').value = aiProvider.url || '';
     document.getElementById('aiProvKey').value = aiProvider.key || '';
     document.getElementById('aiProvModel').value = aiProvider.model || '';
@@ -12467,6 +12509,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       url: document.getElementById('aiProvUrl').value.trim(),
       key: document.getElementById('aiProvKey').value.trim(),
       model: document.getElementById('aiProvModel').value.trim(),
+      name: document.getElementById('aiProvName').value.trim().slice(0, 20),
       format: document.getElementById('aiProvFormat').value === 'anthropic' ? 'anthropic' : 'openai',
       fallback: document.getElementById('aiProvFallback').checked
     };
@@ -12486,6 +12529,105 @@ alter publication supabase_realtime add table party_locations;</pre>
     await saveAiProvider();
     showToast(f.enabled ? '✓ 全站 AI 改用你的服務' : '✓ 已存（未啟用，仍用 Anthropic）');
     closeAiProviderModal();
+  }
+
+  // ===== 自動偵測端點與模型（v16.56）=====
+  // 為什麼需要這個：自架服務的路徑五花八門（Ollama / vLLM / LiteLLM / Open WebUI / 自己寫的 wrapper
+  // 各不相同），使用者只知道主機網址，不知道 API 掛在哪一條路徑、模型該填什麼字串。
+  // 一條一條手動試很痛苦，而錯誤訊息只會說「404」，看不出是路徑錯還是模型名錯。
+  // → 一次把常見的「模型清單」端點都打一遍，找到哪一條會回，就知道 API 掛在哪、有哪些模型。
+  const AI_PROBE_PATHS = [
+    { list: '/v1/models',            chat: '/v1/chat/completions',            kind: 'OpenAI 相容' },
+    { list: '/api/tags',             chat: '/v1/chat/completions',            kind: 'Ollama' },
+    { list: '/api/models',           chat: '/api/chat/completions',           kind: 'Open WebUI' },
+    { list: '/openai/v1/models',     chat: '/openai/v1/chat/completions',     kind: 'Open WebUI（openai 前綴）' },
+    { list: '/api/v1/models',        chat: '/api/v1/chat/completions',        kind: 'API v1 前綴' },
+    { list: '/v1/api/models',        chat: '/v1/api/chat/completions',        kind: '其他' }
+  ];
+
+  // 從各家不同形狀的回應裡把模型名稱挖出來
+  function aiModelsFrom(json) {
+    if (!json || typeof json !== 'object') return [];
+    const out = [];
+    if (Array.isArray(json.data)) json.data.forEach(m => { if (m && m.id) out.push(String(m.id)); });        // OpenAI
+    if (Array.isArray(json.models)) json.models.forEach(m => {                                               // Ollama / Open WebUI
+      if (typeof m === 'string') out.push(m);
+      else if (m && (m.name || m.id || m.model)) out.push(String(m.name || m.id || m.model));
+    });
+    return [...new Set(out)].slice(0, 40);
+  }
+
+  async function probeAiProvider() {
+    const box = document.getElementById('aiProvTestResult');
+    const btn = document.getElementById('aiProvProbeBtn');
+    const raw = document.getElementById('aiProvUrl').value.trim();
+    if (!raw) { box.innerHTML = '<span style="color:var(--danger);">先填 API 網址（只要主機那一段就好，例如 https://你的網域）。</span>'; return; }
+    // 只取「主機」那一段——使用者可能已經填了完整路徑
+    let host = raw.replace(/\/+$/, '');
+    try { const u = new URL(/^https?:\/\//.test(host) ? host : 'https://' + host); host = u.origin; } catch (e) {}
+    const key = document.getElementById('aiProvKey').value.trim();
+    box.innerHTML = '<span style="color:var(--ink-tertiary);">◌ 正在試 ' + AI_PROBE_PATHS.length + ' 種常見路徑…（每條最多等 8 秒）</span>';
+    if (btn) btn.disabled = true;
+    const rows = [];
+    let hit = null;
+    for (const p of AI_PROBE_PATHS) {
+      const url = host + p.list;
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 8000);
+      try {
+        const res = await fetch(url, {
+          headers: key ? { 'Authorization': 'Bearer ' + key } : {}, signal: ctl.signal
+        });
+        if (res.ok) {
+          const j = await res.json().catch(() => null);
+          const models = aiModelsFrom(j);
+          rows.push({ p, code: res.status, models });
+          if (!hit) hit = { p, models };
+        } else rows.push({ p, code: res.status, models: [] });
+      } catch (e) {
+        rows.push({ p, code: (e && e.name === 'AbortError') ? '逾時' : '連不到', models: [] });
+      } finally { clearTimeout(timer); }
+    }
+    if (btn) btn.disabled = false;
+
+    const list = rows.map(r => `<div style="font-family:var(--mono); font-size:10.5px; color:${r.code === 200 ? 'var(--accent)' : 'var(--ink-tertiary)'};">
+        ${r.code === 200 ? '✓' : '·'} ${escape(r.p.list)} → ${escape(String(r.code))}${r.models.length ? '（' + r.models.length + ' 個模型）' : ''}</div>`).join('');
+
+    if (!hit) {
+      // ⚠ 全部 404 ≠ 網址打錯。也可能是服務沒開、或 Tailscale/反向代理把這個網域指到別的服務。
+      const allFail = rows.every(r => r.code === '連不到' || r.code === '逾時');
+      box.innerHTML = `<div style="color:var(--danger); margin-bottom:6px;">✗ 這 ${AI_PROBE_PATHS.length} 條常見路徑都沒有回應</div>${list}
+        <div style="color:var(--ink-tertiary); margin-top:8px; line-height:1.75;">
+          ${allFail
+            ? '完全連不到——伺服器沒開機、睡著了、或這個網域連不通。'
+            : '主機是活的（有回應），但<strong>不是這幾條路徑</strong>。可能是：<br>'
+              + '· 服務沒啟動（只有外層的網頁伺服器在跑）<br>'
+              + '· 反向代理／Tailscale 把這個網域指到<strong>別的服務</strong>，不是 AI<br>'
+              + '· 用了少見的自訂路徑'}
+          <br><strong>到你的伺服器上確認</strong>：Tailscale 的話跑 <code>tailscale serve status</code> 看網域對到哪個埠，
+          再 <code>curl localhost:那個埠/v1/models</code>。
+        </div>`;
+      return;
+    }
+
+    // 找到了 → 直接把正確答案填回表單
+    const full = host + hit.p.chat;
+    document.getElementById('aiProvUrl').value = full;
+    const modelEl = document.getElementById('aiProvModel');
+    const cur = modelEl.value.trim();
+    const exact = hit.models.includes(cur);
+    if (hit.models.length && !exact) modelEl.value = hit.models[0];
+    box.innerHTML = `<div style="color:var(--accent); margin-bottom:6px;">✓ 找到了：看起來是 <strong>${escape(hit.p.kind)}</strong></div>${list}
+      <div style="color:var(--ink-secondary); margin-top:8px; line-height:1.75;">
+        API 網址已經幫你填成 <code>${escape(full)}</code>。<br>
+        ${hit.models.length
+          ? (exact
+              ? `模型名稱 <code>${escape(cur)}</code> 在清單裡，沒有動它。`
+              : `${cur ? `你填的 <code>${escape(cur)}</code> <strong style="color:var(--danger);">不在清單裡</strong>，已改成 ` : '模型名稱已填入 '}<code>${escape(modelEl.value)}</code>。`)
+            + `<br><span style="color:var(--ink-tertiary);">這台有：${hit.models.map(m => '<code>' + escape(m) + '</code>').join('、')}</span>`
+          : '<span style="color:var(--accent-warm);">⚠ 這條路徑回得出來，但沒讀到模型清單——模型名稱要自己填。</span>'}
+        <br><strong>接著按「🔌 測試連線」確認真的問得動。</strong>
+      </div>`;
   }
 
   // 真的打一次，把「實際用的網址」與「真正的錯誤」顯示出來——
@@ -12516,11 +12658,15 @@ alter publication supabase_realtime add table party_locations;</pre>
       box.innerHTML = note + `<span style="color:var(--danger);">✗ 接不通：${escape(e.message)}</span>
         <div style="color:var(--ink-tertiary); margin-top:5px; line-height:1.7;">
           常見原因：<br>
-          · <strong>404</strong>：網址或路徑不對（OpenAI 相容通常是 <code>/v1/chat/completions</code>）<br>
+          · <strong>404</strong>：<strong>路徑不對</strong>（OpenAI 相容通常是 <code>/v1/chat/completions</code>），
+            <strong>或模型名稱不存在</strong>——很多伺服器找不到模型也回 404。
+            先在伺服器上確認 <code>/v1/models</code> 打得通、看清楚模型叫什麼<br>
           · <strong>401 / 403</strong>：金鑰不對，或該服務不需要金鑰卻填了<br>
           · <strong>400</strong>：模型名稱打錯，或格式選錯（試試切換上面的「API 格式」）<br>
-          · <strong>Failed to fetch</strong>：你的伺服器沒開放跨網域（CORS）——要在伺服器加上
-            <code>Access-Control-Allow-Origin</code>，允許 <code>${escape(location.origin)}</code>
+          · <strong>Failed to fetch</strong>：瀏覽器不會告訴我們是哪一種，可能是
+            <strong>伺服器沒開機／睡著了／不在同一個網路</strong>，也可能是<strong>沒開放跨網域（CORS）</strong>
+            （後者要在伺服器加 <code>Access-Control-Allow-Origin</code>，允許 <code>${escape(location.origin)}</code>）<br>
+          · <strong>超過 N 秒沒有回應</strong>：本機模型跑長提示詞很慢是正常的，或機器睡著了
         </div>`;
     } finally {
       aiProvider = backup;
@@ -16155,13 +16301,16 @@ ${snapshot ? '\n目前市場快照（供參考，請再自行查證最新數字�
       const gk = await readKey(GEMINI_KEY_STORAGE);
       if (!gk) { openGeminiKeyModal(); return; }
     } else {
-      const ak = await readKey(AI_KEY_STORAGE);
-      if (!ak) { showToast('尚未設定 Anthropic API Key（可到「投資翻倍」設定）'); return; }
+      // ⚠ 這裡以前只認 Anthropic 金鑰，接了自己的 AI 服務照樣被擋（v10.0 早退守衛第五次）
+      if (!(await aiReady())) { showToast('尚未設定 AI（首頁「🤖 AI 服務設定」，或到「投資翻倍」填 Anthropic 金鑰）'); return; }
     }
     const origLabel = btn ? btn.textContent : ''; // 還原成按鈕實際文字（避免寫死標籤跑掉）
-    if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 15-40 秒）'; }
+    if (btn) { btn.disabled = true; btn.textContent = '分析中…'; }
     out.style.display = 'block';
-    out.innerHTML = `<div style="color:var(--ink-tertiary);">${isG ? 'Gemini' : 'Claude'} 正在分析…</div>`;
+    // ⚠ 走自架服務時不要報「約 15-40 秒」——那是雲端模型的速度，本機小模型可能要好幾分鐘（v16.55）
+    const who = isG ? 'Gemini' : (aiProviderOn() ? aiName() : 'Claude');
+    const eta = (!isG && aiProviderOn()) ? '（本機模型可能要好幾分鐘，請耐心等）' : '';
+    out.innerHTML = `<div style="color:var(--ink-tertiary);">${escape(who)} 正在分析…${eta}</div>`;
     try {
       const text = isG ? await callGeminiWithSearch(usAnalysisPrompt) : await callClaudeWithWebSearch(usAnalysisPrompt);
       out.innerHTML = usMdLite(text);
@@ -30346,9 +30495,10 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
     // ⚠ 這裡以前只認 Anthropic 金鑰，接了自己的 AI 服務照樣被擋（v10.0「早退守衛」同族）
     if (!(await aiReady())) { showToast('還沒設定 AI——首頁選單「🤖 AI 服務設定」，或用左邊「📋 複製提示詞」貼到 Claude.ai 也一樣'); return; }
     const orig = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = '分析中…（約 20-60 秒）'; }
+    // ⚠ 「約 20-60 秒」是雲端模型的速度；自架小模型讀 30 檔可能要好幾分鐘（v16.55）
+    if (btn) { btn.disabled = true; btn.textContent = aiProviderOn() ? '分析中…（本機模型可能要幾分鐘）' : '分析中…（約 20-60 秒）'; }
     out.style.display = 'block';
-    out.innerHTML = '<div style="color:var(--ink-tertiary);">' + escape(aiProviderOn() ? '你的 AI' : 'Claude') + ' 正在讀這 ' + Math.min(SCAN_AI_MAX, usScanScored.list.length) + ' 檔…</div>';
+    out.innerHTML = '<div style="color:var(--ink-tertiary);">' + escape(aiProviderOn() ? aiName() : 'Claude') + ' 正在讀這 ' + Math.min(SCAN_AI_MAX, usScanScored.list.length) + ' 檔…</div>';
     try {
       const text = await callClaudeWithWebSearch(usScanAiPrompt);
       out.innerHTML = usMdLite(text);
@@ -36730,13 +36880,13 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]
     });
     if (r.toolsDropped) {
-      return '⚠ 這一份是用你自己的 AI 服務產生的，**它沒有上網查資料的能力**——\n'
+      return '⚠ 這一份是用' + aiName() + '產生的，**它沒有上網查資料的能力**——\n'
            + '下面的內容來自它自己的知識，可能過時或有誤，新聞與數字請自行查證。\n'
            + '（要讓 AI 自動上網查，需要用 Anthropic 官方 API。）\n\n' + r.text;
     }
     // 備援接手了要講：這份不是你的 AI 出的，而且用掉 Anthropic 的額度
     if (r.fellBack) {
-      return '⚠ 你自己的 AI 服務這次沒回應（' + String(r.fallbackWhy || '').slice(0, 100) + '），\n'
+      return '⚠ ' + aiName() + '這次沒回應（' + String(r.fallbackWhy || '').slice(0, 100) + '），\n'
            + '**這一份是 Anthropic 接手產生的**（有上網查資料，也會用掉你的 Anthropic 額度）。\n\n' + r.text;
     }
     return r.text;
