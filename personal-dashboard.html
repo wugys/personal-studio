@@ -9384,7 +9384,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.49 · ϰϰ</div>
+    <div>v 16.50 · ϲϲ</div>
   </footer>
 </div>
 
@@ -11287,7 +11287,10 @@ alter publication supabase_realtime add table party_locations;</pre>
     { icon: '💰', name: '配息行事曆', desc: '哪天除息、能領多少', act: 'openDivCalendar()' },
     { icon: '📅', name: '年度總結', desc: '賺賠、費稅、勝率', act: 'openAnnualReview()' },
     { icon: '🩺', name: '資料健檢', desc: '找出會讓數字算錯的地方', act: 'openHealthCheck()' },
-    { icon: '💾', name: '備份 / 還原', desc: '一個檔存全部', act: 'openBackupModal()' }
+    { icon: '💾', name: '備份 / 還原', desc: '一個檔存全部', act: 'openBackupModal()' },
+    // ⚠ 一定要放在首頁工具列，不能只放在 ⚙ 選單——那顆按鈕是 show-on-mobile，
+    //   **桌機根本看不到**，等於整個設定在電腦上是進不去的（v10.4「藏在選單裡＝等於沒做」）
+    { icon: '🤖', name: 'AI 服務設定', desc: '改用你自己的 API', act: 'openAiProviderModal()' }
   ];
   function renderStudioTools() {
     const el = document.getElementById('studioTools');
