@@ -9406,7 +9406,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.52 · ϺϺ</div>
+    <div>v 16.53 · ϼϼ</div>
   </footer>
 </div>
 
@@ -12309,12 +12309,16 @@ alter publication supabase_realtime add table party_locations;</pre>
     return !!(aiProvider.enabled && aiProvider.url && aiProvider.model);
   }
 
-  // 使用者可能只填到 https://my.server/v1 —— 幫他補上標準路徑，但**要講出來補了什麼**
+  // 使用者可能只填到 https://my.server 或 .../v1 —— 幫他補上標準路徑，但**要講出來補了什麼**
+  // ⚠ v16.53：只補 /chat/completions 是不夠的。使用者貼「主機網址」（沒有 /v1）是最常見的填法
+  //   （Ollama／LM Studio 的正確端點是 <host>/v1/chat/completions），少那一段就是 404，
+  //   而畫面只會說「回 404」，他不會知道是路徑被我補錯了。
   function aiEndpointUrl(url, format) {
     const u = String(url || '').trim().replace(/\/+$/, '');
     if (!u) return '';
-    if (/\/(chat\/completions|messages|responses)$/.test(u)) return u;
-    return u + (format === 'anthropic' ? '/messages' : '/chat/completions');
+    if (/\/(chat\/completions|messages|responses)$/.test(u)) return u;   // 已經是完整端點
+    const base = /\/v\d+$/.test(u) ? u : u + '/v1';                       // 沒有 /v1 就補上
+    return base + (format === 'anthropic' ? '/messages' : '/chat/completions');
   }
 
   function aiProviderLabel() {
