@@ -1,0 +1,11 @@
+{
+  "name": "kevin-ai-system",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:ceo-api": "node --test ceo-api/test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
