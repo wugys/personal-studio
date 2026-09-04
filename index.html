@@ -9501,7 +9501,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.76 · ЙЙ</div>
+    <div>v 16.77 · КК</div>
   </footer>
 </div>
 
@@ -9850,6 +9850,31 @@ alter publication supabase_realtime add table party_locations;</pre>
   updateClock();
   setInterval(updateClock, 30000);
 
+  // 🔴 鏡像回「合法但空的」資料時，本機那份不可以被當成沒有（v16.77）
+  //
+  // `readKey` 本來就有 fallback：`window.storage` 回 null／空字串時會改讀 localStorage。
+  // **唯一漏掉的是回 `'[]'`** —— 那是合法 JSON、不是空字串，所以直接被採用，
+  // 而這台瀏覽器 localStorage 裡真正的持股就被無視了。
+  //
+  // 為什麼會掉資料（⚠ 真正的路徑跟 TEAM-LOG R-005 我原本以為的不一樣）：
+  //   `pushAllToSupabase()` **只上傳、從來不刪雲端**，所以「把空的推回雲端」**不成立**。
+  //   真正的殺手是 `pullAllFromSupabase()` 結尾會 `saveXxx()`
+  //   —— 把記憶體裡那個空陣列**寫回 localStorage**，蓋掉本來好好的那一份。
+  //   使用者的任何一次新增／編輯也會觸發同一支 save，效果一樣。
+  //
+  // 🔴 修在 `readKey` 一個地方，不是把守衛複製到 13 個模組裡。
+  //   同一件事做 N 份，一定會有一份忘了改（本專案踩過五次以上）。
+  const storageFellBack = new Set();   // 這一輪有哪些 key 是「鏡像空的，改用本機」
+  const storageFellBackFor = key => storageFellBack.has(key);
+  const parsedEmptyArray = s => {
+    if (s == null) return false;
+    try { const v = JSON.parse(s); return Array.isArray(v) && v.length === 0; } catch (e) { return false; }
+  };
+  const parsedNonEmptyArray = s => {
+    if (s == null) return false;
+    try { const v = JSON.parse(s); return Array.isArray(v) && v.length > 0; } catch (e) { return false; }
+  };
+
   async function readKey(key) {
     // 優先讀 window.storage（Claude 雲端環境），讀不到時 fallback 到 localStorage
     let val = null;
@@ -9859,9 +9884,17 @@ alter publication supabase_realtime add table party_locations;</pre>
         if (r && r.value !== undefined && r.value !== null && r.value !== '') val = r.value;
       }
     } catch (e) {}
-    if (val === null) {
-      try { val = localStorage.getItem(key); } catch (e) {}
+    let local = null;
+    try { local = localStorage.getItem(key); } catch (e) {}
+    if (val === null) return local;
+    // ⚠ 只在「鏡像是**空陣列**、而本機是**有東西的陣列**」時才改用本機。
+    //   範圍刻意收很窄：不碰空物件、不碰設定字串，也不碰「兩邊都有東西」的情況
+    //   （那是真的衝突，該由同步的時間戳去決定，不是這裡）。
+    if (parsedEmptyArray(val) && parsedNonEmptyArray(local)) {
+      storageFellBack.add(key);
+      return local;
     }
+    storageFellBack.delete(key);
     return val;
   }
   // ⚠⚠ 這裡以前是 `try { localStorage.setItem(...) } catch (e) {}` —— **靜默吞掉失敗**。
@@ -13584,6 +13617,14 @@ ${userQuery}`;
     };
     const primary = parseArray(preferred);
     const browser = parseArray(local);
+    // ⚠ v16.77 起 `readKey` 已經先擋掉「鏡像回空陣列」那一種了，
+    //   所以這裡的 `preferred` 可能**已經是本機那份**——自己再比一次會比不出差別。
+    //   → 直接問 `readKey` 剛才有沒有退回本機（`storageFellBackFor`），
+    //     不要在這裡重算一份判斷（同一件事算兩份一定會分岔）。
+    if (storageFellBackFor(TW_STORAGE.holdings) && browser.ok && browser.value.length > 0) {
+      twHoldingsLoadIssue = '已保留此瀏覽器本機的持股；另一個儲存來源暫時是空的或讀取異常。';
+      return browser.value;
+    }
     // 優先來源是空／壞資料，但這台瀏覽器還留著有效持股：保住本機資料，不寫回來源。
     if ((!primary.ok || primary.value.length === 0) && browser.ok && browser.value.length > 0) {
       twHoldingsLoadIssue = '已保留此瀏覽器本機的持股；另一個儲存來源暫時是空的或讀取異常。';
