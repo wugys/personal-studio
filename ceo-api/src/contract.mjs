@@ -24,9 +24,14 @@ function emptyInput(value) {
   return {};
 }
 
+// 🔴 TEAM-LOG R-008a：`confirmationId` 現在是一個**獨立簽章的確認權杖**，
+//   不再是隨便一個字串。這裡只檢查「長相對不對」——**簽章是在 handler 驗的**
+//   （這個檔案是純粹的形狀檢查，手上沒有金鑰，也不應該有）。
+//   格式：`base64url(payload).base64url(hmac)`。
+const CONFIRMATION_TOKEN = /^[A-Za-z0-9_-]{24,1024}\.[A-Za-z0-9_-]{24,128}$/;
 function confirmedAction(value) {
   if (!exactKeys(value, ['confirmedByUser', 'confirmationId'])) throw new ContractError(400, 'invalid_input');
-  if (value.confirmedByUser !== true || !/^[A-Za-z0-9._:-]{8,128}$/.test(value.confirmationId)) {
+  if (value.confirmedByUser !== true || !CONFIRMATION_TOKEN.test(value.confirmationId)) {
     throw new ContractError(400, 'explicit_confirmation_required');
   }
   return { confirmedByUser: true, confirmationId: value.confirmationId };

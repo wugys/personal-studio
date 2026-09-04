@@ -1,5 +1,5 @@
 import { API_PATH, CONTRACT_VERSION, ContractError, PROJECT_ID, assertOperationResult, parseEnvelope, publicCapabilities } from './contract.mjs';
-import { digestHex, requireServerConfig, requireServiceToken, verifyProjectToken } from './security.mjs';
+import { confirmationDigest, digestHex, requireServerConfig, requireServiceToken, verifyConfirmation, verifyProjectToken } from './security.mjs';
 
 const headers = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
@@ -74,7 +74,11 @@ export function createCeoApi({ env = process.env, appAdapter = null, idempotency
         return response(200, { ok: true, requestId: envelope.requestId, operation: envelope.operation.id, result: { operations: publicCapabilities({ writesEnabled: writesEnabled(), adapterReady: writeInfrastructureReady }) } });
       }
 
-      if (!writesEnabled() || !adapterReady() || !idempotencyStore?.durable || !auditSink?.durable) throw new ContractError(503, 'writes_unavailable');
+      // 🔴 TEAM-LOG R-008a：確認金鑰沒設好 → **寫入整組關掉**（503），
+      //   絕對不可以退化成「那就跳過確認」。少一道關卡比整個功能不能用危險得多。
+      const confirmSecret = String(env.KEVIN_CEO_CONFIRMATION_SECRET || '');
+      if (!writesEnabled() || !adapterReady() || !idempotencyStore?.durable || !auditSink?.durable
+          || confirmSecret.length < 32) throw new ContractError(503, 'writes_unavailable');
       const rawKey = idempotencyKey(request);
       const keyHash = digestHex(rawKey);
       const requestDigest = digestHex(JSON.stringify({ operation: envelope.operation.id, input: envelope.input }));
@@ -110,6 +114,23 @@ export function createCeoApi({ env = process.env, appAdapter = null, idempotency
           throw new ContractError(403, 'token_replayed');
         }
         await idempotencyStore.complete(jtiKey, { requestDigest: 'token-once', status: 0, body: {} });
+
+        // 🔴 TEAM-LOG R-008a：確認不再是「呼叫端說了算」，要驗簽章並綁住
+        //   哪個操作 ＋ 哪些參數 ＋ 誰 ＋ 多久內有效 ＋ 只能用一次。
+        // ⚠ 用**另一把金鑰**（`KEVIN_CEO_CONFIRMATION_SECRET`），不是簽 project token 那把——
+        //   共用一把的話，能簽權杖的人就能自己簽確認，等於沒有第二道關卡。
+        const confirmation = verifyConfirmation({
+          raw: envelope.input.confirmationId, secret: confirmSecret,
+          operationId: envelope.operation.id, subject: grant.subject,
+          inputDigest: confirmationDigest(envelope.operation.id, envelope.input), nowMs: now()
+        });
+        // 一次性：跟 jti 同一個做法，同樣**放在冪等 claim 之後**，
+        // 否則正當的重試會被誤判成「確認重複使用」。
+        const confirmKey = 'confirm:' + digestHex(confirmation.jti);
+        if ((await idempotencyStore.claim(confirmKey, 'confirm-once')).outcome !== 'claimed') {
+          throw new ContractError(403, 'confirmation_invalid');
+        }
+        await idempotencyStore.complete(confirmKey, { requestDigest: 'confirm-once', status: 0, body: {} });
 
         const execute = signal => envelope.operation.id === 'alerts.snooze'
           ? appAdapter.snoozeAlert({ alertId: envelope.input.alertId, days: envelope.input.days, signal })
