@@ -9501,7 +9501,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.78 · ЛЛ</div>
+    <div>v 16.79 · ММ</div>
   </footer>
 </div>
 
@@ -28085,9 +28085,10 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     // ⚠ 一次 throw 打掉整批的話，使用者看到的是「整理中…」永遠不動。
     // ⚠「資料本身不合格」與「這次抓不到」是**相反的原因**，一定要分兩組
     //   （v16.13：空的有兩種相反的原因）。
-    const keepMkt = usScanMarket;
-    usScanMarket = mkt;                // usScanCtx 讀這個全域決定幣別與流動性門檻
-    try {
+    // ⚠ 這裡**不再改全域 `usScanMarket`**（TEAM-LOG R-009）：
+    //   以前是「暫存 → 改掉 → await → 還原」，而那個 await 讓兩輪可以交錯，
+    //   兩個 finally 互相還原之後，全域會停在錯的市場。市場直接當參數傳給 `usScanCtx`。
+    {
       for (const h of hs) {
         const sym = String(h.symbol).toUpperCase();
         const meta = {};
@@ -28095,7 +28096,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           const bars = await scanFetch(mkt, sym, meta);
           const dq = scanDataOk(bars, sym);
           if (!dq.ok) { out.bad.push({ sym, why: dq.why }); continue; }
-          const c = usScanCtx({ symbol: sym, name: h.name || sym }, bars);
+          const c = usScanCtx({ symbol: sym, name: h.name || sym }, bars, mkt);
           if (!c) { out.bad.push({ sym, why: '指標算不出來（資料格式有問題）' }); continue; }
           out.ctx[sym] = c;
           out.meta[sym] = meta;
@@ -28105,7 +28106,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           out.errs.push({ sym, why: (e && e.message) || '連不到資料來源' });
         }
       }
-    } finally { usScanMarket = keepMkt; }   // ⚠ 一定要還原，否則掃描頁的幣別會被改掉
+    }
     return out;
   }
 
@@ -33626,7 +33627,13 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
 
   // 把日線變成一組可以拿去測條件的數字
-  function usScanCtx(item, bars) {
+  // 🔴 `mktArg`：市場要**當參數傳進來**，不要只讀全域（TEAM-LOG R-009，顧問 codex 抓到）。
+  //   `buildUsAdvice()` 以前是「暫存全域 → 改成自己的市場 → await → 還原」，
+  //   而中間那個 `await` 讓兩輪可以交錯：快速切換台股／美股時，
+  //   兩個 `finally` 會互相還原，**最後 `usScanMarket` 停在錯的市場**。
+  //   （較慢那一輪讀到別的市場也是真的，只是它的畫面會被序號擋掉，看不出來。）
+  function usScanCtx(item, bars, mktArg) {
+    const mkt = mktArg === 'tw' || mktArg === 'us' ? mktArg : usScanMarket;
     const sig = usTechSignals(bars);
     if (!sig) return null;
     const price = sig.last;
@@ -33660,8 +33667,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       nBars: bars.length,
       rsRaw: (() => { const r = scanRsRaw(bars); return r ? r.score : null; })(),
       ret252: (() => { const r = scanRsRaw(bars); return r ? r.ret252 : null; })(),
-      rs: scanRsOf(usScanMarket, item.symbol),   // 1~99；沒有排名表就是 null（＝算不出來）
-      market: usScanMarket,                      // 判讀流動性門檻要知道是台股還美股；render 時讀全域會在切市場後拿錯
+      rs: scanRsOf(mkt, item.symbol),            // 1~99；沒有排名表就是 null（＝算不出來）
+      market: mkt,                               // 判讀流動性門檻要知道是台股還美股；render 時讀全域會在切市場後拿錯
       board: item.market || '',                  // 台股的 上市/上櫃/興櫃（twFindStock 給的；美股與查不到的為空）
       turnover20: amt20.length ? avg(amt20) : null,
       volRatio: v20 > 0 ? v5 / v20 : null,
