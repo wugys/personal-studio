@@ -9501,7 +9501,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.81 · ОО</div>
+    <div>v 16.82 · ПП</div>
   </footer>
 </div>
 
@@ -41339,11 +41339,22 @@ ${aiCanSearch() ? `請搜尋並整合：
     document.getElementById('gatherPopup').classList.add('active');
   }
   function dismissGatherPopup() { document.getElementById('gatherPopup').classList.remove('active'); }
+  // 🔴 集合彈窗的「⊕ 打開地圖導航」以前**寫死 Google 地圖**——
+  //   而這個 App 自己的離線說明頁就寫著「會失效的是…**Google 導航**，改選**高德地圖**就好」。
+  //   兩句話在同一個 App 裡互相打架，而**這顆按鈕正是「有人走散、趕不上集合」時會按的那一顆**。
+  //   （顧問 codex 在出發前一天審旅遊模組時抓到的，TEAM-LOG R-013。）
+  // ⚠ 修法刻意**接到已經上線測過的地圖選單**（`navigateToGather` → 高德／百度／Google／Apple），
+  //   不新寫一套。出發前一天不是寫新功能的時候。
   function openMapForGather() {
     dismissGatherPopup();
-    if (trvGather && trvGather.desc && trvGather.desc.length > 0) {
-      window.open('https://maps.google.com/?q=' + encodeURIComponent(trvGather.desc), '_blank');
-    }
+    if (trvGather && trvGather.lat && trvGather.lng) { navigateToGather(); return; }
+    const q = (trvGather && trvGather.desc) || '';
+    if (!q) { showToast('還沒設定集合地點'); return; }
+    // 只有文字地點、沒有座標時給不了選單（那幾支導航 API 都要座標）——
+    // 至少要開一個**在當地打得開**的：大陸團走高德，其他照舊 Google。
+    window.open(tripIsCN()
+      ? 'https://uri.amap.com/search?keyword=' + encodeURIComponent(q)
+      : 'https://maps.google.com/?q=' + encodeURIComponent(q), '_blank');
   }
   function playBeep() {
     try {
