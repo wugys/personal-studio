@@ -81,6 +81,7 @@ export function createCeoApi({ env = process.env, appAdapter = null, idempotency
       const safeAuditBase = { requestId: envelope.requestId, operation: envelope.operation.id, scope: envelope.operation.scope, subjectHash: digestHex(grant.subject).slice(0, 16), idempotencyKeyHash: keyHash.slice(0, 16) };
       if (!await audit({ ...safeAuditBase, result: 'attempted' })) throw new ContractError(503, 'audit_unavailable');
       if (typeof idempotencyStore.claim !== 'function' || typeof idempotencyStore.complete !== 'function') throw new ContractError(503, 'writes_unavailable');
+
       const claim = await idempotencyStore.claim(keyHash, requestDigest);
       if (claim.outcome === 'conflict') throw new ContractError(409, 'idempotency_conflict');
       if (claim.outcome === 'in_progress') throw new ContractError(409, 'request_in_progress');
@@ -90,13 +91,43 @@ export function createCeoApi({ env = process.env, appAdapter = null, idempotency
       }
 
       try {
+        // 🔴 TEAM-LOG R-008b：project token 的 `jti` 以前只驗格式、**從來沒記下用過哪些**，
+        //   所以同一把權杖在有效期內（最多 5 分鐘）可以**換一個冪等鍵再寫第二次**。
+        //   冪等只保證「同一個 key 只做一次」，不保證「同一把權杖只用一次」。
+        //
+        // ⚠ 位置很要緊：一定要放在冪等 `claim()` **之後**、而且只在 `claimed`
+        //   （＝真的是新請求）時才檢查。放前面的話，**正當的重試會被誤判成重放**
+        //   ——重試就是拿同一把權杖 ＋ 同一個冪等鍵再打一次，那是冪等機制存在的理由。
+        //   （這個順序我第一版寫反了，寫下來免得再犯。）
+        //
+        // ⚠ 刻意**借用現有的耐久冪等儲存**，不另外新增一個 store：
+        //   多一個「必須 durable」的依賴，就多一個會讓寫入整組關掉的前置條件。
+        //   `claim()` 本身就是「第一個拿到的人才算數」，正好是一次性語意。
+        // ⚠ 只對**寫入**做；讀取（health／capabilities）重放無害，
+        //   而且那兩條本來就不要求耐久儲存，硬加會把它們一起關掉。
+        const jtiKey = 'jti:' + digestHex(grant.jti);
+        if ((await idempotencyStore.claim(jtiKey, 'token-once')).outcome !== 'claimed') {
+          throw new ContractError(403, 'token_replayed');
+        }
+        await idempotencyStore.complete(jtiKey, { requestDigest: 'token-once', status: 0, body: {} });
+
         const execute = signal => envelope.operation.id === 'alerts.snooze'
           ? appAdapter.snoozeAlert({ alertId: envelope.input.alertId, days: envelope.input.days, signal })
           : appAdapter.unsnoozeAllAlerts({ signal });
         const result = assertOperationResult(envelope.operation.id, await withTimeout(execute, timeoutMs));
         const body = { ok: true, requestId: envelope.requestId, operation: envelope.operation.id, result };
         await idempotencyStore.complete(keyHash, { requestDigest, status: 200, body });
-        await audit({ ...safeAuditBase, result: 'success' });
+        // 🔴 TEAM-LOG R-008c：這一次 audit 的回傳值以前**沒有被檢查**
+        //   （前面那次 `attempted` 是 `if (!await audit(...)) throw`，這裡卻直接忽略）。
+        //   結果是「資料已經改了、卻沒有成功的稽核紀錄，而 API 照樣回 200」——
+        //   事後對帳只看得到 attempted，分不出是失敗還是沒記到。
+        // ⚠ 顧問建議「回失敗」，**不採納**：資料是真的改了，回失敗是更大的謊。
+        //   誠實的做法是照實回 200，但**在回應裡講出來這次沒記到稽核**。
+        if (!await audit({ ...safeAuditBase, result: 'success' })) {
+          body.auditRecorded = false;
+          // 同一個冪等鍵被重放時也要看到同一句話，否則兩次回應會不一致
+          try { await idempotencyStore.complete(keyHash, { requestDigest, status: 200, body }); } catch {}
+        }
         return response(200, body);
       } catch (error) {
         const status = safeStatus(error);
