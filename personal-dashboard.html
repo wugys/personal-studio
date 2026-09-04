@@ -9501,7 +9501,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.75 · ИИ</div>
+    <div>v 16.76 · ЙЙ</div>
   </footer>
 </div>
 
@@ -11288,11 +11288,13 @@ alter publication supabase_realtime add table party_locations;</pre>
 
     // 8b) 這個位置一筆資料都沒有 → 先講「資料是按網址分開存的」，不要讓人以為東西不見了 (v16.13)
     //     ⚠ 真的是新使用者也會看到這一則，所以話要兩邊都成立：說明怎麼存 + 給搬家入口 + 明講「第一次用就正常」。
-    //     只要有任何一筆資料就不再出現，不會變成長駐噪音。
+    //     只要使用者記過任何一筆就不再出現，不會變成長駐噪音。
+    //     🔴 問 `hasAnyUserData()` 不是 `hasAnyAppData()`：App 開機自己就會寫 `studio_modules_v2`，
+    //        用後者的話這一則**從 v16.13 到 v16.75 一次都沒出現過**（2026-09-04 實測）。
     try {
-      if (!hasAnyAppData()) {
+      if (!hasAnyUserData()) {
         push('info', '📦',
-          `這個位置（<strong>${escape(storageOriginLabel())}</strong>）還沒有任何資料。${storageScopeNote()}
+          `這個位置（<strong>${escape(storageOriginLabel())}</strong>）還沒有你輸入過的任何資料。${storageScopeNote()}
            <button data-tap onclick="event.stopPropagation(); openBackupModal();"
                    style="margin-left:6px; background:var(--accent); border:none; color:var(--bg-base); border-radius:3px; padding:4px 11px; font-size:11.5px; font-weight:600; cursor:pointer;">💾 備份 / 還原</button>
            <br><span style="color:var(--ink-tertiary);">第一次用的話這是正常的，直接開始記錄就好。</span>`,
@@ -13563,14 +13565,43 @@ ${userQuery}`;
   let twTxns = [];
   let twRealizedPnL = 0;
   let twExpandedHoldingId = null; // 展開交易記錄的持股 ID
+  // 讀取失敗時絕對不能把「讀不到」演成「真的沒有」，更不能讓後續同步把原始資料寫成空陣列。
+  // window.storage 是某些嵌入環境的鏡像；它若暫時回空，但此瀏覽器 localStorage 還有資料，
+  // 持股以本機這份為準。這台裝置上的資料才是使用者剛剛正在看的那一份。
+  let twHoldingsLoadIssue = '';
+
+  async function loadTwHoldingsSafely() {
+    twHoldingsLoadIssue = '';
+    let preferred = null, local = null;
+    try { preferred = await readKey(TW_STORAGE.holdings); } catch (e) {}
+    try { local = localStorage.getItem(TW_STORAGE.holdings); } catch (e) {}
+    const parseArray = raw => {
+      if (!raw) return { value: [], ok: true };
+      try {
+        const value = JSON.parse(raw);
+        return Array.isArray(value) ? { value, ok: true } : { value: [], ok: false };
+      } catch (e) { return { value: [], ok: false }; }
+    };
+    const primary = parseArray(preferred);
+    const browser = parseArray(local);
+    // 優先來源是空／壞資料，但這台瀏覽器還留著有效持股：保住本機資料，不寫回來源。
+    if ((!primary.ok || primary.value.length === 0) && browser.ok && browser.value.length > 0) {
+      twHoldingsLoadIssue = '已保留此瀏覽器本機的持股；另一個儲存來源暫時是空的或讀取異常。';
+      return browser.value;
+    }
+    if (!primary.ok && !browser.ok) {
+      twHoldingsLoadIssue = '持股資料讀取異常。原始資料沒有被修改，也不會自動同步覆蓋它。';
+      return [];
+    }
+    return primary.ok ? primary.value : browser.value;
+  }
 
   // ===== Supabase 跨裝置同步 state =====
   let twSyncConfig = { enabled: false, supabaseUrl: '', supabaseKey: '', userId: '', lastPullAt: 0 };
   let twSyncClient = null;
 
   async function loadTwStock() {
-    try { const h = await readKey(TW_STORAGE.holdings); { const _o = h ? JSON.parse(h) : []; twHoldings = Array.isArray(_o) ? _o : []; } }
-    catch (e) { twHoldings = []; }
+    twHoldings = await loadTwHoldingsSafely();
     try { const t = await readKey(TW_STORAGE.txns); { const _o = t ? JSON.parse(t) : []; twTxns = Array.isArray(_o) ? _o : []; } }
     catch (e) { twTxns = []; }
     // ⚠ 用 `Number(r) || 0` 而不是 `r ? Number(r) : 0`：存進去的若不是數字字串
@@ -13587,7 +13618,7 @@ ${userQuery}`;
     // 自動觸發：若今天 8AM 後尚未抓且有 worker → 開始抓
     checkAutoFetchTwNews();
     // 自動雲端同步：啟用後啟動時拉雲端最新（不 block UI）
-    if (twSyncConfig.enabled) {
+    if (twSyncConfig.enabled && !twHoldingsLoadIssue) {
       pullAllFromSupabase().then(r => {
         if (r) {
           renderTwStockStats();
@@ -13701,6 +13732,10 @@ ${userQuery}`;
   }
   async function syncTwNow() {
     if (!twSyncConfig.enabled) { openTwSyncModal(); return; }
+    if (twHoldingsLoadIssue) {
+      showToast('⚠ 先不要同步：' + twHoldingsLoadIssue);
+      return;
+    }
     const btn = document.getElementById('twSyncBtn');
     if (btn) { btn.disabled = true; btn.textContent = '☁ 同步中…'; }
     try {
@@ -14054,8 +14089,11 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
 
   function renderHoldings() {
     const grid = document.getElementById('holdingsGrid');
+    const storageWarning = twHoldingsLoadIssue
+      ? `<div style="grid-column:1/-1; padding:10px 13px; border:1px solid var(--accent-warm); border-left:3px solid var(--accent-warm); border-radius:4px; color:var(--ink-secondary); font-size:12px; line-height:1.65;">⚠ ${escape(twHoldingsLoadIssue)}<br><span style="color:var(--ink-tertiary);">請先用「↓ 匯出」備份；在確認前，這頁不會自動同步或寫回空資料。</span></div>`
+      : '';
     if (twHoldings.length === 0) {
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">γ</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p>' + emptyStateOriginHint() + '</div>';
+      grid.innerHTML = storageWarning + '<div class="empty-state" style="grid-column:1/-1;"><span class="glyph">γ</span><h3>尚無持股</h3><p>點右上「+ 新增持股」或「+ 新交易」開始記錄</p>' + emptyStateOriginHint() + '</div>';
       return;
     }
     const sortBy = document.getElementById('twSortBy')?.value || 'value';
@@ -14067,7 +14105,7 @@ CREATE POLICY "Allow all" ON tw_transactions FOR ALL USING (true) WITH CHECK (tr
       if (sortBy === 'date') return (b.buyDate || '').localeCompare(a.buyDate || '');
       return 0;
     });
-    grid.innerHTML = sorted.map(h => holdingCardHtml(h)).join('');
+    grid.innerHTML = storageWarning + sorted.map(h => holdingCardHtml(h)).join('');
   }
 
   function holdingCardHtml(h) {
@@ -31594,14 +31632,32 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   function hasAnyAppData() {
     try { return Object.keys(backupCollect()).length > 0; } catch (e) { return false; }
   }
+  // 🔴 App 自己在開機時就會寫進去的 key——**使用者一個字都沒輸入也會有**。
+  //   v16.13 的空狀態提示原本問的是 `hasAnyAppData()`（有沒有任何資料），
+  //   而 `loadAll()` 一跑就寫了 `studio_modules_v2` 與 `studio_modules_version`
+  //   → 那個判斷式**從第一秒就是 true，提示永遠不會出現**。
+  //   實測（2026-09-04，localhost:8000 全新抽屜）：整個 localStorage 只有這兩個 key，
+  //   使用者的三檔台股全在 Vercel 那個抽屜，而畫面只寫「尚無持股，點『+ 新增持股』開始記錄」
+  //   ——**正好是 v16.13 要防的那句「把人推去重新輸入」**。
+  // ⚠ 這是手寫清單（本專案的頭號教訓），所以 `t_originhint` 有一支守門測試：
+  //   全新瀏覽器冷啟動後掃 localStorage，出現的 key 必須全部在這份清單裡，多一個就紅字。
+  const AUTO_CREATED_KEYS = ['studio_modules_v2', 'studio_modules_version', 'studio_groups_v2', 'studio_viewmode_v2'];
+  // 「使用者真的輸入過東西嗎」——版面設定不算數。
+  function hasAnyUserData() {
+    try { return Object.keys(backupCollect()).some(k => AUTO_CREATED_KEYS.indexOf(k) === -1); }
+    catch (e) { return false; }
+  }
   // 模組空狀態底下那一行「你可能開錯抽屜了」。
-  // ⚠ 只在**整個 App 一筆資料都沒有**時才出現——只要別的模組有資料，那就純粹是這個模組還沒記錄，
-  //   這時候還講「你的資料可能在別的網址」就是誤報（會亂叫的提醒比沒提醒更糟，v12.1b）。
+  // ⚠ 只在**使用者一筆資料都沒輸入過**時才出現——只要別的模組有他記過的東西，
+  //   那就純粹是這個模組還沒記錄，這時候還講「你的資料可能在別的網址」就是誤報
+  //   （會亂叫的提醒比沒提醒更糟，v12.1b）。
+  // 🔴 問的是 `hasAnyUserData()` 不是 `hasAnyAppData()`：後者連 App 自己寫的預設模組清單
+  //   都算，於是這個提示**從 v16.13 做出來就沒生效過**（見上面那段實測）。
   function emptyStateOriginHint() {
     try {
-      if (hasAnyAppData()) return '';
+      if (hasAnyUserData()) return '';
       return `<p style="margin:14px auto 0; max-width:520px; padding:9px 13px; background:var(--bg-elevated); border:1px solid var(--line); border-left:2px solid var(--accent-warm); border-radius:4px; text-align:left; font-size:11.5px; line-height:1.75; color:var(--ink-secondary);">
-        這個位置（<strong>${escape(storageOriginLabel())}</strong>）<strong>整個 App 都沒有資料</strong>。${storageScopeNote()}
+        這個位置（<strong>${escape(storageOriginLabel())}</strong>）<strong>沒有你輸入過的任何資料</strong>。${storageScopeNote()}
         <button type="button" onclick="event.stopPropagation(); openBackupModal();" style="margin-left:4px; background:var(--accent); border:none; color:var(--bg-base); border-radius:3px; padding:3px 10px; font-size:11px; font-weight:600; cursor:pointer;">💾 備份 / 還原</button>
       </p>`;
     } catch (e) { return ''; }
