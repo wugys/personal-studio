@@ -76,9 +76,14 @@ export function createCeoApi({ env = process.env, appAdapter = null, idempotency
 
       // 🔴 TEAM-LOG R-008a：確認金鑰沒設好 → **寫入整組關掉**（503），
       //   絕對不可以退化成「那就跳過確認」。少一道關卡比整個功能不能用危險得多。
+      // 🔴 TEAM-LOG R-010（顧問 codex 抓到）：**兩把金鑰相同也要擋**。
+      //   以前只檢查長度，靠文件要求「請用不同的兩把」——但文件擋不住複製貼上。
+      //   設成同一把的話，能簽 project token 的人就能自己簽確認，
+      //   **我特地做的第二道關卡會整個消失，而且從外面看不出來**。
       const confirmSecret = String(env.KEVIN_CEO_CONFIRMATION_SECRET || '');
+      const projectSecret = String(env.KEVIN_CEO_PROJECT_TOKEN_SECRET || '');
       if (!writesEnabled() || !adapterReady() || !idempotencyStore?.durable || !auditSink?.durable
-          || confirmSecret.length < 32) throw new ContractError(503, 'writes_unavailable');
+          || confirmSecret.length < 32 || confirmSecret === projectSecret) throw new ContractError(503, 'writes_unavailable');
       const rawKey = idempotencyKey(request);
       const keyHash = digestHex(rawKey);
       const requestDigest = digestHex(JSON.stringify({ operation: envelope.operation.id, input: envelope.input }));

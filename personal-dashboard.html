@@ -9501,7 +9501,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.80 · НН</div>
+    <div>v 16.81 · ОО</div>
   </footer>
 </div>
 
@@ -9866,6 +9866,17 @@ alter publication supabase_realtime add table party_locations;</pre>
   //   同一件事做 N 份，一定會有一份忘了改（本專案踩過五次以上）。
   const storageFellBack = new Set();   // 這一輪有哪些 key 是「鏡像空的，改用本機」
   const storageFellBackFor = key => storageFellBack.has(key);
+  // 🔴 TEAM-LOG R-011（顧問 codex 抓到）：這個守衛**第一版是全站生效的**，那太寬了。
+  //   「空陣列」有兩種相反的原因，而資料上長得一模一樣（本專案的頭號病）：
+  //     ① 鏡像暫時壞掉回空的 → 保住本機才對
+  //     ② **使用者真的把它刪光了** → 保住本機就是讓刪掉的東西復活
+  //   旅遊花費、購物、行前清單都會走 `readKey`，使用者刪光是**正常操作**，
+  //   套上這個守衛等於「刪不掉」。
+  // → 收窄到**持股**：`xxx_holdings_v1`。那正是這個洞被發現的地方（使用者的三檔台股），
+  //   而「把持股全部刪光」遠比「清空一張清單」少見。
+  // ⚠ 用**樣式**判斷不用手寫清單（手寫清單一定會過期，本專案踩過五次以上）：
+  //   9 個持股模組全部命中，旅遊那幾個一個都不會中。
+  const storageGuarded = key => /_holdings_v\d+$/.test(String(key || ''));
   const parsedEmptyArray = s => {
     if (s == null) return false;
     try { const v = JSON.parse(s); return Array.isArray(v) && v.length === 0; } catch (e) { return false; }
@@ -9890,7 +9901,7 @@ alter publication supabase_realtime add table party_locations;</pre>
     // ⚠ 只在「鏡像是**空陣列**、而本機是**有東西的陣列**」時才改用本機。
     //   範圍刻意收很窄：不碰空物件、不碰設定字串，也不碰「兩邊都有東西」的情況
     //   （那是真的衝突，該由同步的時間戳去決定，不是這裡）。
-    if (parsedEmptyArray(val) && parsedNonEmptyArray(local)) {
+    if (storageGuarded(key) && parsedEmptyArray(val) && parsedNonEmptyArray(local)) {
       storageFellBack.add(key);
       return local;
     }
