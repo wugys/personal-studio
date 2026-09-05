@@ -15,8 +15,18 @@
 <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<!-- ⚠⚠ 這兩個 CSS 一定要保持「不擋畫面」的寫法（v16.84）——不要改回一般的 rel="stylesheet"。
+     `<head>` 裡的 stylesheet 是**擋畫面**的：瀏覽器在它有結果之前不會畫任何東西。
+     而 `fonts.googleapis.com` 在中國大陸是被擋的，常見的擋法是**黑洞**（丟封包但不回錯誤）
+     —— 那不是「載入失敗」，是「一直沒有結果」，於是畫面**永遠是全黑的**。
+     實測（tests/t_headblock.mjs）：把這兩個網址黑洞掉，30 秒後畫面上一個字都沒有；
+     改成下面這種寫法之後是 148ms。
+     **這個洞會讓 v16.83 的 Service Worker 修正整個白做**——HTML 2.5 秒就從快取拿到了，
+     然後卡在這兩行。
+     `media="print"` ＝ 先當成「列印時才用」所以不擋畫面；載到了 onload 再改成 all 套用。
+     載不到就永遠停在 print，畫面用備援字型照常顯示（字型堆疊裡本來就有 serif/sans-serif）。 -->
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   :root {
     --bg-base: #0e0d0b;
@@ -2985,7 +2995,14 @@
 </style>
 </head>
 <body>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- ⚠⚠ `defer` 不要拿掉（v16.84）。沒有 defer 的外部 <script> 會**擋住整份文件的解析**——
+     unpkg 在中國大陸不一定連得到，被黑洞掉的話這一行以下的 HTML 一個字都不會被讀進來。
+     加了 defer：它在背景抓，抓不到就算了，App 照常運作。
+     ⚠ 安全性已查證：Leaflet（`L.map` / `L.tileLayer` / `L.marker` / `L.divIcon`）
+     全部只在「打開地圖」的函式裡呼叫（39767、40321、42877 那幾處），
+     載入當下沒有任何一行用到它；而且那三處都有 `typeof L === 'undefined'` 守衛，
+     載不到會顯示「地圖載入失敗（需要網路連線）」而不是整個壞掉。 -->
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <div class="page">
   <!-- Breadcrumb 全域導覽 -->
@@ -9501,7 +9518,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.83 · РР</div>
+    <div>v 16.84 · СС</div>
   </footer>
 </div>
 
