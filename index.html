@@ -5293,7 +5293,7 @@
       <div class="play-header-left">
         <div class="play-tag">◎ GOAL · TRACKER</div>
         <h1>挑戰 <em>目標</em></h1>
-        <p>退休金、財務自由、買房頭期款的進度追蹤。目前累積可以直接綁你的資產模組自動算，也會推估「照這樣下去幾年會到」跟「想準時達成每月要投多少」。</p>
+        <p>退休金、財務自由、買房頭期款的進度追蹤。目前累積可以直接綁你的資產模組自動算，也會用你填的假設計算「照這樣下去幾年會到」與期限所需條件；這不是報酬預測或投資建議。</p>
       </div>
       <div class="api-actions">
         <button class="btn" onclick="openGoalPresetMenu()">✦ 快速範本</button>
@@ -5391,8 +5391,8 @@
         </div>
         <div class="form-row">
           <div class="form-group" style="margin:0;">
-            <label class="form-label">假設年化報酬率 (%)</label>
-            <input type="number" step="any" class="form-input" id="goalRate" placeholder="6">
+            <label class="form-label">計算用年化報酬率 (%)（選填）</label>
+            <input type="number" step="any" class="form-input" id="goalRate" placeholder="自行填入；空白視為 0">
             <div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">只是推估用。填 0 就是純存錢不算複利。</div>
           </div>
           <div class="form-group" style="margin:0;">
@@ -7681,10 +7681,10 @@
     </div>
   </div>
 
-  <!-- ============ 掃描結果 · 交給 AI 排序 Modal（v16.43）============ -->
+  <!-- ============ 掃描結果 · 交給 AI 整理研究重點 Modal（v16.43）============ -->
   <div class="modal-backdrop" id="scanAiModal">
     <div class="modal" style="max-width:760px;">
-      <h2>🤖 讓 AI <em>挑前 5 名</em></h2>
+      <h2>🤖 讓 AI <em>整理研究重點</em></h2>
       <div id="scanAiNote" style="font-size:12.5px; color:var(--ink-secondary); line-height:1.8; margin-bottom:14px;"></div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
         <button class="btn btn-sm" type="button" onclick="copyScanAiPrompt('')">📋 只複製提示詞</button>
@@ -7700,7 +7700,7 @@
       <div id="scanAiResult" style="display:none; margin-top:14px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:4px; padding:14px 16px; font-size:13px; line-height:1.85; max-height:44vh; overflow-y:auto;"></div>
       <div class="ai-disclaimer" style="margin-top:14px;">
         ⚐ AI 看到的只有這些技術指標與比率，<strong>沒有新聞、財報與盤中價格</strong>。
-        這是把數字整理過的參考，<strong>不構成投資建議</strong>，實際買賣請自行判斷並承擔風險。
+        這是把數字整理過的研究參考，<strong>不構成投資建議，也不是買賣或進出場指示</strong>。
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="closeScanAiModal()">關閉</button>
@@ -7934,14 +7934,14 @@
     <div id="cfPerfRisk"></div>
   </div>
 
-  <!-- ============ 資產配置分析 VIEW（60-10-30）============ -->
+  <!-- ============ 資產配置分析 VIEW（使用者自訂目標）============ -->
   <div id="allocationView" class="view">
     <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
     <div class="play-header">
       <div class="play-header-left">
         <div class="play-tag">◐ ALLOCATION · ANALYSIS</div>
         <h1>資產 <em>配置分析</em></h1>
-        <p>實際比例 vs 目標（60-10-30）· 再平衡建議。股票自動聚合台股/美股/ETF；現金、債券、不動產可手動輸入。</p>
+        <p>實際比例 vs 你設定的目標 · 偏離提示。股票自動聚合台股/美股/ETF；現金、債券、不動產可手動輸入。</p>
       </div>
       <div class="api-actions">
         <button class="btn" onclick="loadAllocation()">↻ 重新整理</button>
@@ -7949,6 +7949,67 @@
     </div>
     <div class="stats-row" id="allocStats"></div>
     <div id="allocBody"></div>
+  </div>
+
+  <!-- ============ 投資政策卡 VIEW（規則與人工確認，不下單）============ -->
+  <div id="policyView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">◇ INVESTMENT · POLICY</div>
+        <h1>投資 <em>政策卡</em></h1>
+        <p>先寫下你自己的資金底線與檢查頻率。系統只比對你輸入的規則、提示資料缺口；不會自動交易，也不會提供買賣指示。</p>
+      </div>
+      <div class="api-actions">
+        <button class="btn" onclick="loadInvestmentPolicy()">↻ 重新整理</button>
+      </div>
+    </div>
+    <div class="stats-row" id="policyStats"></div>
+    <div id="policyBody"></div>
+  </div>
+
+  <!-- ============ 每週決策摘要 VIEW（只彙整，人工確認）============ -->
+  <div id="reviewView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">☑ WEEKLY · REVIEW</div>
+        <h1>每週 <em>決策摘要</em></h1>
+        <p>把目標、資金底線、配置與資料日期放在同一張待確認清單。這不是自動交易器，也不是買賣建議。</p>
+      </div>
+      <div class="api-actions"><button class="btn" onclick="loadWeeklyReview()">↻ 重新整理</button></div>
+    </div>
+    <div class="stats-row" id="reviewStats"></div>
+    <div id="reviewBody"></div>
+  </div>
+
+  <!-- ============ 成長引擎 VIEW（公司與專案帳，刻意不混入個人資產）============ -->
+  <div id="growthView" class="view">
+    <button class="back-btn" onclick="showView('dashboardView')">← 返回儀表板</button>
+    <div class="play-header">
+      <div class="play-header-left">
+        <div class="play-tag">↗ GROWTH · ENGINES</div>
+        <h1>成長引擎 <em>分流</em></h1>
+        <p>公開市場、公司成長投入與高風險專案分開看。後兩者是獨立追蹤帳，不會自動加進你的個人投資總資產。</p>
+      </div>
+      <div class="api-actions"><button class="btn btn-primary" onclick="openGrowthModal()">＋ 新增紀錄</button><button class="btn" onclick="loadGrowthEngines()">↻ 重新整理</button></div>
+    </div>
+    <div class="stats-row" id="growthStats"></div>
+    <div id="growthBody"></div>
+  </div>
+
+  <div class="modal-backdrop" id="growthModal">
+    <div class="modal">
+      <h2 id="growthModalTitle">新增 <em>成長引擎紀錄</em></h2>
+      <form onsubmit="saveGrowthEntry(event)">
+        <input type="hidden" id="growthEditId">
+        <div class="form-row"><div class="form-group" style="margin:0;"><label class="form-label">名稱</label><input id="growthName" class="form-input" required placeholder="例如：新產品驗證／合作專案"></div><div class="form-group" style="margin:0;"><label class="form-label">類別</label><select id="growthType" class="form-select"><option value="company">公司成長投入</option><option value="project">高風險專案／私募</option></select></div></div>
+        <div class="form-row"><div class="form-group" style="margin:0;"><label class="form-label">已投入金額（NT$）</label><input id="growthAmount" type="number" min="0" class="form-input" required placeholder="自行填入"></div><div class="form-group" style="margin:0;"><label class="form-label">下次人工檢查日</label><input id="growthReviewDate" type="date" class="form-input"></div></div>
+        <div class="form-group"><label class="form-label">狀態</label><select id="growthStatus" class="form-select"><option value="active">進行中</option><option value="paused">暫停</option><option value="closed">結束</option></select></div>
+        <div class="form-group"><label class="form-label">決策／風險筆記</label><textarea id="growthNotes" class="form-textarea" placeholder="要驗證什麼、最大可承受投入、何時重看；不要把預期寫成保證。"></textarea></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">💾 儲存</button><button class="btn" type="button" onclick="closeGrowthModal()">取消</button></div>
+      </form>
+    </div>
   </div>
 
   <!-- ============ 共用「走勢圖 + AI 分析」Modal（台股 / 高股息 ETF）============ -->
@@ -9518,7 +9579,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.84 · СС</div>
+    <div>v 16.89 · ЦЦ</div>
   </footer>
 </div>
 
@@ -9833,7 +9894,10 @@ alter publication supabase_realtime add table party_locations;</pre>
 
     // === 投資中心 · 總覽工具（最重要，放最前面）===
     { id: 'm_dashboard', name: '現金流儀表板', nameEn: 'CASHFLOW · DASHBOARD', icon: '⊟', desc: '台股/美股/加密/高股息 ETF/市值型 ETF 總資產、損益、配息、資產配置一覽（統一台幣）。', status: 'active', groupId: 'g_invest', order: 0, builtin: true, target: 'cashflowView' },
-    { id: 'm_allocation', name: '資產配置分析', nameEn: 'ALLOCATION · ANALYSIS', icon: '◐', desc: '實際比例 vs 目標（60-10-30）對照、再平衡建議。股票自動聚合、現金/債券可手動輸入。', status: 'active', groupId: 'g_invest', order: 1, builtin: true, target: 'allocationView' },
+    { id: 'm_allocation', name: '資產配置分析', nameEn: 'ALLOCATION · ANALYSIS', icon: '◐', desc: '實際比例 vs 你設定的目標、偏離提示。股票自動聚合、現金/債券可手動輸入。', status: 'active', groupId: 'g_invest', order: 1, builtin: true, target: 'allocationView' },
+    { id: 'm_policy', name: '投資政策卡', nameEn: 'INVESTMENT · POLICY', icon: '◇', desc: '記錄資金底線、檢查頻率與人工確認。只提示資料與規則差距，不自動交易。', status: 'active', groupId: 'g_invest', order: 1.5, builtin: true, target: 'policyView' },
+    { id: 'm_review', name: '每週決策摘要', nameEn: 'WEEKLY · REVIEW', icon: '☑', desc: '集中目標、資金底線、配置與資料日期，列出需要人工確認的事項。', status: 'active', groupId: 'g_invest', order: 1.75, builtin: true, target: 'reviewView' },
+    { id: 'm_growth', name: '成長引擎分流', nameEn: 'GROWTH · ENGINES', icon: '↗', desc: '公開市場、公司成長投入與高風險專案分開記錄，避免重複算進個人資產。', status: 'active', groupId: 'g_invest', order: 1.9, builtin: true, target: 'growthView' },
     { id: 'm_dca', name: '定期定額計畫', nameEn: 'DCA · PLAN', icon: '⟳', desc: '扣款排程與提醒、累積績效。記錄扣款會自動寫進台股/美股/加密/ETF 模組。', status: 'active', groupId: 'g_invest', order: 2, builtin: true, target: 'dcaView' },
     { id: 'm_goals', name: '挑戰目標', nameEn: 'GOAL · TRACKER', icon: '◎', desc: '退休金、財務自由、買房頭期款進度追蹤。綁資產模組自動算，推估達成日與每月該投多少。', status: 'active', groupId: 'g_invest', order: 3, builtin: true, target: 'goalsView' },
 
@@ -9893,6 +9957,40 @@ alter publication supabase_realtime add table party_locations;</pre>
   //   而「把持股全部刪光」遠比「清空一張清單」少見。
   // ⚠ 用**樣式**判斷不用手寫清單（手寫清單一定會過期，本專案踩過五次以上）：
   //   9 個持股模組全部命中，旅遊那幾個一個都不會中。
+  // ⚠⚠ 有逾時的 fetch（v16.85）——**這是本專案第四次踩同一條**
+  //   （v16.55 AI 呼叫／v16.83 Service Worker／v16.84 `<head>` 的外部 CSS）。
+  //
+  //   `fetch` 只有在「**立刻失敗**」時才 reject。被牆黑洞掉（丟封包但不回 RST）、
+  //   飯店 captive portal、訊號一格這種「連著但永遠不回來」的情況，它會一直等下去
+  //   —— 於是 `try/catch` 裡那個寫好的備援**永遠等不到機會執行**，
+  //   畫面上那句「測試中…」「縮短中…」「⚡ 更新中…」就永遠不會換掉。
+  //   （最兇的是 `refreshAllPrices`：它的 `finally` 會把按鈕解鎖，但 finally 也永遠跑不到，
+  //     所以按鈕會**永久 disabled**，而且 `priceRefreshBusy` 卡在 true —— 只能重新整理頁面。）
+  //
+  //   ⚠ 這是「等**標頭**」的上限，不是「下載完」的上限（同 sw.js 的 DOC_TIMEOUT_MS）。
+  //   ⚠ 逾時就是丟一個看得懂的錯誤 —— 呼叫端本來就有 try/catch 跟備援，
+  //     它們缺的只是「真的有一個錯誤被丟出來」。
+  //   ⚠ 刻意**不套用在**「使用者按了就知道要等」的長工作上（AI 呼叫已有自己的
+  //     `aiTimeoutMs`、日 K 批次累積會抓幾百 KB），套上去會變成誤殺。
+  async function fetchTO(url, opts = {}, ms = 8000) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, ms);
+    try {
+      return await fetch(url, { ...opts, signal: ctl.signal });
+    } catch (e) {
+      if (e && e.name === 'AbortError') {
+        // ⚠ 不要用 Math.round(ms/1000)——設 1500ms 會寫成「等了 2 秒」，那是假話
+        const secs = ms % 1000 === 0 ? String(ms / 1000) : (ms / 1000).toFixed(1);
+        const err = new Error(`等了 ${secs} 秒都沒有回應（可能被擋住，或訊號太差）`);
+        err.timedOut = true;
+        throw err;
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   const storageGuarded = key => /_holdings_v\d+$/.test(String(key || ''));
   const parsedEmptyArray = s => {
     if (s == null) return false;
@@ -10155,7 +10253,8 @@ alter publication supabase_realtime add table party_locations;</pre>
 
       const m = await readKey(STORAGE.modules);
       const versionStored = await readKey(STORAGE.modulesVersion);
-      const CURRENT_VERSION = '18';
+      // v19：補入投資政策卡、每週決策摘要、成長引擎分流三個既有使用者也必須看得到的內建模組。
+      const CURRENT_VERSION = '19';
 
       if (!m || versionStored !== CURRENT_VERSION) {
         // 首次或舊版本：逐個欄位合併，不要整個蓋掉（見 mergeDefaultModules 的說明）
@@ -11145,7 +11244,7 @@ alter publication supabase_realtime add table party_locations;</pre>
       }
     } catch (e) {}
 
-    // 1e) 資產配置偏離目標太多 → 該考慮再平衡了
+    // 1e) 資產配置偏離使用者設定的目標太多 → 顯示差距，不替使用者下調整指示
     //     這是 60-10-30 模型的核心動作，但一樣要點進去才知道。
     try {
       const cfg = await readJson('alloc_config_v1', null);
@@ -11160,7 +11259,7 @@ alter publication supabase_realtime add table party_locations;</pre>
         push('warn', '◐',
           `資產配置裡手動填的 <strong>${escape(dupHits.map(h => h.field).join('、'))}</strong>，` +
           `模組裡已經自動帶進來了——同一筆錢可能<strong>被算了兩次</strong>，` +
-          `總資產與再平衡建議都會跟著錯`,
+          `總資產與目標差距都會跟著錯`,
           'allocationView', 'allocdup');
       }
       // 資產太小的時候談配置沒有意義（差幾個百分點只是幾千塊）
@@ -21212,6 +21311,40 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     if (need <= 0) return 0;
     return need * i / (g - 1);
   }
+  // 已知目前金額、每月投入、期限與目標，反推「數學上需要的年化報酬率」。
+  // 只做方程式求解，不把結果包裝成市場能提供的報酬，也不產生買賣指示。
+  function goalFutureValue(pv, pmt, ratePct, months) {
+    let fv = Math.max(0, Number(pv) || 0);
+    const add = Math.max(0, Number(pmt) || 0);
+    const i = Math.max(0, Number(ratePct) || 0) / 100 / 12;
+    for (let n = 0; n < months; n++) fv = fv * (1 + i) + add;
+    return fv;
+  }
+  // 內部求解的名目年率：因為月投入是按月計，先用這個率除以 12 逐月複利。
+  function goalRequiredNominalAnnualRate(pv, pmt, target, months) {
+    pv = Math.max(0, Number(pv) || 0); pmt = Math.max(0, Number(pmt) || 0);
+    target = Number(target) || 0; months = Math.floor(Number(months) || 0);
+    if (!(months > 0) || !(target > pv)) return target <= pv ? 0 : null;
+    if (goalFutureValue(pv, pmt, 0, months) >= target) return 0;
+    let lo = 0, hi = 100;
+    while (hi < 100000 && goalFutureValue(pv, pmt, hi, months) < target) hi *= 2;
+    if (goalFutureValue(pv, pmt, hi, months) < target) return null;
+    for (let n = 0; n < 80; n++) {
+      const mid = (lo + hi) / 2;
+      if (goalFutureValue(pv, pmt, mid, months) >= target) hi = mid;
+      else lo = mid;
+    }
+    return hi;
+  }
+  // 給使用者看的「年化複利」：把每月複利的結果換算成完整一年的實際效果。
+  // 例如名目年率 282% 在按月複利時，年化複利約為 1,159%，兩者不能混寫。
+  function goalEffectiveAnnualRate(nominalRatePct) {
+    if (nominalRatePct == null) return null;
+    return (Math.pow(1 + (Number(nominalRatePct) || 0) / 100 / 12, 12) - 1) * 100;
+  }
+  function goalRequiredAnnualRate(pv, pmt, target, months) {
+    return goalEffectiveAnnualRate(goalRequiredNominalAnnualRate(pv, pmt, target, months));
+  }
 
   // ===== 目前累積 =====
   async function goalRefreshAssets() {
@@ -21267,9 +21400,11 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const etaDate = (nMonths != null) ? goalDatePlusMonths(nMonths) : null;
     const monthsLeft = goalMonthsUntil(g.targetDate);
     const needMonthly = (monthsLeft != null && monthsLeft > 0) ? goalRequiredMonthly(current, target, monthsLeft, rate) : null;
+    const neededAnnualRate = (monthsLeft != null && monthsLeft > 0)
+      ? goalRequiredAnnualRate(current, monthly, target, monthsLeft) : null;
     // 早/晚幾個月（正＝提前）
     const aheadBy = (nMonths != null && monthsLeft != null) ? (monthsLeft - nMonths) : null;
-    return { current, target, pct, rawPct, remain, monthly, rate, nMonths, etaDate, monthsLeft, needMonthly, aheadBy, done: current >= target && target > 0 };
+    return { current, target, pct, rawPct, remain, monthly, rate, nMonths, etaDate, monthsLeft, needMonthly, neededAnnualRate, aheadBy, done: current >= target && target > 0 };
   }
 
   // ===== 讀寫 =====
@@ -21447,7 +21582,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
       <div class="stat-card ${behind > 0 ? 'loss' : 'profit'}">
         <div class="stat-label">進度健康度</div>
         <div class="stat-value">${computed.length === 0 ? '—' : behind === 0 ? '都跟得上' : behind + ' 個落後'}</div>
-        <div class="stat-sub">${computed.length === 0 ? '先新增一個目標' : behind === 0 ? '照現在的投入都能準時到' : '這些要加碼或延後目標日'}</div>
+        <div class="stat-sub">${computed.length === 0 ? '先新增一個目標' : behind === 0 ? '照目前填入的假設可準時到' : '請檢查每月投入、報酬假設或目標日期'}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">最快達成</div>
@@ -21493,6 +21628,19 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     } else if (!c.done && g.targetDate && c.monthsLeft != null && c.monthsLeft <= 0) {
       needText = '<span class="loss">目標日期已經過了，記得更新目標日</span>';
     }
+    let feasibilityText = '';
+    if (!c.done && c.monthsLeft != null && c.monthsLeft > 0) {
+      if (c.neededAnnualRate == null) {
+        feasibilityText = '<span class="loss">這個期限與投入條件無法算出有限年化需求；請檢查目標、期限與每月投入。</span>';
+      } else {
+        const r = c.neededAnnualRate;
+        const riskNote = r >= 100
+          ? ' · 超過 100% 年化：這是極端數學門檻，不能解讀為一般投資可取得的報酬；若保留此目標，另需明確的事業／收入成長來源。'
+          : r >= 20 ? ' · 這是很高的數學門檻；不是系統對市場報酬的預測。'
+          : '';
+        feasibilityText = `期限反推：以目前 ${goalMoney(c.current)}、每月 ${goalMoney(c.monthly)}、剩 ${c.monthsLeft} 個月，要達目標需年化約 <strong>${r.toFixed(r >= 100 ? 0 : 1)}%</strong>（方程式結果，不是報酬預測）${riskNote}`;
+      }
+    }
     return `
       <div class="holding-card ${cls}">
         <div class="hc-top">
@@ -21528,6 +21676,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
         <div style="display:flex; flex-direction:column; gap:6px; padding:10px 12px; background:rgba(212,165,116,0.06); border-left:2px solid var(--accent); border-radius:3px; font-size:12px; line-height:1.6;">
           <div>${etaText}${paceText ? ' · ' + paceText : ''}</div>
           ${needText ? `<div style="color:var(--ink-secondary);">${needText}</div>` : ''}
+          ${feasibilityText ? `<div style="color:var(--ink-secondary);">${feasibilityText}</div>` : ''}
           <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">每月投入 ${goalMoney(c.monthly)} · 假設年化 ${c.rate}%</div>
         </div>
         ${g.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:10px; border-top:1px solid var(--line); margin-top:10px;">${escape(g.notes)}</div>` : ''}
@@ -21673,7 +21822,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
       document.getElementById('goalManualAmount').value = g.manualAmount || '';
       document.getElementById('goalExtra').value = g.extra || '';
       document.getElementById('goalMonthly').value = g.monthly || '';
-      document.getElementById('goalRate').value = g.rate != null ? g.rate : 6;
+      document.getElementById('goalRate').value = g.rate != null ? g.rate : 0;
       document.getElementById('goalStatus').value = g.status || 'active';
       document.getElementById('goalNotes').value = g.notes || '';
       goalModulesPick = Array.isArray(g.modules) ? g.modules.slice() : [];
@@ -21681,7 +21830,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
       ['goalName', 'goalTarget', 'goalManualAmount', 'goalExtra', 'goalMonthly', 'goalNotes'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
       document.getElementById('goalType').value = 'retire';
       document.getElementById('goalSource').value = 'total';
-      document.getElementById('goalRate').value = 6;
+      document.getElementById('goalRate').value = 0;
       document.getElementById('goalStatus').value = 'active';
       document.getElementById('goalTargetDate').value = goalDatePlusMonths(120);
       goalModulesPick = [];
@@ -25903,7 +26052,9 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           <span style="white-space:nowrap;">增值 <strong style="color:${app >= 0 ? 'var(--accent)' : 'var(--danger)'};">${reMoneySign(app)}</strong></span>
           ${reLoanMonthly(p) > 0 ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">月付 ${reMoney(reLoanMonthly(p))}</span>` : ''}
           ${netFlow !== 0 ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:${netFlow >= 0 ? 'var(--accent)' : 'var(--danger)'};">實際收支 ${reMoneySign(netFlow)}</span>` : ''}
-          ${leaseText ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:${leaseColor};">${leaseText}</span>` : ''}
+          ${reNum(p.deposit) > 0 ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);" title="押金是房客的錢，退租要還他——所以上面每一個數字（淨值、增值、報酬率）都沒有把它算進去。">押金 ${reMoney(reNum(p.deposit))} · 要還房客</span>` : ''}
+          ${reNum(p.rentBump) > 0 ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);" title="租約裡的調漲條款。上面的報酬率是用「目前租金」算的，沒有把未來的調漲算進去。">每年調漲 ${reNum(p.rentBump)}%</span>` : ''}
+          ${leaseText ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:${leaseColor};">${leaseText}${p.leaseStart ? `（${escape(String(p.leaseStart))} 起）` : ''}</span>` : (p.leaseStart ? `<span style="white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">租約 ${escape(String(p.leaseStart))} 起</span>` : '')}
           ${p.buyDate ? `<span style="margin-left:auto; white-space:nowrap; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">${escape(p.buyDate)}</span>` : ''}
         </div>
         ${p.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:8px; border-top:1px solid var(--line);">${escape(p.notes)}</div>` : ''}
@@ -27057,7 +27208,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   }
   async function refreshCashflowFx() {
     try {
-      const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+      const r = await fetchTO('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
       const j = await r.json();
       const rate = j && j.rates && j.rates.TWD;
       if (rate && rate > 0) { cashflowFx = { usdTwd: rate, updatedAt: Date.now(), manual: false }; await writeKey(CF_STORAGE.fx, JSON.stringify(cashflowFx)); return rate; }
@@ -27442,7 +27593,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     if (!base) caps = { state: 'none', ver: 0, routes: [] };
     else {
       try {
-        const resp = await fetch(base + '/quote?ping=1', { cache: 'no-store' });
+        const resp = await fetchTO(base + '/quote?ping=1', { cache: 'no-store' });
         const body = await resp.json().catch(() => null);
         if (resp.ok && body && Number(body.ver) > 0) {
           // 舊版沒有 routes 欄位 → 依版號推回去它「當時有什麼」，不要假設它什麼都有
@@ -29117,7 +29268,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const lines = [];
     // ① 能力
     try {
-      const r = await fetch(base + '/quote?ping=1', { cache: 'no-store' });
+      const r = await fetchTO(base + '/quote?ping=1', { cache: 'no-store' }, 8000);
       const j = await r.json();
       const hasBars = Array.isArray(j.routes) ? j.routes.includes('bars') : (Number(j.ver) >= 3);
       lines.push(hasBars
@@ -29133,7 +29284,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
                    'V','UNH','XOM','MA','COST','HD','PG','NFLX','JNJ','ABBV'];
     const t0 = Date.now();
     try {
-      const r = await fetch(base + '/bars?us=' + probe.join(',') + '&range=1y', { cache: 'no-store' });
+      const r = await fetchTO(base + '/bars?us=' + probe.join(',') + '&range=1y', { cache: 'no-store' }, 15000);
       const sec = ((Date.now() - t0) / 1000).toFixed(1);
       if (!r.ok) {
         lines.push(`<span style="color:var(--danger);">✗ 抓 20 檔回 HTTP ${r.status}（${sec} 秒）</span>`);
@@ -29849,7 +30000,8 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
       const fxRate = await refreshCashflowFx();
       let fxTable = null;
       try {
-        const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+        // ⚠ 這裡掛住的話，整支的 finally 跑不到 → ⚡ 按鈕永久 disabled（v16.85）
+        const r = await fetchTO('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' }, 10000);
         const j = await r.json();
         if (j && j.rates && j.rates.TWD > 0) fxTable = j.rates;
       } catch (e) {}
@@ -29985,7 +30137,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         if (unknown.length) notes.push(`這些幣不在對照表裡，沒更新：${unknown.join('、')}`);
         if (ids.length) {
           try {
-            const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd`, { cache: 'no-store' });
+            const r = await fetchTO(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd`, { cache: 'no-store' });
             const j = await r.json();
             cJobs.forEach(job => {
               const id = CG_IDS[job.sym.toUpperCase()];
@@ -30072,7 +30224,16 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         } catch (e) {}
         arr.forEach(h => { try { if (h.priceUpdatedAt) t.push(h); } catch (e) {} });
       }
-      await writeKey('studio_price_refresh_v1', JSON.stringify({ at: Date.now(), ok: log.tw.ok + log.us.ok + log.crypto.ok + log.fx.ok }));
+      // ⚠ 只存「最後跑過」的時間會騙人：全部失敗也會看起來像剛更新。
+      //    把覆蓋率一起存，摘要才能分清「剛跑過」與「真的拿到足夠新資料」。
+      const priceOk = log.tw.ok + log.us.ok + log.crypto.ok + log.fx.ok;
+      const priceFailed = log.tw.fail + log.us.fail + log.crypto.fail + log.fx.fail;
+      const priceSkipped = log.us.skip || 0;
+      const priceAttempted = twJobs.length + usJobs.length + cJobs.length + fJobs.length;
+      await writeKey('studio_price_refresh_v1', JSON.stringify({
+        at: Date.now(), ok: priceOk, attempted: priceAttempted,
+        failed: priceFailed, skipped: priceSkipped, coverageV: 2
+      }));
 
       // 這一輪有東西該拿即時卻沒拿到 → 把真正的原因寫出來（而且要說得出下一步）。
       // 全部都拿到即時就不要囉嗦——會亂叫的提醒比沒提醒更糟。
@@ -30848,7 +31009,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
         reStale[0].view, reStale.length);
     }
 
-    // 13) 資產配置裡「手動填的錢」跟模組自動帶進來的重複計算 → 總資產多算、再平衡建議跟著錯
+    // 13) 資產配置裡「手動填的錢」跟模組自動帶進來的重複計算 → 總資產多算、目標差距也會算錯
     //     v6.6 做那一頁時還沒有債券模組（v7.0）與不動產模組（v7.2），當時只能手動填；
     //     模組做出來、資料建進去之後，兩邊會被加在一起，而畫面上完全看不出來。
     //     ⚠ 只提醒不自動改：真的可能有模組外的公司債，或填的是自住宅。
@@ -30864,7 +31025,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
             `而「${escape(h.mod)}」模組已經自動帶進來 <strong>${cfMoney(h.auto)}</strong>`
           ).join('<br>') +
           `<br><br>如果是同一筆錢，總資產<strong>多算了 ${cfMoney(over)}</strong>，` +
-          `而且三個格子的百分比會一起算歪——「建議加碼／減碼多少錢」跟著錯。<br>` +
+          `而且三個格子的百分比會一起算歪——目標差距跟著錯。<br>` +
           `到「資產配置分析」把那格改成 <strong>0</strong> 再按儲存就好（模組那邊的資料不會動）。<br>` +
           `⚠ 如果你手上真的有<strong>模組外的</strong>債券（公司債、儲蓄險）或不動產（自住宅），那本來就該填，這條可以直接忽略。`,
           'allocationView', hits.length);
@@ -31663,13 +31824,14 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'opps',    name: '投資翻倍 / 以小搏大', test: k => k === 'studio_opps_v1' },
     { key: 'history', name: '資產歷史走勢',    test: k => k === 'studio_history_v1' },
     { key: 'cfg',     name: '匯率與配置設定',  test: k => k === 'cashflow_fx_v1' || k === 'alloc_config_v1' },
+    { key: 'investReview', name: '投資政策與成長帳', test: k => k === 'investment_policy_v1' || /^growth_/.test(k) },
     { key: 'apis',    name: 'AI API 收藏館',   test: k => k === 'ai_apis_v1' },
     { key: 'alog',    name: '分析策略記錄',    test: k => /^analysis_/.test(k) },
     { key: 'travel',  name: '旅遊規劃',        test: k => /^travel_/.test(k) },
     { key: 'secrets', name: '🔑 金鑰與雲端同步設定', test: BACKUP_SECRET_MATCH }
   ];
   // 前綴白名單：只有本 App 的資料才會被打包
-  const BACKUP_PREFIXES = ['studio_', 'ai_apis_', 'alloc_', 'analysis_', 'assoc_', 'bond_', 'cashflow_', 'crypto_',
+  const BACKUP_PREFIXES = ['studio_', 'ai_apis_', 'alloc_', 'analysis_', 'assoc_', 'bond_', 'cashflow_', 'crypto_', 'growth_', 'investment_',
     'dca_', 'fund_', 'fxdep_', 'goals_', 'hdetf_', 'metal_', 'mketf_', 're_com_', 're_rental_', 're_sync',
     'travel_', 'tw_', 'us_'];
   const backupOwns = k => BACKUP_PREFIXES.some(p => k.startsWith(p));
@@ -34007,7 +34169,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
   // v9.9 就踩過「加按鈕時只改了一處」的虧。
   function scanAiBtnHtml() {
     return `<button class="btn btn-sm btn-primary" type="button" style="margin-left:auto;"
-      onclick="openScanAiModal()" title="把畫面上排好的前 30 檔整批交給 AI，請它挑前 5 名">🤖 讓 AI 挑前 5 名</button>`;
+      onclick="openScanAiModal()" title="把畫面上通過條件的標的交給 AI，整理資料、風險與待查事項">🤖 AI 整理研究重點</button>`;
   }
 
   // ===== 上下限判讀（v16.45）：上檔第一關在哪、第一段賠率夠不夠 =====
@@ -34146,7 +34308,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     const how = usScanScored.mode === 'strategy'
       ? `我勾了 ${usScanScored.picked.map(s => s.name).join('、')} 這幾種策略，下面是至少符合一種的股票，依「符合幾種」排序。`
       : `我勾了 ${usScanPicked.length} 個技術條件、門檻設為「至少符合 ${usScanScored.need} 項」，下面是通過的股票，依「符合幾項」排序。`;
-    return `你是一位協助我從「技術面掃描結果」裡收斂標的的研究助理。
+    return `你是一位協助我整理「技術面掃描結果」的研究助理。
 
 【我做了什麼】
 我用自己的工具掃了${mktName}，${how}
@@ -34179,13 +34341,13 @@ ${scanMrevText().replace(/\*\*/g, '')}
 ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
 
 【請用以下結構回答（繁體中文）】
-【1. 我會先看的 5 檔】把上面挑成前 5 名，每一檔一句話講「為什麼是它」——理由只能來自上面的數字。
+【1. 條件符合摘要】依上面既有順序，逐檔簡述哪些已知數字支持或限制這筆研究；**不要重新排名、不要挑出優先標的**。
 【2. 每一檔的主要風險】具體指出是哪個數字讓你擔心（例如 RSI 已經偏高、量比不足、距 60 日高太近等）。
-【3. 進場與停損】就上面給的停損參考與 2:1 目標，說明合不合理；不合理的話請說明你會怎麼調整。
-【4. 我會先跳過的幾檔】從清單裡點名 3~5 檔並說明為什麼——這一段跟第 1 段一樣重要。
+【3. 價格與流動性觀察】只解釋畫面已提供的停損／目標參考價、壓力與流動性代表什麼限制；**不要提出買進、賣出、進出場、停損調整或目標價建議**。
+【4. 資料缺口】從清單中指出哪些判讀因資料不足、資料日期或流動性而不能下結論；不要把資料不足寫成不符合。
 【5. 你應該自己查證的事】列出你「因為看不到資料所以不能判斷」的項目（例如最近有沒有財報、有沒有重大消息、產業景氣）。
 
-最後請加一句提醒：這只是把數字整理過的參考，不構成投資建議，實際買賣請自行判斷並承擔風險。`;
+最後請加一句提醒：這只是把數字整理過的研究參考，不構成投資建議，也不是買賣或進出場指示。`;
   }
 
   function openScanAiModal() {
@@ -34197,7 +34359,7 @@ ${rows.map((r, i) => scanAiRowLine(r, i, cur)).join('\n\n')}
     const n = Math.min(SCAN_AI_MAX, usScanScored.list.length);
     const total = usScanScored.list.length;
     const el = document.getElementById('scanAiNote');
-    if (el) el.innerHTML = `把畫面上排好的<strong>前 ${n} 檔</strong>${total > n ? `（共 ${total} 檔通過）` : ''}整批交給 AI，請它挑出前 5 名並說明理由與風險。<br>` +
+    if (el) el.innerHTML = `把畫面上通過條件的<strong>前 ${n} 檔</strong>${total > n ? `（共 ${total} 檔通過）` : ''}整批交給 AI，整理已知資料、風險與待查事項；AI 不會重新排名或提供買賣指示。<br>` +
       `<span style="color:var(--ink-tertiary);">⚠ AI 看得到的<strong>只有技術指標與（有抓到才附的）基本面比率</strong>——沒有新聞、沒有財報、沒有盤中價格。提示詞裡已經把這件事明講給它，並要求它不要假裝知道。</span>`;
     const ta = document.getElementById('scanAiPrompt');
     if (ta) ta.value = usScanAiPrompt;
@@ -35157,10 +35319,273 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   }
 
   // ============================================================
-  // 資產配置分析 · Allocation（60-10-30，重用 cfCompute + 匯率）
+  // 投資政策卡 · 使用者自己定義底線；只做資料比對，絕不自動交易
+  // ============================================================
+  const POLICY_STORAGE = 'investment_policy_v1';
+  // 沒有任何預設的金額／風險／頻率：這些是使用者的決定，不是系統可以代填的投資建議。
+  const POLICY_DEFAULT = {
+    purpose: '', minLiquidity: null, reportedLiquidity: null,
+    reviewDays: null, lastReviewedAt: 0, notes: ''
+  };
+  let investmentPolicy = { ...POLICY_DEFAULT };
+
+  const policyNumber = v => {
+    if (v === null || v === undefined || String(v).trim() === '') return null;
+    const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  function policyAssessment(cfg, now = Date.now()) {
+    const p = { ...POLICY_DEFAULT, ...(cfg || {}) };
+    const min = policyNumber(p.minLiquidity), reported = policyNumber(p.reportedLiquidity);
+    const reviewDays = policyNumber(p.reviewDays);
+    const reviewed = Number(p.lastReviewedAt) || 0;
+    const reserve = min === null || reported === null ? { state: 'missing' }
+      : reported < min ? { state: 'below', gap: min - reported }
+      : { state: 'ok', surplus: reported - min };
+    const elapsedDays = reviewed ? Math.max(0, Math.floor((now - reviewed) / 86400000)) : null;
+    const review = reviewDays === null ? { state: 'missing' }
+      : !reviewed ? { state: 'unrecorded', days: reviewDays }
+      : elapsedDays >= reviewDays ? { state: 'due', elapsedDays, days: reviewDays }
+      : { state: 'ok', elapsedDays, days: reviewDays };
+    return { reserve, review, min, reported, reviewDays, reviewed };
+  }
+  async function loadInvestmentPolicy() {
+    try {
+      const raw = await readKey(POLICY_STORAGE), parsed = raw ? JSON.parse(raw) : null;
+      investmentPolicy = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? { ...POLICY_DEFAULT, ...parsed } : { ...POLICY_DEFAULT };
+    } catch (e) { investmentPolicy = { ...POLICY_DEFAULT }; }
+    renderInvestmentPolicy();
+  }
+  async function saveInvestmentPolicy() {
+    const read = id => document.getElementById(id)?.value || '';
+    investmentPolicy = {
+      ...investmentPolicy,
+      purpose: read('policyPurpose').trim(),
+      minLiquidity: policyNumber(read('policyMinLiquidity')),
+      reportedLiquidity: policyNumber(read('policyReportedLiquidity')),
+      reviewDays: policyNumber(read('policyReviewDays')),
+      notes: read('policyNotes').trim()
+    };
+    await writeKey(POLICY_STORAGE, JSON.stringify(investmentPolicy));
+    renderInvestmentPolicy();
+    showToast('已儲存政策卡；仍由你自行決定任何投資行動');
+  }
+  async function markInvestmentPolicyReviewed() {
+    investmentPolicy.lastReviewedAt = Date.now();
+    await writeKey(POLICY_STORAGE, JSON.stringify(investmentPolicy));
+    renderInvestmentPolicy();
+    showToast('已記錄本次人工檢查');
+  }
+  function renderInvestmentPolicy() {
+    const a = policyAssessment(investmentPolicy);
+    const statsEl = document.getElementById('policyStats');
+    const reserveText = a.reserve.state === 'missing' ? '未設定'
+      : a.reserve.state === 'below' ? '低於你的底線' : '符合你的底線';
+    const reviewText = a.review.state === 'missing' ? '未設定'
+      : a.review.state === 'unrecorded' ? '尚未記錄檢查'
+      : a.review.state === 'due' ? '已超過週期' : '週期內';
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">資金用途</div><div class="stat-value" style="font-size:17px;">${investmentPolicy.purpose ? escape(investmentPolicy.purpose) : '未設定'}</div><div class="stat-sub">由你定義，不從持股猜測</div></div>
+      <div class="stat-card ${a.reserve.state === 'below' ? 'loss' : a.reserve.state === 'ok' ? 'profit' : 'flat'}"><div class="stat-label">流動資金底線</div><div class="stat-value" style="font-size:17px;">${reserveText}</div><div class="stat-sub">${a.min === null || a.reported === null ? '需要兩個數字才能比較' : `下限 ${goalMoney(a.min)} · 你填 ${goalMoney(a.reported)}`}</div></div>
+      <div class="stat-card ${a.review.state === 'due' ? 'loss' : a.review.state === 'ok' ? 'profit' : 'flat'}"><div class="stat-label">人工檢查</div><div class="stat-value" style="font-size:17px;">${reviewText}</div><div class="stat-sub">${a.reviewDays === null ? '請自訂頻率' : `每 ${a.reviewDays} 天 · 系統不會替你自動執行`}</div></div>
+    `;
+    const reserveDetail = a.reserve.state === 'missing'
+      ? '尚未比較：請輸入「最低可動用資金」與「目前可動用資金」。系統不會把全部資產誤認為可立即動用的現金。'
+      : a.reserve.state === 'below'
+        ? `你填的目前可動用資金比自己設定的底線少 ${goalMoney(a.reserve.gap)}。這是資料提醒，不是買賣指示。`
+        : `你填的目前可動用資金比自己設定的底線多 ${goalMoney(a.reserve.surplus)}。此比較只依你輸入的金額。`;
+    const reviewDetail = a.review.state === 'missing'
+      ? '尚未設定人工檢查週期。'
+      : a.review.state === 'unrecorded'
+        ? `尚未記錄檢查；你設定的是每 ${a.review.days} 天一次。`
+        : a.review.state === 'due'
+          ? `距上次人工檢查 ${a.review.elapsedDays} 天，已超過你設定的 ${a.review.days} 天。`
+          : `距上次人工檢查 ${a.review.elapsedDays} 天；你設定每 ${a.review.days} 天檢查。`;
+    const reviewedLabel = a.reviewed ? new Date(a.reviewed).toLocaleString('zh-TW') : '尚未記錄';
+    const bodyEl = document.getElementById('policyBody');
+    if (bodyEl) bodyEl.innerHTML = `
+      <div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);">
+        <strong>這張卡不連券商、不會下單。</strong>它的用途是把你的底線寫清楚，資料不完整或超出你自己設定時才提醒你停下來確認。
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-bottom:18px;">
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:16px;"><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:.12em; margin-bottom:8px;">可動用資金檢查</div><div style="font-size:12px; line-height:1.7; color:var(--ink-secondary);">${reserveDetail}</div></div>
+        <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:16px;"><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:.12em; margin-bottom:8px;">人工檢查紀錄</div><div style="font-size:12px; line-height:1.7; color:var(--ink-secondary);">${reviewDetail}<br><span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">最後記錄：${reviewedLabel}</span></div></div>
+      </div>
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:.15em; color:var(--ink-tertiary); margin-bottom:14px;">我的規則 · 都由你填寫</div>
+        <div class="form-group"><label class="form-label">這筆資金的用途／不可碰的原因</label><input id="policyPurpose" class="form-input" value="${escape(investmentPolicy.purpose)}" placeholder="例如：閒置資金；不影響公司營運與生活費"></div>
+        <div class="form-row"><div class="form-group" style="margin:0;"><label class="form-label">最低可動用資金（NT$）</label><input type="number" min="0" id="policyMinLiquidity" class="form-input" value="${a.min === null ? '' : a.min}" placeholder="自行設定"></div><div class="form-group" style="margin:0;"><label class="form-label">目前可動用資金（NT$）</label><input type="number" min="0" id="policyReportedLiquidity" class="form-input" value="${a.reported === null ? '' : a.reported}" placeholder="自行確認填入"></div></div>
+        <div class="form-group"><label class="form-label">人工檢查週期（天）</label><input type="number" min="1" id="policyReviewDays" class="form-input" value="${a.reviewDays === null ? '' : a.reviewDays}" placeholder="例如：30；不填就不排程"></div>
+        <div class="form-group"><label class="form-label">檢查筆記（選填）</label><textarea id="policyNotes" class="form-textarea" placeholder="例如：本月公司營運是否需要這筆資金、資料是否已更新…">${escape(investmentPolicy.notes)}</textarea></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-primary" onclick="saveInvestmentPolicy()">💾 儲存政策卡</button><button class="btn" onclick="markInvestmentPolicyReviewed()">✓ 記錄本次人工檢查</button></div>
+      </div>`;
+  }
+
+  // ============================================================
+  // 每週決策摘要 · 同一份資料的人工確認清單，不做交易結論
+  // ============================================================
+  async function reviewReadJson(key, fallback) {
+    try { const raw = await readKey(key); return raw ? JSON.parse(raw) : fallback; }
+    catch (e) { return fallback; }
+  }
+  function weeklyReviewBuild({ rows, policy, alloc, goals, priceRefresh, now = Date.now() }) {
+    const items = [];
+    const policyCheck = policyAssessment(policy, now);
+    if (policyCheck.reserve.state === 'missing') {
+      items.push({ level: 'info', title: '尚未完成可動用資金檢查', detail: '投資政策卡缺少最低可動用資金或目前可動用資金；系統不會拿總資產替代。', view: 'policyView', action: '開啟政策卡' });
+    } else if (policyCheck.reserve.state === 'below') {
+      items.push({ level: 'warn', title: '可動用資金低於你設定的底線', detail: `你自己填的差額為 ${goalMoney(policyCheck.reserve.gap)}。先確認公司與生活資金需求；這不是交易指示。`, view: 'policyView', action: '查看政策卡' });
+    }
+    if (policyCheck.review.state === 'missing' || policyCheck.review.state === 'unrecorded') {
+      items.push({ level: 'info', title: '尚未有人工檢查紀錄', detail: policyCheck.review.state === 'missing' ? '尚未設定檢查週期。' : `你設定每 ${policyCheck.review.days} 天檢查，但還沒記錄首次檢查。`, view: 'policyView', action: '記錄檢查' });
+    } else if (policyCheck.review.state === 'due') {
+      items.push({ level: 'warn', title: '人工檢查已超過你設定週期', detail: `距上次紀錄 ${policyCheck.review.elapsedDays} 天；你設定每 ${policyCheck.review.days} 天一次。`, view: 'policyView', action: '查看政策卡' });
+    }
+    const targetsConfirmed = Number(alloc && alloc.targetsConfirmedAt) > 0;
+    const split = allocSplit(rows, alloc || {}), total = split.total;
+    const allocTargets = [
+      ['公開市場股票', split.equity, alloc && alloc.tEquity],
+      ['債券／現金', split.bondCash, alloc && alloc.tBondCash],
+      ['另類資產', split.alt, alloc && alloc.tAlt]
+    ];
+    if (!targetsConfirmed) {
+      items.push({ level: 'info', title: '尚未確認資產配置目標', detail: '目前只知道實際資產；尚未用任何預設比例比較。', view: 'allocationView', action: '設定目標' });
+    } else if (total > 0) {
+      allocTargets.forEach(([name, value, target]) => {
+        const n = policyNumber(target);
+        if (n === null) return;
+        const deviation = value / total * 100 - n;
+        if (Math.abs(deviation) >= 5) items.push({ level: 'info', title: `${name} 與你的目標相差 ${Math.abs(deviation).toFixed(1)}%`, detail: `實際 ${(value / total * 100).toFixed(1)}%，你的目標 ${n}%。這是配置差距，不是買賣指示。`, view: 'allocationView', action: '查看配置' });
+      });
+    }
+    const activeGoals = (Array.isArray(goals) ? goals : []).filter(g => g && g.status === 'active');
+    activeGoals.forEach(g => {
+      const c = goalCompute(g);
+      if (c.monthsLeft != null && c.monthsLeft > 0 && c.neededAnnualRate != null && c.neededAnnualRate >= 100) {
+        items.push({ level: 'warn', title: `「${String(g.name || '未命名目標')}」期限門檻極高`, detail: `目前輸入條件反推年化複利約 ${c.neededAnnualRate.toFixed(0)}%。這是方程式結果，不是可期待的市場報酬。`, view: 'goalsView', action: '查看目標' });
+      }
+    });
+    const refreshedAt = Number(priceRefresh && priceRefresh.at) || 0;
+    const priceAge = refreshedAt ? Math.max(0, Math.floor((now - refreshedAt) / 86400000)) : null;
+    const hasCoverage = !!priceRefresh && Object.prototype.hasOwnProperty.call(priceRefresh, 'attempted');
+    const priceAttempted = hasCoverage ? Math.max(0, Number(priceRefresh.attempted) || 0) : null;
+    const priceOk = hasCoverage ? Math.max(0, Number(priceRefresh.ok) || 0) : null;
+    const priceFailed = hasCoverage ? Math.max(0, Number(priceRefresh.failed) || 0) : null;
+    const priceSkipped = hasCoverage ? Math.max(0, Number(priceRefresh.skipped) || 0) : null;
+    if (priceAge === null) {
+      items.push({ level: 'info', title: '沒有現價更新紀錄', detail: '損益、資產配置與目標目前可能基於手動或舊資料；系統沒有自行判定價格正確。', view: 'cashflowView', action: '查看現金流' });
+    } else {
+      // 覆蓋率與資料年齡是兩件事：舊格式也可能同時是過期資料，不能互相蓋掉。
+      if (!hasCoverage) {
+        items.push({ level: 'info', title: '現價更新紀錄缺少覆蓋資訊', detail: '這是舊格式紀錄，只知道何時執行，無法知道更新涵蓋幾檔。請在現金流頁重新更新後再確認。', view: 'cashflowView', action: '查看現金流' });
+      } else if (priceAttempted === 0) {
+        items.push({ level: 'info', title: '這次沒有可自動更新的現價', detail: '沒有可從公開報價來源更新的持股；手動價格與沒有公開來源的資產仍要自行確認。', view: 'cashflowView', action: '查看現金流' });
+      } else if (priceOk < priceAttempted) {
+        items.push({ level: 'warn', title: '本次現價更新不完整', detail: `可更新 ${priceAttempted} 檔，成功 ${priceOk} 檔${priceFailed ? `、失敗 ${priceFailed} 檔` : ''}${priceSkipped ? `、略過 ${priceSkipped} 檔` : ''}。更新時間新不代表每一筆都是新資料。`, view: 'cashflowView', action: '查看現金流' });
+      }
+      if (priceAge >= 7) {
+        items.push({ level: 'warn', title: `現價更新紀錄已過 ${priceAge} 天`, detail: '請先確認價格與匯率資料日期，再依它做任何判斷。', view: 'cashflowView', action: '查看現金流' });
+      }
+    }
+    return { items, total, activeGoals: activeGoals.length, priceAge, policyCheck, priceCoverage: { hasCoverage, attempted: priceAttempted, ok: priceOk, failed: priceFailed, skipped: priceSkipped } };
+  }
+  async function loadWeeklyReview() {
+    const [policy, alloc, goals, priceRefresh] = await Promise.all([
+      reviewReadJson(POLICY_STORAGE, {}), reviewReadJson(ALLOC_STORAGE, {}),
+      reviewReadJson(GOAL_STORAGE.goals, []), reviewReadJson('studio_price_refresh_v1', null)
+    ]);
+    await goalRefreshAssets();
+    const out = weeklyReviewBuild({ rows: goalAssetRows, policy, alloc, goals, priceRefresh });
+    const statsEl = document.getElementById('reviewStats');
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">目前總資產</div><div class="stat-value">${goalMoney(out.total)}</div><div class="stat-sub">現有模組加總；不等於可動用現金</div></div>
+      <div class="stat-card ${out.items.some(i => i.level === 'warn') ? 'loss' : 'flat'}"><div class="stat-label">待人工確認</div><div class="stat-value">${out.items.length}</div><div class="stat-sub">${out.items.some(i => i.level === 'warn') ? '含需要先確認的資料或規則' : '目前沒有重大規則差距'}</div></div>
+      <div class="stat-card"><div class="stat-label">現價資料</div><div class="stat-value" style="font-size:17px;">${out.priceAge === null ? '未記錄' : out.priceAge + ' 天前'}</div><div class="stat-sub">只顯示最後更新紀錄</div></div>
+      <div class="stat-card"><div class="stat-label">進行中目標</div><div class="stat-value">${out.activeGoals}</div><div class="stat-sub">期限反推請看各目標卡</div></div>`;
+    const bodyEl = document.getElementById('reviewBody');
+    if (!bodyEl) return;
+    const color = { warn: 'var(--danger)', info: 'var(--accent)', ok: 'var(--accent-warm)' };
+    bodyEl.innerHTML = `
+      <div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);"><strong>使用方法：</strong>每週打開一次，逐項確認資料、資金與目標假設。這張清單不執行任何交易，也不代表系統判定你該買或賣。</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">${out.items.length ? out.items.map(i => `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:3px solid ${color[i.level] || color.info}; border-radius:5px; padding:14px 16px;"><div style="display:flex; gap:12px; justify-content:space-between; align-items:flex-start; flex-wrap:wrap;"><div><strong style="font-size:13px;">${escape(i.title)}</strong><div style="font-size:12px; color:var(--ink-secondary); line-height:1.65; margin-top:5px;">${escape(i.detail)}</div></div><button class="btn btn-sm" onclick="showView('${escape(i.view)}')">${escape(i.action)}</button></div></div>`).join('') : `<div class="empty-state"><span class="glyph">☑</span><h3>目前沒有待確認事項</h3><p>這只表示已輸入的規則沒有顯示差距；仍請自行確認資料與決策。</p></div>`}</div>`;
+  }
+
+  // ============================================================
+  // 成長引擎分流 · 專案投入是獨立帳，絕不自動混入個人資產
+  // ============================================================
+  const GROWTH_STORAGE = 'growth_engines_v1';
+  let growthEntries = [];
+  function growthSummary(rows, entries, now = new Date()) {
+    const split = allocSplit(rows || [], {});
+    const list = Array.isArray(entries) ? entries : [];
+    const active = list.filter(x => x && x.status !== 'closed');
+    const sum = type => active.filter(x => x.type === type).reduce((n, x) => n + Math.max(0, Number(x.amount) || 0), 0);
+    const today = goalIso(now);
+    const overdue = active.filter(x => x.reviewDate && String(x.reviewDate) < today);
+    return { publicMarket: split.equity, company: sum('company'), project: sum('project'), active, overdue };
+  }
+  async function loadGrowthEngines() {
+    const raw = await reviewReadJson(GROWTH_STORAGE, []);
+    growthEntries = Array.isArray(raw) ? raw : [];
+    await goalRefreshAssets();
+    renderGrowthEngines();
+  }
+  async function saveGrowthEntries() { await writeKey(GROWTH_STORAGE, JSON.stringify(growthEntries)); }
+  function renderGrowthEngines() {
+    const s = growthSummary(goalAssetRows, growthEntries);
+    const statsEl = document.getElementById('growthStats');
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-label">公開市場資產</div><div class="stat-value">${goalMoney(s.publicMarket)}</div><div class="stat-sub">從現有持股模組讀取</div></div>
+      <div class="stat-card"><div class="stat-label">公司成長投入</div><div class="stat-value">${goalMoney(s.company)}</div><div class="stat-sub">獨立帳，不併入個人總資產</div></div>
+      <div class="stat-card"><div class="stat-label">高風險專案</div><div class="stat-value">${goalMoney(s.project)}</div><div class="stat-sub">獨立帳，不併入個人總資產</div></div>
+      <div class="stat-card ${s.overdue.length ? 'loss' : 'flat'}"><div class="stat-label">待檢查專案</div><div class="stat-value">${s.overdue.length}</div><div class="stat-sub">到期後由你人工決定下一步</div></div>`;
+    const statusText = { active: '進行中', paused: '暫停', closed: '結束' };
+    const typeText = { company: '公司成長投入', project: '高風險專案／私募' };
+    const bodyEl = document.getElementById('growthBody');
+    if (!bodyEl) return;
+    bodyEl.innerHTML = `
+      <div style="background:rgba(201,123,106,0.09); border-left:2px solid var(--danger); padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);"><strong>避免重複計算：</strong>這裡的公司與專案投入只作決策追蹤，沒有加入「現金流儀表板」或「資產配置」。若日後它變成你個人可估值的資產，請先決定唯一的記帳位置。</div>
+      ${s.overdue.length ? `<div style="background:var(--bg-card); border:1px solid var(--danger); border-radius:6px; padding:14px; margin-bottom:18px; font-size:12px; color:var(--ink-secondary);">⚠ 有 ${s.overdue.length} 筆進行中紀錄超過下次檢查日：${s.overdue.map(x => escape(x.name || '未命名')).join('、')}。系統只提醒，是否繼續／暫停由你決定。</div>` : ''}
+      <div style="display:flex; flex-direction:column; gap:10px;">${s.active.length ? s.active.map(x => `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:15px;"><div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;"><div><strong>${escape(x.name || '未命名')}</strong><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px;">${escape(typeText[x.type] || '未分類')} · ${escape(statusText[x.status] || x.status || '進行中')} · 已投入 ${goalMoney(x.amount)}</div>${x.reviewDate ? `<div style="font-size:11px; color:var(--ink-secondary); margin-top:5px;">下次人工檢查：${escape(x.reviewDate)}</div>` : ''}${x.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.55; margin-top:8px;">${escape(x.notes)}</div>` : ''}</div><button class="btn btn-sm" onclick="openGrowthModal('${escape(x.id)}')">編輯</button></div></div>`).join('') : `<div class="empty-state"><span class="glyph">↗</span><h3>尚無公司或專案投入紀錄</h3><p>公開市場資產已從既有模組讀取。只有公司成長投入或高風險專案需要在這裡另建紀錄。</p></div>`}</div>`;
+  }
+  function openGrowthModal(id) {
+    const x = growthEntries.find(v => v.id === id);
+    document.getElementById('growthModalTitle').innerHTML = x ? '編輯 <em>成長引擎紀錄</em>' : '新增 <em>成長引擎紀錄</em>';
+    document.getElementById('growthEditId').value = x ? x.id : '';
+    document.getElementById('growthName').value = x ? x.name || '' : '';
+    document.getElementById('growthType').value = x ? x.type || 'company' : 'company';
+    document.getElementById('growthAmount').value = x ? Number(x.amount) || 0 : '';
+    document.getElementById('growthReviewDate').value = x ? x.reviewDate || '' : '';
+    document.getElementById('growthStatus').value = x ? x.status || 'active' : 'active';
+    document.getElementById('growthNotes').value = x ? x.notes || '' : '';
+    document.getElementById('growthModal').classList.add('open');
+  }
+  function closeGrowthModal() { document.getElementById('growthModal').classList.remove('open'); }
+  async function saveGrowthEntry(e) {
+    e.preventDefault();
+    const id = document.getElementById('growthEditId').value || ('ge_' + Date.now());
+    const entry = {
+      id, name: document.getElementById('growthName').value.trim(), type: document.getElementById('growthType').value,
+      amount: Math.max(0, Number(document.getElementById('growthAmount').value) || 0), reviewDate: document.getElementById('growthReviewDate').value || '',
+      status: document.getElementById('growthStatus').value, notes: document.getElementById('growthNotes').value.trim(), updatedAt: Date.now()
+    };
+    const i = growthEntries.findIndex(x => x.id === id);
+    if (i >= 0) growthEntries[i] = entry; else growthEntries.push(entry);
+    await saveGrowthEntries(); closeGrowthModal(); renderGrowthEngines(); showToast('已儲存成長引擎紀錄；未併入個人資產總額');
+  }
+
+  // ============================================================
+  // 資產配置分析 · Allocation（使用者自訂目標，重用 cfCompute + 匯率）
   // ============================================================
   const ALLOC_STORAGE = 'alloc_config_v1';
-  const ALLOC_DEFAULT = { cash: 0, bond: 0, realEstate: 0, otherAlt: 0, tEquity: 60, tBondCash: 10, tAlt: 30 };
+  // ⚠ 目標比例不能偷塞預設值：那會變成系統替使用者做投資配置。
+  //    沒設定時只顯示事實；使用者可自行輸入，或主動按「套用範例」再修改。
+  const ALLOC_DEFAULT = {
+    cash: 0, bond: 0, realEstate: 0, otherAlt: 0,
+    tEquity: null, tBondCash: null, tAlt: null,
+    // 舊版會自動塞 60/10/30；沒有這個確認時間的舊資料不可直接拿來當使用者目標。
+    targetsConfirmedAt: 0
+  };
   let allocConfig = { ...ALLOC_DEFAULT };
 
   // ⚠ 這段算式「首頁的配置偏離提醒」也要用。**不要各寫一份**——
@@ -35193,7 +35618,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   // 為什麼會發生：v6.6 做這一頁的時候還沒有債券模組（v7.0 才有）、也還沒有不動產模組（v7.2 才有），
   //   所以當時只能手動填。等模組做出來、使用者把資料建進去之後，**兩邊會被加在一起**，
   //   而畫面上完全看不出來——它只是顯示一個比較大的總資產，
-  //   並且把三個格子的百分比全部算歪，於是「建議加碼／減碼多少錢」也跟著錯。
+  //   並且把三個格子的百分比全部算歪，於是目標差距也跟著錯。
   //
   // ⚠ 只挑「手動欄位有一個同名模組」的兩項來看（債券、不動產）。
   //   現金、其他另類沒有對應模組，硬要比對只會誤報——
@@ -35231,7 +35656,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
             你在下面手動填了 <strong>${escape(h.field)} ${cfMoney(h.manual)}</strong>，
             但「${escape(h.mod)}」模組裡<strong>已經自動帶進來 ${cfMoney(h.auto)}</strong>了。<br>
             如果那是同一筆錢，總資產就<strong>多算了 ${cfMoney(h.manual)}</strong>，
-            三個格子的百分比會一起算歪，下面的「建議加碼／減碼多少錢」也會跟著錯。<br>
+            三個格子的百分比會一起算歪，下面的目標差距也會跟著錯。<br>
             <span style="color:var(--ink-secondary);">→ 是同一筆的話，把下面那格<strong>改成 0</strong> 再按儲存就好（模組那邊的資料不會動）。</span><br>
             <span style="color:var(--ink-tertiary);">${h.ok}</span>
           </div>`).join('')}
@@ -35258,53 +35683,67 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   }
   function applyAllocInputs() {
     const g = (id) => Number(document.getElementById(id)?.value) || 0;
+    const pct = (id) => {
+      const raw = String(document.getElementById(id)?.value || '').trim();
+      if (!raw) return null;
+      const n = Number(raw);
+      return isFinite(n) && n >= 0 && n <= 100 ? n : null;
+    };
     allocConfig.cash = g('allocCash'); allocConfig.bond = g('allocBond');
     allocConfig.realEstate = g('allocRe'); allocConfig.otherAlt = g('allocOther');
-    allocConfig.tEquity = g('allocTEq'); allocConfig.tBondCash = g('allocTBc'); allocConfig.tAlt = g('allocTAlt');
+    allocConfig.tEquity = pct('allocTEq'); allocConfig.tBondCash = pct('allocTBc'); allocConfig.tAlt = pct('allocTAlt');
+    const targets = [allocConfig.tEquity, allocConfig.tBondCash, allocConfig.tAlt];
+    allocConfig.targetsConfirmedAt = targets.every(v => v !== null) ? Date.now() : 0;
     saveAllocConfig();
     loadAllocation();
     showToast('已更新配置');
   }
-  function useAllocPreset() {
+  async function useAllocPreset() {
     allocConfig.tEquity = 60; allocConfig.tBondCash = 10; allocConfig.tAlt = 30;
-    saveAllocConfig(); loadAllocation(); showToast('已套用 60-10-30 目標');
+    allocConfig.targetsConfirmedAt = Date.now();
+    await saveAllocConfig(); await loadAllocation(); showToast('已套用 60-10-30 範例；請依你的期限與承受風險自行調整');
   }
   function renderAllocation(rows) {
     const S = allocSplit(rows, allocConfig);
     const { equity, bondCash, alt, total } = S;
     const dupHits = allocDupHits(rows, allocConfig);
+    const targetsConfirmed = Number(allocConfig.targetsConfirmedAt) > 0;
+    const legacyTargets = !targetsConfirmed && [allocConfig.tEquity, allocConfig.tBondCash, allocConfig.tAlt]
+      .some(v => Number.isFinite(Number(v)) && Number(v) >= 0);
+    const targetOf = v => !targetsConfirmed || (v === null || v === undefined || v === '')
+      ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null);
     const cats = [
-      { name: '公開市場股票', en: 'EQUITIES', color: '#d4a574', value: equity, target: Number(allocConfig.tEquity) || 0, note: '台股 + 美股 + ETF + 股票型基金（自動）' },
-      { name: '債券／現金', en: 'BONDS · CASH', color: '#9aa06a', value: bondCash, target: Number(allocConfig.tBondCash) || 0, note: '債券 + 外幣存款 + 債券型基金（自動）+ 手動現金' },
-      { name: '另類資產', en: 'ALTERNATIVES', color: '#c97b6a', value: alt, target: Number(allocConfig.tAlt) || 0, note: '加密貨幣 + 貴金屬 + 不動產淨值（自動）+ 手動補' }
+      { name: '公開市場股票', en: 'EQUITIES', color: '#d4a574', value: equity, target: targetOf(allocConfig.tEquity), note: '台股 + 美股 + ETF + 股票型基金（自動）' },
+      { name: '債券／現金', en: 'BONDS · CASH', color: '#9aa06a', value: bondCash, target: targetOf(allocConfig.tBondCash), note: '債券 + 外幣存款 + 債券型基金（自動）+ 手動現金' },
+      { name: '另類資產', en: 'ALTERNATIVES', color: '#c97b6a', value: alt, target: targetOf(allocConfig.tAlt), note: '加密貨幣 + 貴金屬 + 不動產淨值（自動）+ 手動補' }
     ];
-    const targetSum = cats.reduce((a, c) => a + c.target, 0);
+    const hasTargets = cats.every(c => c.target !== null);
+    const targetSum = hasTargets ? cats.reduce((a, c) => a + c.target, 0) : null;
     const statsEl = document.getElementById('allocStats');
     if (statsEl) statsEl.innerHTML = `
       <div class="stat-card"><div class="stat-label">總資產</div><div class="stat-value">${cfMoney(total)}</div><div class="stat-sub">含手動現金/債券/不動產</div></div>
-      ${cats.map(c => { const a = total > 0 ? c.value / total * 100 : 0; const dev = a - c.target; const cls = Math.abs(dev) < 2 ? 'flat' : dev > 0 ? 'loss' : 'profit'; return `
-      <div class="stat-card ${cls}"><div class="stat-label">${escape(c.name)}</div><div class="stat-value">${a.toFixed(1)}%</div><div class="stat-sub">目標 ${c.target}% · ${dev >= 0 ? '超配 +' : '低配 '}${dev.toFixed(1)}%</div></div>`; }).join('')}
+      ${cats.map(c => { const a = total > 0 ? c.value / total * 100 : 0; const dev = c.target === null ? null : a - c.target; const cls = dev === null || Math.abs(dev) < 2 ? 'flat' : dev > 0 ? 'loss' : 'profit'; return `
+      <div class="stat-card ${cls}"><div class="stat-label">${escape(c.name)}</div><div class="stat-value">${a.toFixed(1)}%</div><div class="stat-sub">${dev === null ? '尚未設定目標 · 未比較' : `目標 ${c.target}% · ${dev >= 0 ? '高於 +' : '低於 '}${dev.toFixed(1)}%`}</div></div>`; }).join('')}
     `;
     const bars = cats.map(c => {
       const a = total > 0 ? c.value / total * 100 : 0;
-      const dev = a - c.target;
-      const devNT = (c.target - a) / 100 * total; // 需調整金額（正=加碼）
-      const advCls = total <= 0 ? 'flat' : dev > 2 ? 'loss' : dev < -2 ? 'profit' : 'flat';
-      // ⚠ 總資產是 0 的時候，devNT 一定是 0 →「低於目標 60.0% → 建議加碼 NT$0」
-      //   這句話自己打自己的臉（叫你加碼，又說加碼 0 元），新使用者第一次打開就看到三次。
+      const dev = c.target === null ? null : a - c.target;
+      const devNT = dev === null ? null : Math.abs(dev) / 100 * total;
+      const advCls = dev === null || total <= 0 ? 'flat' : dev > 2 ? 'loss' : dev < -2 ? 'profit' : 'flat';
+      // 只顯示事實差距，不能把差距翻譯成買／賣或加／減碼指示。
       const adv = total <= 0 ? '還沒有資料 · 到各模組建立持股，或在下面手動填'
-        : Math.abs(dev) < 2 ? '接近目標 ✓'
-        : dev < 0 ? `低於目標 ${(-dev).toFixed(1)}% → 建議加碼 ${cfMoney(devNT)}`
-        : `高於目標 ${dev.toFixed(1)}% → 建議減碼 ${cfMoney(-devNT)}`;
+        : dev === null ? '尚未設定目標比例 · 只顯示目前比例'
+        : Math.abs(dev) < 2 ? '與你設定的目標相差不到 2%'
+        : `${dev > 0 ? '高於' : '低於'}你設定的目標 ${Math.abs(dev).toFixed(1)}% · 差額 ${cfMoney(devNT)}`;
       return `
         <div style="margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px;">
             <span><span style="width:9px; height:9px; border-radius:2px; background:${c.color}; display:inline-block; margin-right:6px;"></span><strong style="font-family:var(--serif); font-size:15px;">${escape(c.name)}</strong> <span style="font-family:var(--mono); font-size:9.5px; color:var(--ink-tertiary);">${escape(c.note)}</span></span>
-            <span style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${cfMoney(c.value)} · 實際 ${(total > 0 ? c.value / total * 100 : 0).toFixed(1)}% / 目標 ${c.target}%</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--ink-secondary);">${cfMoney(c.value)} · 實際 ${(total > 0 ? c.value / total * 100 : 0).toFixed(1)}%${c.target === null ? ' / 目標未設定' : ` / 目標 ${c.target}%`}</span>
           </div>
           <div style="position:relative; height:18px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:3px; overflow:hidden;">
             <div style="height:100%; width:${Math.min(100, a)}%; background:${c.color}; opacity:0.75;"></div>
-            <div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, c.target)}%; width:2px; background:var(--ink-primary);" title="目標 ${c.target}%"></div>
+            ${c.target === null ? '' : `<div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, c.target)}%; width:2px; background:var(--ink-primary);" title="目標 ${c.target}%"></div>`}
           </div>
           <div class="${advCls}" style="font-family:var(--mono); font-size:11px; margin-top:4px;">${adv}</div>
         </div>`;
@@ -35323,13 +35762,16 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const bodyEl = document.getElementById('allocBody');
     if (bodyEl) bodyEl.innerHTML = `
       ${allocDupHtml(dupHits)}
+      ${legacyTargets ? `<div style="background:rgba(201,123,106,0.10); border:1px solid var(--danger); border-radius:6px; padding:14px; margin-bottom:20px; font-size:12px; line-height:1.6;">
+        <strong>舊目標設定尚未確認</strong>：系統以前會自動填入比例。為免把它誤當成你的投資計畫，目前不會拿來比較；請檢查下方三格後按「儲存並更新」。
+      </div>` : ''}
       <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px; margin-bottom:20px;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px;">
           <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary);">ACTUAL vs TARGET · 白線＝目標</div>
-          <button class="btn btn-sm" onclick="useAllocPreset()">套用 60-10-30</button>
+          <button class="btn btn-sm" onclick="useAllocPreset()">套用範例 60-10-30</button>
         </div>
         ${bars}
-        ${targetSum !== 100 ? `<div style="font-size:11px; color:var(--danger); margin-top:6px;">⚠ 目標比例合計為 ${targetSum}%，建議調整為 100%。</div>` : ''}
+        ${targetSum !== null && targetSum !== 100 ? `<div style="font-size:11px; color:var(--danger); margin-top:6px;">⚠ 你設定的目標比例合計為 ${targetSum}%，請自行確認是否要調整為 100%。</div>` : ''}
       </div>
       <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px;">
         <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:14px;">手動輸入 · 未在模組中的資產（台幣）</div>
@@ -35339,12 +35781,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         </div>
         <div style="font-family:var(--mono); font-size:10px; letter-spacing:0.15em; color:var(--ink-tertiary); margin-bottom:10px;">目標比例 %（合計建議 100）</div>
         <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
-          <div><label class="form-label">股票 %</label><input type="number" id="allocTEq" class="form-input" value="${Number(allocConfig.tEquity) || 0}" style="font-family:var(--mono);"></div>
-          <div><label class="form-label">債券/現金 %</label><input type="number" id="allocTBc" class="form-input" value="${Number(allocConfig.tBondCash) || 0}" style="font-family:var(--mono);"></div>
-          <div><label class="form-label">另類 %</label><input type="number" id="allocTAlt" class="form-input" value="${Number(allocConfig.tAlt) || 0}" style="font-family:var(--mono);"></div>
+          <div><label class="form-label">股票 %</label><input type="number" id="allocTEq" class="form-input" value="${allocConfig.tEquity == null ? '' : Number(allocConfig.tEquity)}" placeholder="自行設定" style="font-family:var(--mono);"></div>
+          <div><label class="form-label">債券/現金 %</label><input type="number" id="allocTBc" class="form-input" value="${allocConfig.tBondCash == null ? '' : Number(allocConfig.tBondCash)}" placeholder="自行設定" style="font-family:var(--mono);"></div>
+          <div><label class="form-label">另類 %</label><input type="number" id="allocTAlt" class="form-input" value="${allocConfig.tAlt == null ? '' : Number(allocConfig.tAlt)}" placeholder="自行設定" style="font-family:var(--mono);"></div>
         </div>
         <button class="btn btn-primary" onclick="applyAllocInputs()">💾 儲存並更新</button>
-        <div style="margin-top:12px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">＊60-10-30 模型參考 Long Angle 高淨值資產配置：公開市場股票 60% / 債券現金 10% / 私募與另類（含不動產）30%。僅供參考、不構成投資建議。</div>
+        <div style="margin-top:12px; font-size:10.5px; color:var(--ink-tertiary); line-height:1.5;">＊未設定目標時，系統不會替你判斷高低配。60-10-30 只是可自行修改的輸入範例，不構成投資建議，也不是買賣指示。</div>
       </div>`;
   }
 
@@ -39131,7 +39573,8 @@ ${baseSchema}
     const el = document.getElementById('tripFxState');
     el.innerHTML = '抓取中…';
     try {
-      const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+      // ⚠ 掛住 → 永遠停在「抓取中…」（v16.85）
+      const r = await fetchTO('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' }, 8000);
       const j = await r.json();
       const rates = j && j.rates;
       // er-api 給的是「1 USD = N 外幣」，所以 外幣→台幣 = rates.TWD / rates.該幣
@@ -39663,7 +40106,7 @@ ${baseSchema}
         const u = `https://api.open-meteo.com/v1/forecast?latitude=${j.gps[0]}&longitude=${j.gps[1]}` +
           `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
           `&timezone=auto&start_date=${j.date}&end_date=${j.date}`;
-        const r = await fetch(u);
+        const r = await fetchTO(u);
         if (!r.ok) return;
         const jd = await r.json();
         const dl = jd && jd.daily;
@@ -39880,9 +40323,13 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function navigateSpot() { if (trvCurrentSpot && trvCurrentSpot.gps) navigateTo(trvCurrentSpot.gps[0], trvCurrentSpot.gps[1], trvCurrentSpot.name); else showToast('此景點無 GPS 資料'); }
   function shareSpotLine() {
     if (!trvCurrentSpot) return;
-    const text = `【${trvCurrentSpot.name}】\n${trvCurrentSpot.desc || ''}\n${trvCurrentSpot.gps ? `https://maps.google.com/?q=${trvCurrentSpot.gps[0]},${trvCurrentSpot.gps[1]}` : ''}`;
-    const url = 'https://line.me/R/share?text=' + encodeURIComponent(text);
-    window.open(url, '_blank');
+    // ⚠ 這段字會離開 App 貼進 LINE 群——收到的人沒有上下文可以校正，
+    //   給他一個在當地打不開的連結，比不給更糟（v16.31 同一條）。
+    const sp = trvCurrentSpot;
+    const links = sp.gps ? mapShareLines(sp.gps[0], sp.gps[1], cleanSpotName(sp.name)) : [];
+    const body = `【${sp.name}】\n${sp.desc || ''}` +
+                 (links.length ? '\n\n' + links.join('\n') : '');
+    window.open('https://line.me/R/share?text=' + encodeURIComponent(body), '_blank');
   }
 
   // ===== TTS（多引擎）=====
@@ -40162,6 +40609,15 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
   function updateTtsRate(v) { trvSettings.ttsRate = parseFloat(v); saveTravelKey(TRAVEL_STORAGE.settings, trvSettings); }
 
   // ===== GPS =====
+  // 定位失敗的說法只寫一份（以前三個地方各寫各的，其中一個只印 err.message，
+  // 而 err.message 在某些瀏覽器是空字串 → 使用者看到「定位失敗：」後面什麼都沒有）。
+  // ⚠ code 3（TIMEOUT）以前不會發生，因為沒人設 timeout；v16.86 設了之後它就會出現，
+  //   所以一定要有一句給它，不然會掉進最後那句「收不到訊號」，講得不夠準。
+  function gpsErrText(err) {
+    if (err && err.code === 1) return '定位被拒絕——到手機的瀏覽器設定把「位置」打開';
+    if (err && err.code === 3) return '定位等太久了——室內或山區常發生，走到窗邊或空曠處再試一次';
+    return '定位失敗：' + ((err && err.message) || '收不到訊號，室內或山區常發生');
+  }
   function refreshGps() {
     if (!('geolocation' in navigator)) { showToast('此瀏覽器不支援定位'); return; }
     document.getElementById('gpsCoords').textContent = '取得定位中…';
@@ -40185,7 +40641,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
         }
       },
       (err) => {
-        document.getElementById('gpsCoords').textContent = '無法取得定位：' + err.message;
+        document.getElementById('gpsCoords').textContent = gpsErrText(err);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -40327,6 +40783,24 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
     showMapPickerMenu(mapNavOptions(lat, lng, name, 'car'), lat, lng);
   }
 
+  // 「分享一個位置給別人看」用的連結（v16.86）。
+  // ⚠ 跟 mapNavOptions 不是同一件事：那個是「帶我去」（導航路線），
+  //   這個是「我在這 / 這個景點在這」（在地圖上放一個點）。
+  // 🔴 以前兩支分享功能都寫死 maps.google.com——而**收到的人多半也在大陸，一樣打不開**。
+  //   v16.82 修的是集合那顆按鈕，這兩顆是同一個毛病的兄弟，當時沒有問「還有誰也這樣」
+  //   （本專案記過好幾次那條：修好這一個，沒問還有誰）。
+  // ⚠ 大陸時**兩個都給**：高德是給當地人的（一定打得開），
+  //   Google 留給用台灣門號漫遊的人——App 自己在景點頁就是這樣講的，兩邊要一致。
+  // ⚠ 網址一定要獨立成行：後面接字會被整串貼進網址列變 404（踩過）。
+  function mapShareLines(lat, lng, name) {
+    const g = 'https://maps.google.com/?q=' + lat + ',' + lng;
+    if (!(gpsInChina(lat, lng) || tripIsCN())) return [g];
+    const n = encodeURIComponent(name || '這個位置');
+    const a = 'https://uri.amap.com/marker?position=' + lng + ',' + lat +
+              '&name=' + n + '&coordinate=wgs84&callnative=1';
+    return ['高德地圖（在大陸打得開）', a, '', 'Google 地圖（要漫遊才開得了）', g];
+  }
+
   // ===== Map =====
   function initBigMap() {
     if (typeof L === 'undefined') { document.getElementById('travelMapBig').innerHTML = '<div style="padding:60px; text-align:center; color:var(--ink-tertiary);">地圖載入失敗（需要網路連線）</div>'; return; }
@@ -40398,9 +40872,7 @@ ${s.gps ? `GPS：${s.gps[0]}, ${s.gps[1]}` : ''}`;
       trvGpsCurrent = ll;
       trvMap.setView(ll, 13);
     }, err => {
-      showToast(err && err.code === 1
-        ? '定位被拒絕——到手機的瀏覽器設定把「位置」打開'
-        : '定位失敗：' + ((err && err.message) || '收不到訊號，室內或山區常發生'));
+      showToast(gpsErrText(err));
     }, { enableHighAccuracy: true, timeout: 10000 });
   }
 
@@ -42291,11 +42763,19 @@ ${daysBrief}${butlerPartyBlock()}
   }
   function shareLineMyLocation() {
     if (!('geolocation' in navigator)) { showToast('此瀏覽器不支援定位'); return; }
+    // 🔴 這顆是「我走散了，告訴大家我在哪」時會按的，以前有兩個洞（v16.86）：
+    //   ① `getCurrentPosition` **沒給 timeout**，而規格的預設是「永遠等下去」——
+    //      加上它連一句進度提示都沒有，按下去就是**完全沒反應**，看起來像按鈕壞了，
+    //      他會一直按。（地圖那顆「我在哪」早就修過同一件事，這顆漏了。）
+    //   ② 傳出去的是 Google 地圖連結，**收到的人在大陸打不開**——
+    //      而會收到這則訊息的，多半就是同團還在大陸的人。
+    showToast('定位中…');
     navigator.geolocation.getCurrentPosition(pos => {
-      const url = `https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
-      const text = `📍 我目前位置：\n${url}`;
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      const text = '📍 我目前位置\n\n' + mapShareLines(lat, lng, '我在這裡').join('\n');
       window.open('https://line.me/R/share?text=' + encodeURIComponent(text), '_blank');
-    }, err => showToast('定位失敗：' + err.message));
+    }, err => showToast(gpsErrText(err)),
+       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
   }
   function broadcastViaLine() {
     const msg = prompt('輸入要廣播給同團的訊息：');
@@ -43217,7 +43697,8 @@ ${daysBrief}${butlerPartyBlock()}
   // === 縮短連結（is.gd 免費服務，支援 CORS）===
   async function shortenUrl(longUrl) {
     try {
-      const res = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`);
+      // ⚠ 掛住的話，下面 `shortenedGuest || longLink` 那個備援永遠等不到（v16.85）
+      const res = await fetchTO(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, {}, 6000);
       if (!res.ok) throw new Error('is.gd HTTP ' + res.status);
       const text = (await res.text()).trim();
       if (text.startsWith('https://') || text.startsWith('http://')) return text;
@@ -43522,7 +44003,7 @@ ${daysBrief}${butlerPartyBlock()}
     // 測試 1：HTTP HEAD 看 Supabase 是否可達
     setMultiStatus('測試 1/3：連線 Supabase…');
     try {
-      const res1 = await fetch(`${url}/rest/v1/`, {
+      const res1 = await fetchTO(`${url}/rest/v1/`, {
         method: 'GET',
         headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
       });
@@ -43538,7 +44019,7 @@ ${daysBrief}${butlerPartyBlock()}
     // 測試 2：查詢 party_members table
     setMultiStatus('測試 2/3：查詢 party_members…');
     try {
-      const res2 = await fetch(`${url}/rest/v1/party_members?select=count&limit=1`, {
+      const res2 = await fetchTO(`${url}/rest/v1/party_members?select=count&limit=1`, {
         headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
       });
       const text = await res2.text();
@@ -43551,7 +44032,7 @@ ${daysBrief}${butlerPartyBlock()}
     setMultiStatus('測試 3/3：嘗試寫入…');
     const groupId = document.getElementById('multiGroupId').value.trim() || 'test-' + Date.now();
     try {
-      const res3 = await fetch(`${url}/rest/v1/party_members`, {
+      const res3 = await fetchTO(`${url}/rest/v1/party_members`, {
         method: 'POST',
         headers: {
           'apikey': key, 'Authorization': 'Bearer ' + key,
@@ -43647,6 +44128,15 @@ ${daysBrief}${butlerPartyBlock()}
       closeMoreSheet();
     } else if (id === 'allocationView') {
       loadAllocation();
+      closeMoreSheet();
+    } else if (id === 'policyView') {
+      loadInvestmentPolicy();
+      closeMoreSheet();
+    } else if (id === 'reviewView') {
+      loadWeeklyReview();
+      closeMoreSheet();
+    } else if (id === 'growthView') {
+      loadGrowthEngines();
       closeMoreSheet();
     } else if (id === 'dashboardView') {
       // 回到儀表板時預設 reset 到群組總覽層
