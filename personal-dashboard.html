@@ -5421,6 +5421,26 @@
     </div>
   </div>
 
+  <!-- ============ 挑戰目標 情境比較 Modal（只試算，不寫回）============ -->
+  <div class="modal-backdrop" id="goalScenarioModal">
+    <div class="modal" style="max-width:640px;">
+      <h2>目標 <em>情境比較</em></h2>
+      <div style="font-size:12.5px; color:var(--ink-secondary); line-height:1.65; margin-bottom:14px;">這是暫時試算：輸入不會儲存、不會改變原本目標，也不是報酬預測或買賣建議。</div>
+      <input type="hidden" id="goalScenarioId">
+      <div class="form-row">
+        <div class="form-group" style="margin:0;"><label class="form-label">目前累積 (NT$)</label><input id="goalScenarioCurrent" type="number" min="0" class="form-input" oninput="renderGoalScenario()"></div>
+        <div class="form-group" style="margin:0;"><label class="form-label">目標金額 (NT$)</label><input id="goalScenarioTarget" type="number" min="0" class="form-input" oninput="renderGoalScenario()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="margin:0;"><label class="form-label">每月投入 (NT$)</label><input id="goalScenarioMonthly" type="number" min="0" class="form-input" oninput="renderGoalScenario()"></div>
+        <div class="form-group" style="margin:0;"><label class="form-label">目標日期</label><input id="goalScenarioTargetDate" type="date" class="form-input" oninput="renderGoalScenario()"></div>
+      </div>
+      <div class="form-group"><label class="form-label">計算用年化報酬率 (%)</label><input id="goalScenarioRate" type="number" step="any" class="form-input" oninput="renderGoalScenario()"><div style="font-size:10.5px; color:var(--ink-tertiary); margin-top:5px;">此欄只採用你自己輸入的假設；空白視為 0。</div></div>
+      <div id="goalScenarioResult" style="background:rgba(212,165,116,0.06); border-left:2px solid var(--accent); border-radius:3px; padding:12px 14px; font-size:12px; line-height:1.7;"></div>
+      <div class="form-actions" style="justify-content:flex-end; margin-top:16px;"><button type="button" class="btn" onclick="closeGoalScenario()">關閉，不儲存</button></div>
+    </div>
+  </div>
+
   <!-- ============ 挑戰目標 快速範本 Modal ============ -->
   <div class="modal-backdrop" id="goalPresetModal">
     <div class="modal">
@@ -9579,7 +9599,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.98 · ЯЯ</div>
+    <div>v 16.99 · ◇◇</div>
   </footer>
 </div>
 
@@ -21452,6 +21472,18 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     if (latestDate && previousDate && latestDate !== previousDate) bits.push(`目標日期已由 ${previousDate} 改為 ${latestDate}`);
     return bits.join(' · ');
   }
+  // 快照是唯一的歷史來源；不把今天的即時計算混進去，避免使用者誤以為那是已保存紀錄。
+  function goalTrendHtml(g) {
+    const rows = (Array.isArray(g.checkins) ? g.checkins : []).filter(x => x && Number(x.at) > 0 && Number.isFinite(Number(x.rawPct))).slice(0, 12).reverse();
+    if (rows.length < 2) return '<div style="font-size:11px; color:var(--ink-tertiary); padding-top:8px;">趨勢需要至少兩筆「記錄目前進度」。目前不會把即時計算假裝成歷史。</div>';
+    const values = rows.map(x => Number(x.rawPct));
+    const low = Math.min(...values), high = Math.max(...values), range = Math.max(high - low, 0.01);
+    const width = 280, height = 54, pad = 4;
+    const points = values.map((v, i) => `${pad + i * (width - pad * 2) / (values.length - 1)},${height - pad - (v - low) / range * (height - pad * 2)}`).join(' ');
+    const start = new Date(rows[0].at).toLocaleDateString('zh-TW');
+    const end = new Date(rows[rows.length - 1].at).toLocaleDateString('zh-TW');
+    return `<div style="font-size:11px; color:var(--ink-secondary); padding-top:10px; border-top:1px solid var(--line); margin-top:10px;"><strong>已保存進度趨勢 · ${rows.length} 筆</strong><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="目標進度歷史趨勢" style="display:block; width:100%; max-width:${width}px; height:54px; margin:6px 0; background:var(--bg-elevated); border-radius:3px;"><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);"><span>${escape(start)} · ${low.toFixed(3)}%</span><span>${escape(end)} · ${high.toFixed(3)}%</span></div></div>`;
+  }
 
   // ===== 讀寫 =====
   async function loadGoals() {
@@ -21728,9 +21760,11 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
           <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">每月投入 ${goalMoney(c.monthly)} · 假設年化 ${c.rate}%</div>
         </div>
         ${checkins.length ? `<div style="font-size:11px; color:var(--ink-secondary); line-height:1.65; padding-top:10px; border-top:1px solid var(--line); margin-top:10px;"><strong>進度紀錄 · 最近三筆</strong>${checkinDelta ? `<div style="margin-top:4px; color:var(--accent-warm);">與上一筆比較：${escape(checkinDelta)}</div>` : ''}${checkins.map(x => `<div style="margin-top:4px;">${new Date(x.at).toLocaleString('zh-TW')} · ${escape(goalCheckinText(x))}</div>`).join('')}</div>` : ''}
+        ${goalTrendHtml(g)}
         ${g.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:10px; border-top:1px solid var(--line); margin-top:10px;">${escape(g.notes)}</div>` : ''}
         <div class="hc-actions">
           <button class="hc-mini-btn" onclick="openGoalModal('${escape(g.id)}')">編輯</button>
+          <button class="hc-mini-btn" onclick="openGoalScenario('${escape(g.id)}')">情境比較</button>
           <button class="hc-mini-btn" onclick="recordGoalCheckin('${escape(g.id)}')">記錄目前進度</button>
           <button class="hc-mini-btn" onclick="showView('cashflowView')">看現金流</button>
           <button class="hc-mini-btn" onclick="showView('dcaView')">調整定期定額</button>
@@ -21901,6 +21935,45 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     openModalOnTop('goalModal');
   }
   function closeGoalModal() { closeModalRestore('goalModal'); }
+  // 情境試算永遠用手動累積值：它不能改動原目標的資料來源，也不能寫回任何欄位。
+  function openGoalScenario(id) {
+    const g = goalList.find(x => x.id === id);
+    if (!g) return;
+    const c = goalCompute(g);
+    document.getElementById('goalScenarioId').value = g.id;
+    document.getElementById('goalScenarioCurrent').value = c.current;
+    document.getElementById('goalScenarioTarget').value = c.target;
+    document.getElementById('goalScenarioMonthly').value = c.monthly;
+    document.getElementById('goalScenarioTargetDate').value = g.targetDate || '';
+    document.getElementById('goalScenarioRate').value = c.rate;
+    renderGoalScenario();
+    openModalOnTop('goalScenarioModal');
+  }
+  function closeGoalScenario() { closeModalRestore('goalScenarioModal'); }
+  function renderGoalScenario() {
+    const box = document.getElementById('goalScenarioResult');
+    const id = document.getElementById('goalScenarioId')?.value;
+    const base = goalList.find(x => x.id === id);
+    if (!box || !base) return;
+    const draft = {
+      source: 'manual', manualAmount: Math.max(0, Number(document.getElementById('goalScenarioCurrent').value) || 0), extra: 0,
+      target: Math.max(0, Number(document.getElementById('goalScenarioTarget').value) || 0),
+      monthly: Math.max(0, Number(document.getElementById('goalScenarioMonthly').value) || 0),
+      rate: Number(document.getElementById('goalScenarioRate').value) || 0,
+      targetDate: document.getElementById('goalScenarioTargetDate').value || ''
+    };
+    const c = goalCompute(draft), before = goalCompute(base);
+    const eta = c.done ? '已達到這個試算金額' : c.nMonths == null ? '在這些輸入下無法算出到達時間' : `約 ${c.nMonths} 個月（${escape(c.etaDate)}）`;
+    const deadline = c.monthsLeft != null && c.monthsLeft > 0
+      ? (c.needMonthly == null ? '期限內所需每月投入無法算出' : `若要在目標日完成，方程式反推每月約 ${goalMoney(c.needMonthly)}`)
+      : '未設定未來目標日；不反推期限條件';
+    const rate = c.monthsLeft != null && c.monthsLeft > 0
+      ? (c.neededAnnualRate == null ? '期限年化門檻無法算出' : `期限反推年化約 ${c.neededAnnualRate.toFixed(c.neededAnnualRate >= 100 ? 0 : 1)}%（數學結果，不是預測）`)
+      : '';
+    const monthlyDelta = c.monthly - before.monthly;
+    const compare = monthlyDelta === 0 ? '與已保存目標的每月投入相同' : `相較已保存目標，每月投入${monthlyDelta > 0 ? '增加' : '減少'} ${goalMoney(Math.abs(monthlyDelta))}`;
+    box.innerHTML = `<strong>試算結果（不儲存）</strong><div style="margin-top:6px;">照此情境：${eta}</div><div style="color:var(--ink-secondary);">${deadline}${rate ? ` · ${rate}` : ''}</div><div style="margin-top:6px; font-family:var(--mono); font-size:10.5px; color:var(--ink-tertiary);">${compare}。關閉視窗後，原本目標完全不變。</div>`;
+  }
   async function saveGoal(e) {
     e.preventDefault();
     const id = document.getElementById('goalEditId').value;
@@ -35526,7 +35599,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     try { const raw = await readKey(key); return raw ? JSON.parse(raw) : fallback; }
     catch (e) { return fallback; }
   }
-  function weeklyReviewBuild({ rows, policy, alloc, goals, priceRefresh, now = Date.now() }) {
+  function weeklyReviewBuild({ rows, policy, alloc, goals, priceRefresh, backupAt, now = Date.now() }) {
     const items = [];
     const policyCheck = policyAssessment(policy, now);
     if (policyCheck.reserve.state === 'missing') {
@@ -35563,6 +35636,14 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         items.push({ level: 'warn', title: `「${String(g.name || '未命名目標')}」期限門檻極高`, detail: `目前輸入條件反推年化複利約 ${c.neededAnnualRate.toFixed(0)}%。這是方程式結果，不是可期待的市場報酬。`, view: 'goalsView', action: '查看目標' });
       }
     });
+    // 最後備份時間是匯出成功時才寫入；缺少或過舊都只提醒使用者自行備份，不代替下載或還原。
+    const backupStamp = typeof backupAt === 'string' ? Date.parse(backupAt) : Number(backupAt);
+    const backupAge = Number.isFinite(backupStamp) && backupStamp > 0 ? Math.max(0, Math.floor((now - backupStamp) / 86400000)) : null;
+    if (backupAge === null) {
+      items.push({ level: 'warn', title: '尚未有完整備份紀錄', detail: '目標、政策與成長分流資料目前只存在這個瀏覽器。請到備份頁匯出後，自行保管檔案。', view: 'dashboardView', action: '查看首頁提醒' });
+    } else if (backupAge >= 30) {
+      items.push({ level: 'warn', title: `完整備份已過 ${backupAge} 天`, detail: '近期目標與政策資料尚未有副本。請自行匯出備份；還原會覆蓋現有資料。', view: 'dashboardView', action: '查看首頁提醒' });
+    }
     const refreshedAt = Number(priceRefresh && priceRefresh.at) || 0;
     const priceAge = refreshedAt ? Math.max(0, Math.floor((now - refreshedAt) / 86400000)) : null;
     const hasCoverage = !!priceRefresh && Object.prototype.hasOwnProperty.call(priceRefresh, 'attempted');
@@ -35588,12 +35669,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     return { items, total, activeGoals: activeGoals.length, priceAge, policyCheck, priceCoverage: { hasCoverage, attempted: priceAttempted, ok: priceOk, failed: priceFailed, skipped: priceSkipped } };
   }
   async function loadWeeklyReview() {
-    const [policy, alloc, goals, priceRefresh] = await Promise.all([
+    const [policy, alloc, goals, priceRefresh, backupAt] = await Promise.all([
       reviewReadJson(POLICY_STORAGE, {}), reviewReadJson(ALLOC_STORAGE, {}),
-      reviewReadJson(GOAL_STORAGE.goals, []), reviewReadJson('studio_price_refresh_v1', null)
+      reviewReadJson(GOAL_STORAGE.goals, []), reviewReadJson('studio_price_refresh_v1', null), readKey('studio_last_backup_v1')
     ]);
     await goalRefreshAssets();
-    const out = weeklyReviewBuild({ rows: goalAssetRows, policy, alloc, goals, priceRefresh });
+    const out = weeklyReviewBuild({ rows: goalAssetRows, policy, alloc, goals, priceRefresh, backupAt });
     const statsEl = document.getElementById('reviewStats');
     if (statsEl) statsEl.innerHTML = `
       <div class="stat-card"><div class="stat-label">目前總資產</div><div class="stat-value">${goalMoney(out.total)}</div><div class="stat-sub">現有模組加總；不等於可動用現金</div></div>
