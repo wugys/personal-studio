@@ -9579,7 +9579,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.89 · ЦЦ</div>
+    <div>v 16.93 · ЪЪ</div>
   </footer>
 </div>
 
@@ -31824,7 +31824,7 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
     { key: 'opps',    name: '投資翻倍 / 以小搏大', test: k => k === 'studio_opps_v1' },
     { key: 'history', name: '資產歷史走勢',    test: k => k === 'studio_history_v1' },
     { key: 'cfg',     name: '匯率與配置設定',  test: k => k === 'cashflow_fx_v1' || k === 'alloc_config_v1' },
-    { key: 'investReview', name: '投資政策與成長帳', test: k => k === 'investment_policy_v1' || /^growth_/.test(k) },
+    { key: 'investReview', name: '投資政策與成長帳', test: k => k === 'investment_policy_v1' || k === 'investment_review_log_v1' || /^growth_/.test(k) },
     { key: 'apis',    name: 'AI API 收藏館',   test: k => k === 'ai_apis_v1' },
     { key: 'alog',    name: '分析策略記錄',    test: k => /^analysis_/.test(k) },
     { key: 'travel',  name: '旅遊規劃',        test: k => /^travel_/.test(k) },
@@ -35327,7 +35327,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     purpose: '', minLiquidity: null, reportedLiquidity: null,
     reviewDays: null, lastReviewedAt: 0, notes: ''
   };
+  const POLICY_REVIEW_STORAGE = 'investment_review_log_v1';
   let investmentPolicy = { ...POLICY_DEFAULT };
+  let investmentReviewLog = [];
 
   const policyNumber = v => {
     if (v === null || v === undefined || String(v).trim() === '') return null;
@@ -35350,13 +35352,16 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   }
   async function loadInvestmentPolicy() {
     try {
-      const raw = await readKey(POLICY_STORAGE), parsed = raw ? JSON.parse(raw) : null;
+      const [raw, logRaw] = await Promise.all([readKey(POLICY_STORAGE), readKey(POLICY_REVIEW_STORAGE)]);
+      const parsed = raw ? JSON.parse(raw) : null;
       investmentPolicy = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
         ? { ...POLICY_DEFAULT, ...parsed } : { ...POLICY_DEFAULT };
-    } catch (e) { investmentPolicy = { ...POLICY_DEFAULT }; }
+      const log = logRaw ? JSON.parse(logRaw) : [];
+      investmentReviewLog = Array.isArray(log) ? log.filter(x => x && Number(x.at) > 0).slice(0, 60) : [];
+    } catch (e) { investmentPolicy = { ...POLICY_DEFAULT }; investmentReviewLog = []; }
     renderInvestmentPolicy();
   }
-  async function saveInvestmentPolicy() {
+  async function saveInvestmentPolicy(silent = false) {
     const read = id => document.getElementById(id)?.value || '';
     investmentPolicy = {
       ...investmentPolicy,
@@ -35368,13 +35373,42 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     };
     await writeKey(POLICY_STORAGE, JSON.stringify(investmentPolicy));
     renderInvestmentPolicy();
-    showToast('已儲存政策卡；仍由你自行決定任何投資行動');
+    if (!silent) showToast('已儲存政策卡；仍由你自行決定任何投資行動');
+  }
+  // 人工檢查的價值在於日後能還原「當時依據的資料」；不能只留一個已檢查時間。
+  function policyReviewPriceSnapshot(priceRefresh) {
+    const source = priceRefresh && typeof priceRefresh === 'object' ? priceRefresh : {};
+    const at = Math.max(0, Number(source.at) || 0);
+    const hasCoverage = Object.prototype.hasOwnProperty.call(source, 'attempted');
+    return {
+      at,
+      hasCoverage,
+      attempted: hasCoverage ? Math.max(0, Number(source.attempted) || 0) : null,
+      ok: hasCoverage ? Math.max(0, Number(source.ok) || 0) : null,
+      failed: hasCoverage ? Math.max(0, Number(source.failed) || 0) : null,
+      skipped: hasCoverage ? Math.max(0, Number(source.skipped) || 0) : null
+    };
+  }
+  function policyReviewPriceText(entry) {
+    const p = entry && entry.priceRefresh;
+    if (!p || !Number(p.at)) return '現價資料：當時未記錄更新狀態';
+    const reviewAt = Number(entry.at) || Date.now();
+    const age = Math.max(0, Math.floor((reviewAt - Number(p.at)) / 86400000));
+    const ageText = age === 0 ? '檢查當日更新' : `檢查前 ${age} 天更新`;
+    if (!p.hasCoverage) return `現價資料：${ageText}；舊紀錄未保存涵蓋資訊`;
+    if (p.attempted === 0) return `現價資料：${ageText}；沒有可自動更新的持股`;
+    return `現價資料：${ageText}；可更新 ${p.attempted} 檔，成功 ${p.ok} 檔${p.failed ? `、失敗 ${p.failed} 檔` : ''}${p.skipped ? `、略過 ${p.skipped} 檔` : ''}`;
   }
   async function markInvestmentPolicyReviewed() {
-    investmentPolicy.lastReviewedAt = Date.now();
-    await writeKey(POLICY_STORAGE, JSON.stringify(investmentPolicy));
+    await saveInvestmentPolicy(true);
+    const at = Date.now();
+    const priceRefresh = await reviewReadJson('studio_price_refresh_v1', null);
+    investmentPolicy.lastReviewedAt = at;
+    investmentReviewLog.unshift({ at, purpose: investmentPolicy.purpose, minLiquidity: policyNumber(investmentPolicy.minLiquidity), reportedLiquidity: policyNumber(investmentPolicy.reportedLiquidity), notes: investmentPolicy.notes, priceRefresh: policyReviewPriceSnapshot(priceRefresh) });
+    investmentReviewLog = investmentReviewLog.slice(0, 60);
+    await Promise.all([writeKey(POLICY_STORAGE, JSON.stringify(investmentPolicy)), writeKey(POLICY_REVIEW_STORAGE, JSON.stringify(investmentReviewLog))]);
     renderInvestmentPolicy();
-    showToast('已記錄本次人工檢查');
+    showToast('已保存本次人工檢查與筆記快照');
   }
   function renderInvestmentPolicy() {
     const a = policyAssessment(investmentPolicy);
@@ -35402,6 +35436,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
           ? `距上次人工檢查 ${a.review.elapsedDays} 天，已超過你設定的 ${a.review.days} 天。`
           : `距上次人工檢查 ${a.review.elapsedDays} 天；你設定每 ${a.review.days} 天檢查。`;
     const reviewedLabel = a.reviewed ? new Date(a.reviewed).toLocaleString('zh-TW') : '尚未記錄';
+    const history = investmentReviewLog.slice(0, 5);
     const bodyEl = document.getElementById('policyBody');
     if (bodyEl) bodyEl.innerHTML = `
       <div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); border-radius:3px; padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);">
@@ -35411,6 +35446,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:16px;"><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:.12em; margin-bottom:8px;">可動用資金檢查</div><div style="font-size:12px; line-height:1.7; color:var(--ink-secondary);">${reserveDetail}</div></div>
         <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:16px;"><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); letter-spacing:.12em; margin-bottom:8px;">人工檢查紀錄</div><div style="font-size:12px; line-height:1.7; color:var(--ink-secondary);">${reviewDetail}<br><span style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">最後記錄：${reviewedLabel}</span></div></div>
       </div>
+      <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:16px; margin-bottom:18px;"><div style="font-family:var(--mono); font-size:10px; letter-spacing:.12em; color:var(--ink-tertiary); margin-bottom:10px;">人工檢查歷史 · 最近五筆</div>${history.length ? history.map(x => `<div style="padding:9px 0; border-top:1px solid var(--line); font-size:12px; line-height:1.6; color:var(--ink-secondary);"><strong>${new Date(x.at).toLocaleString('zh-TW')}</strong> · 底線 ${x.minLiquidity === null ? '未填' : goalMoney(x.minLiquidity)} · 可動用 ${x.reportedLiquidity === null ? '未填' : goalMoney(x.reportedLiquidity)}<br><span style="font-size:11px; color:var(--ink-tertiary);">${escape(policyReviewPriceText(x))}</span>${x.notes ? `<br>${escape(x.notes)}` : ''}</div>`).join('') : '<div style="font-size:12px; color:var(--ink-secondary);">尚未留下人工檢查紀錄。它只保存你填寫的資料與筆記，不代表買賣決定。</div>'}</div>
       <div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:22px;">
         <div style="font-family:var(--mono); font-size:10px; letter-spacing:.15em; color:var(--ink-tertiary); margin-bottom:14px;">我的規則 · 都由你填寫</div>
         <div class="form-group"><label class="form-label">這筆資金的用途／不可碰的原因</label><input id="policyPurpose" class="form-input" value="${escape(investmentPolicy.purpose)}" placeholder="例如：閒置資金；不影響公司營運與生活費"></div>
