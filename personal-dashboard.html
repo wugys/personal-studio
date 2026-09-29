@@ -9599,7 +9599,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.99 · ◇◇</div>
+    <div>v 16.100 · ◎◎</div>
   </footer>
 </div>
 
@@ -21435,15 +21435,26 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
       needMonthly: c.needMonthly, neededAnnualRate: c.neededAnnualRate
     };
   }
+  function goalHistoryNumber(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return NaN;
+    if (typeof value === 'string' && !value.trim()) return NaN;
+    return Number(value);
+  }
+  // 圖表、最近紀錄、前後比較共用最新優先的時間順序；不改寫原始資料。
+  function goalHistoryRows(checkins) {
+    return (Array.isArray(checkins) ? checkins : [])
+      .filter(x => x && Number(x.at) > 0 && Number.isFinite(new Date(Number(x.at)).getTime()))
+      .sort((a, b) => Number(b.at) - Number(a.at));
+  }
   function goalCheckinText(x) {
-    const pct = Number(x && x.rawPct);
+    const pct = goalHistoryNumber(x && x.rawPct);
     const progress = Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '未能計算進度';
-    const deadline = Number(x && x.monthsLeft);
+    const deadline = goalHistoryNumber(x && x.monthsLeft);
     const targetDate = typeof (x && x.targetDate) === 'string' ? x.targetDate : '';
     const deadlineText = Number.isFinite(deadline)
       ? `${targetDate ? `目標日 ${targetDate} · ` : ''}距目標日 ${Math.max(0, deadline)} 個月`
       : '未設定目標日';
-    const rate = Number(x && x.neededAnnualRate);
+    const rate = goalHistoryNumber(x && x.neededAnnualRate);
     const rateText = Number.isFinite(rate) ? `期限反推年化 ${rate.toFixed(rate >= 100 ? 0 : 1)}%` : '未能算出期限年化門檻';
     return `${progress} · ${deadlineText} · ${rateText}`;
   }
@@ -21459,7 +21470,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const bits = [`累積金額${signMoney}`, `達成率 ${pctText}`];
     const monthlyDelta = (Number(latest.monthly) || 0) - (Number(previous.monthly) || 0);
     if (monthlyDelta !== 0) bits.push(`每月投入${monthlyDelta > 0 ? '增加 ' : '減少 '}${goalMoney(Math.abs(monthlyDelta))}`);
-    const rateNow = Number(latest.neededAnnualRate), rateBefore = Number(previous.neededAnnualRate);
+    const rateNow = goalHistoryNumber(latest.neededAnnualRate), rateBefore = goalHistoryNumber(previous.neededAnnualRate);
     if (Number.isFinite(rateNow) && Number.isFinite(rateBefore)) {
       const rateDelta = rateNow - rateBefore;
       bits.push(`期限反推年化 ${rateDelta >= 0 ? '+' : ''}${rateDelta.toFixed(rateDelta >= 100 || rateDelta <= -100 ? 0 : 1)} 個百分點`);
@@ -21474,15 +21485,16 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
   }
   // 快照是唯一的歷史來源；不把今天的即時計算混進去，避免使用者誤以為那是已保存紀錄。
   function goalTrendHtml(g) {
-    const rows = (Array.isArray(g.checkins) ? g.checkins : []).filter(x => x && Number(x.at) > 0 && Number.isFinite(Number(x.rawPct))).slice(0, 12).reverse();
+    const rows = goalHistoryRows(g.checkins)
+      .filter(x => Number.isFinite(goalHistoryNumber(x.rawPct))).slice(0, 12).reverse();
     if (rows.length < 2) return '<div style="font-size:11px; color:var(--ink-tertiary); padding-top:8px;">趨勢需要至少兩筆「記錄目前進度」。目前不會把即時計算假裝成歷史。</div>';
     const values = rows.map(x => Number(x.rawPct));
     const low = Math.min(...values), high = Math.max(...values), range = Math.max(high - low, 0.01);
     const width = 280, height = 54, pad = 4;
     const points = values.map((v, i) => `${pad + i * (width - pad * 2) / (values.length - 1)},${height - pad - (v - low) / range * (height - pad * 2)}`).join(' ');
-    const start = new Date(rows[0].at).toLocaleDateString('zh-TW');
-    const end = new Date(rows[rows.length - 1].at).toLocaleDateString('zh-TW');
-    return `<div style="font-size:11px; color:var(--ink-secondary); padding-top:10px; border-top:1px solid var(--line); margin-top:10px;"><strong>已保存進度趨勢 · ${rows.length} 筆</strong><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="目標進度歷史趨勢" style="display:block; width:100%; max-width:${width}px; height:54px; margin:6px 0; background:var(--bg-elevated); border-radius:3px;"><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);"><span>${escape(start)} · ${low.toFixed(3)}%</span><span>${escape(end)} · ${high.toFixed(3)}%</span></div></div>`;
+    const start = new Date(Number(rows[0].at)).toLocaleDateString('zh-TW');
+    const end = new Date(Number(rows[rows.length - 1].at)).toLocaleDateString('zh-TW');
+    return `<div style="font-size:11px; color:var(--ink-secondary); padding-top:10px; border-top:1px solid var(--line); margin-top:10px;"><strong>已保存進度趨勢 · ${rows.length} 筆</strong><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="目標進度歷史趨勢" style="display:block; width:100%; max-width:${width}px; height:54px; margin:6px 0; background:var(--bg-elevated); border-radius:3px;"><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);"><span>${escape(start)} · ${values[0].toFixed(3)}%</span><span>${escape(end)} · ${values[values.length - 1].toFixed(3)}%</span></div></div>`;
   }
 
   // ===== 讀寫 =====
@@ -21684,7 +21696,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     const statusLabel = { active: '進行中', paused: '已暫停', done: '已達成' }[g.status] || g.status;
     const barColor = c.done ? 'var(--accent-warm)' : 'var(--accent)';
     const milestones = [25, 50, 75].map(m => `<div style="position:absolute; top:0; bottom:0; left:${m}%; width:1px; background:rgba(244,234,213,0.22);"></div>`).join('');
-    const checkins = Array.isArray(g.checkins) ? g.checkins.filter(x => x && Number(x.at) > 0).slice(0, 3) : [];
+    const checkins = goalHistoryRows(g.checkins).slice(0, 3);
     const checkinDelta = checkins.length >= 2 ? goalCheckinDeltaText(checkins[0], checkins[1]) : '';
     // 推估文字
     let etaText;
