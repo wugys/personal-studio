@@ -9579,7 +9579,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.96 · ЭЭ</div>
+    <div>v 16.97 · ЮЮ</div>
   </footer>
 </div>
 
@@ -21411,7 +21411,7 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const c = goalCompute(g);
     return {
       at, current: c.current, target: c.target, rawPct: c.rawPct,
-      monthly: c.monthly, rate: c.rate, monthsLeft: c.monthsLeft,
+      monthly: c.monthly, rate: c.rate, targetDate: typeof g.targetDate === 'string' ? g.targetDate : '', monthsLeft: c.monthsLeft,
       needMonthly: c.needMonthly, neededAnnualRate: c.neededAnnualRate
     };
   }
@@ -21419,7 +21419,10 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const pct = Number(x && x.rawPct);
     const progress = Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '未能計算進度';
     const deadline = Number(x && x.monthsLeft);
-    const deadlineText = Number.isFinite(deadline) ? `距目標日 ${Math.max(0, deadline)} 個月` : '未設定目標日';
+    const targetDate = typeof (x && x.targetDate) === 'string' ? x.targetDate : '';
+    const deadlineText = Number.isFinite(deadline)
+      ? `${targetDate ? `目標日 ${targetDate} · ` : ''}距目標日 ${Math.max(0, deadline)} 個月`
+      : '未設定目標日';
     const rate = Number(x && x.neededAnnualRate);
     const rateText = Number.isFinite(rate) ? `期限反推年化 ${rate.toFixed(rate >= 100 ? 0 : 1)}%` : '未能算出期限年化門檻';
     return `${progress} · ${deadlineText} · ${rateText}`;
@@ -21442,6 +21445,9 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
       bits.push('期限反推年化無法比較');
     }
     if ((Number(latest.target) || 0) !== (Number(previous.target) || 0)) bits.push(`目標金額已由 ${goalMoney(previous.target)} 改為 ${goalMoney(latest.target)}`);
+    const latestDate = typeof latest.targetDate === 'string' ? latest.targetDate : '';
+    const previousDate = typeof previous.targetDate === 'string' ? previous.targetDate : '';
+    if (latestDate && previousDate && latestDate !== previousDate) bits.push(`目標日期已由 ${previousDate} 改為 ${latestDate}`);
     return bits.join(' · ');
   }
 
