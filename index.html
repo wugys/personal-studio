@@ -9579,7 +9579,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.93 · ЪЪ</div>
+    <div>v 16.94 · ЫЫ</div>
   </footer>
 </div>
 
@@ -21406,6 +21406,24 @@ CREATE POLICY "Allow all" ON dca_executions FOR ALL USING (true) WITH CHECK (tru
     const aheadBy = (nMonths != null && monthsLeft != null) ? (monthsLeft - nMonths) : null;
     return { current, target, pct, rawPct, remain, monthly, rate, nMonths, etaDate, monthsLeft, needMonthly, neededAnnualRate, aheadBy, done: current >= target && target > 0 };
   }
+  // 定期把「當時」的目標條件留住；日後調整目標或資產時，不會把過去的進度洗掉。
+  function goalCheckinSnapshot(g, at = Date.now()) {
+    const c = goalCompute(g);
+    return {
+      at, current: c.current, target: c.target, rawPct: c.rawPct,
+      monthly: c.monthly, rate: c.rate, monthsLeft: c.monthsLeft,
+      needMonthly: c.needMonthly, neededAnnualRate: c.neededAnnualRate
+    };
+  }
+  function goalCheckinText(x) {
+    const pct = Number(x && x.rawPct);
+    const progress = Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '未能計算進度';
+    const deadline = Number(x && x.monthsLeft);
+    const deadlineText = Number.isFinite(deadline) ? `距目標日 ${Math.max(0, deadline)} 個月` : '未設定目標日';
+    const rate = Number(x && x.neededAnnualRate);
+    const rateText = Number.isFinite(rate) ? `期限反推年化 ${rate.toFixed(rate >= 100 ? 0 : 1)}%` : '未能算出期限年化門檻';
+    return `${progress} · ${deadlineText} · ${rateText}`;
+  }
 
   // ===== 讀寫 =====
   async function loadGoals() {
@@ -21606,6 +21624,7 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
     const statusLabel = { active: '進行中', paused: '已暫停', done: '已達成' }[g.status] || g.status;
     const barColor = c.done ? 'var(--accent-warm)' : 'var(--accent)';
     const milestones = [25, 50, 75].map(m => `<div style="position:absolute; top:0; bottom:0; left:${m}%; width:1px; background:rgba(244,234,213,0.22);"></div>`).join('');
+    const checkins = Array.isArray(g.checkins) ? g.checkins.filter(x => x && Number(x.at) > 0).slice(0, 3) : [];
     // 推估文字
     let etaText;
     if (c.done) etaText = '<span class="profit">🎉 已經達標了</span>';
@@ -21679,9 +21698,11 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
           ${feasibilityText ? `<div style="color:var(--ink-secondary);">${feasibilityText}</div>` : ''}
           <div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary);">每月投入 ${goalMoney(c.monthly)} · 假設年化 ${c.rate}%</div>
         </div>
+        ${checkins.length ? `<div style="font-size:11px; color:var(--ink-secondary); line-height:1.65; padding-top:10px; border-top:1px solid var(--line); margin-top:10px;"><strong>進度紀錄 · 最近三筆</strong>${checkins.map(x => `<div style="margin-top:4px;">${new Date(x.at).toLocaleString('zh-TW')} · ${escape(goalCheckinText(x))}</div>`).join('')}</div>` : ''}
         ${g.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.5; padding-top:10px; border-top:1px solid var(--line); margin-top:10px;">${escape(g.notes)}</div>` : ''}
         <div class="hc-actions">
           <button class="hc-mini-btn" onclick="openGoalModal('${escape(g.id)}')">編輯</button>
+          <button class="hc-mini-btn" onclick="recordGoalCheckin('${escape(g.id)}')">記錄目前進度</button>
           <button class="hc-mini-btn" onclick="showView('cashflowView')">看現金流</button>
           <button class="hc-mini-btn" onclick="showView('dcaView')">調整定期定額</button>
           ${!c.done && g.status === 'active' ? `<button class="hc-mini-btn" onclick="markGoalDone('${escape(g.id)}')">標記已達成</button>` : ''}
@@ -21707,6 +21728,18 @@ CREATE POLICY "Allow all" ON goal_targets FOR ALL USING (true) WITH CHECK (true)
   function renderGoals() {
     renderGoalStats();
     renderGoalCards();
+  }
+  async function recordGoalCheckin(id) {
+    const g = goalList.find(x => x.id === id);
+    if (!g) return;
+    const at = Date.now();
+    const old = Array.isArray(g.checkins) ? g.checkins.filter(x => x && Number(x.at) > 0) : [];
+    g.checkins = [goalCheckinSnapshot(g, at), ...old].slice(0, 60);
+    g.updatedAt = at;
+    await saveGoalList();
+    renderGoals();
+    showToast('已保存目前目標進度與期限門檻快照');
+    pushGoalToSupabase(g);
   }
   async function markGoalDone(id) {
     const g = goalList.find(x => x.id === id);
