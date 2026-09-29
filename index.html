@@ -9599,7 +9599,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.100 · ◎◎</div>
+    <div>v 16.101 · ◈◈</div>
   </footer>
 </div>
 
@@ -31068,12 +31068,11 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
     // 8) 備份
     try {
-      const last = await readJson('studio_last_backup_v1', null);
-      const days = last && last.at ? Math.floor((Date.now() - last.at) / 86400000) : null;
+      const days = backupAgeDays(await readKey('studio_last_backup_v1'));
       const bytes = storageUsedBytes();
-      if (days == null) add('bad', '從來沒有備份過',
-        `資料只存在這台裝置的瀏覽器裡（目前 ${Math.round(bytes / 1024)} KB）。<strong>清快取、換手機、瀏覽器出問題就全沒了。</strong>`, null, null);
-      else if (days >= 30) add('warn', `${days} 天沒備份了`, '這段期間新增的資料都沒有副本。', null);
+      if (days == null) add('bad', '尚未有完整備份紀錄',
+        `此瀏覽器目前使用 ${Math.round(bytes / 1024)} KB，沒有有效的匯出紀錄。請匯出並確認檔案已保存；系統無法確認其他位置是否已有副本。`, null, null);
+      else if (days >= 30) add('warn', `${days} 天沒備份了`, '這是最後一次匯出紀錄的時間，請確認是否需要新副本。', null);
       if (bytes > 4 * 1024 * 1024) add('bad', '儲存空間快滿了',
         `已用 ${Math.round(bytes / 1024)} KB／約 5 MB 上限。<strong>滿了會存不進去。</strong>先備份，再到備份頁按「🧹 清理快取」。`, null);
     } catch (e) {}
@@ -32149,6 +32148,18 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
           ${storageScopeNote()}<br>
           <span style="color:var(--ink-tertiary);">如果你本來就是第一次用，那就正常——直接去各模組開始記錄即可。</span>
         </div>`);
+  }
+
+  // 相容既有 ISO 字串與舊物件格式；未知／未來時間不可當成剛備份。
+  function backupAgeDays(raw, now = Date.now()) {
+    let value = raw;
+    if (typeof value === 'string') {
+      try { value = JSON.parse(value); } catch (_) {}
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) value = value.at;
+    const at = typeof value === 'number' ? value
+      : typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) ? Date.parse(value) : NaN;
+    return Number.isFinite(at) && at > 0 && at <= now ? Math.floor((now - at) / 86400000) : null;
   }
 
   function exportFullBackup() {
@@ -35649,12 +35660,11 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       }
     });
     // 最後備份時間是匯出成功時才寫入；缺少或過舊都只提醒使用者自行備份，不代替下載或還原。
-    const backupStamp = typeof backupAt === 'string' ? Date.parse(backupAt) : Number(backupAt);
-    const backupAge = Number.isFinite(backupStamp) && backupStamp > 0 ? Math.max(0, Math.floor((now - backupStamp) / 86400000)) : null;
+    const backupAge = backupAgeDays(backupAt, now);
     if (backupAge === null) {
-      items.push({ level: 'warn', title: '尚未有完整備份紀錄', detail: '目標、政策與成長分流資料目前只存在這個瀏覽器。請到備份頁匯出後，自行保管檔案。', view: 'dashboardView', action: '查看首頁提醒' });
+      items.push({ level: 'warn', title: '尚未有完整備份紀錄', detail: '此瀏覽器沒有有效的匯出紀錄。請匯出並確認檔案已保存；系統無法確認其他位置是否已有副本。', view: 'backup', action: '開啟備份' });
     } else if (backupAge >= 30) {
-      items.push({ level: 'warn', title: `完整備份已過 ${backupAge} 天`, detail: '近期目標與政策資料尚未有副本。請自行匯出備份；還原會覆蓋現有資料。', view: 'dashboardView', action: '查看首頁提醒' });
+      items.push({ level: 'warn', title: `完整備份已過 ${backupAge} 天`, detail: '這是最後一次匯出紀錄的時間，請確認是否需要新副本。還原會覆蓋現有資料。', view: 'backup', action: '開啟備份' });
     }
     const refreshedAt = Number(priceRefresh && priceRefresh.at) || 0;
     const priceAge = refreshedAt ? Math.max(0, Math.floor((now - refreshedAt) / 86400000)) : null;
@@ -35698,7 +35708,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const color = { warn: 'var(--danger)', info: 'var(--accent)', ok: 'var(--accent-warm)' };
     bodyEl.innerHTML = `
       <div style="background:rgba(212,165,116,0.08); border-left:2px solid var(--accent); padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);"><strong>使用方法：</strong>每週打開一次，逐項確認資料、資金與目標假設。這張清單不執行任何交易，也不代表系統判定你該買或賣。</div>
-      <div style="display:flex; flex-direction:column; gap:10px;">${out.items.length ? out.items.map(i => `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:3px solid ${color[i.level] || color.info}; border-radius:5px; padding:14px 16px;"><div style="display:flex; gap:12px; justify-content:space-between; align-items:flex-start; flex-wrap:wrap;"><div><strong style="font-size:13px;">${escape(i.title)}</strong><div style="font-size:12px; color:var(--ink-secondary); line-height:1.65; margin-top:5px;">${escape(i.detail)}</div></div><button class="btn btn-sm" onclick="showView('${escape(i.view)}')">${escape(i.action)}</button></div></div>`).join('') : `<div class="empty-state"><span class="glyph">☑</span><h3>目前沒有待確認事項</h3><p>這只表示已輸入的規則沒有顯示差距；仍請自行確認資料與決策。</p></div>`}</div>`;
+      <div style="display:flex; flex-direction:column; gap:10px;">${out.items.length ? out.items.map(i => `<div style="background:var(--bg-card); border:1px solid var(--line); border-left:3px solid ${color[i.level] || color.info}; border-radius:5px; padding:14px 16px;"><div style="display:flex; gap:12px; justify-content:space-between; align-items:flex-start; flex-wrap:wrap;"><div><strong style="font-size:13px;">${escape(i.title)}</strong><div style="font-size:12px; color:var(--ink-secondary); line-height:1.65; margin-top:5px;">${escape(i.detail)}</div></div><button class="btn btn-sm" onclick="${i.view === 'backup' ? 'openBackupModal()' : `showView('${escape(i.view)}')`}">${escape(i.action)}</button></div></div>`).join('') : `<div class="empty-state"><span class="glyph">☑</span><h3>目前沒有待確認事項</h3><p>這只表示已輸入的規則沒有顯示差距；仍請自行確認資料與決策。</p></div>`}</div>`;
   }
 
   // ============================================================
