@@ -9599,7 +9599,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.101 · ◈◈</div>
+    <div>v 16.102 · ◉◉</div>
   </footer>
 </div>
 
@@ -35720,10 +35720,11 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const split = allocSplit(rows || [], {});
     const list = Array.isArray(entries) ? entries : [];
     const active = list.filter(x => x && x.status !== 'closed');
+    const closed = list.filter(x => x && x.status === 'closed');
     const sum = type => active.filter(x => x.type === type).reduce((n, x) => n + Math.max(0, Number(x.amount) || 0), 0);
     const today = goalIso(now);
     const overdue = active.filter(x => x.reviewDate && String(x.reviewDate) < today);
-    return { publicMarket: split.equity, company: sum('company'), project: sum('project'), active, overdue };
+    return { publicMarket: split.equity, company: sum('company'), project: sum('project'), active, closed, overdue };
   }
   async function loadGrowthEngines() {
     const raw = await reviewReadJson(GROWTH_STORAGE, []);
@@ -35742,12 +35743,14 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
       <div class="stat-card ${s.overdue.length ? 'loss' : 'flat'}"><div class="stat-label">待檢查專案</div><div class="stat-value">${s.overdue.length}</div><div class="stat-sub">到期後由你人工決定下一步</div></div>`;
     const statusText = { active: '進行中', paused: '暫停', closed: '結束' };
     const typeText = { company: '公司成長投入', project: '高風險專案／私募' };
+    const entryHtml = x => `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:15px;"><div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;"><div><strong>${escape(x.name || '未命名')}</strong><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px;">${escape(typeText[x.type] || '未分類')} · ${escape(statusText[x.status] || x.status || '進行中')} · 已投入 ${goalMoney(x.amount)}</div>${x.reviewDate ? `<div style="font-size:11px; color:var(--ink-secondary); margin-top:5px;">${x.status === 'closed' ? '原訂檢查日（已結束，不再提醒）' : '下次人工檢查'}：${escape(x.reviewDate)}</div>` : ''}${x.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.55; margin-top:8px;">${escape(x.notes)}</div>` : ''}</div><button class="btn btn-sm" data-growth-id="${escape(x.id)}" onclick="openGrowthModal(this.dataset.growthId)">編輯</button></div></div>`;
     const bodyEl = document.getElementById('growthBody');
     if (!bodyEl) return;
     bodyEl.innerHTML = `
       <div style="background:rgba(201,123,106,0.09); border-left:2px solid var(--danger); padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);"><strong>避免重複計算：</strong>這裡的公司與專案投入只作決策追蹤，沒有加入「現金流儀表板」或「資產配置」。若日後它變成你個人可估值的資產，請先決定唯一的記帳位置。</div>
-      ${s.overdue.length ? `<div style="background:var(--bg-card); border:1px solid var(--danger); border-radius:6px; padding:14px; margin-bottom:18px; font-size:12px; color:var(--ink-secondary);">⚠ 有 ${s.overdue.length} 筆進行中紀錄超過下次檢查日：${s.overdue.map(x => escape(x.name || '未命名')).join('、')}。系統只提醒，是否繼續／暫停由你決定。</div>` : ''}
-      <div style="display:flex; flex-direction:column; gap:10px;">${s.active.length ? s.active.map(x => `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:15px;"><div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;"><div><strong>${escape(x.name || '未命名')}</strong><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px;">${escape(typeText[x.type] || '未分類')} · ${escape(statusText[x.status] || x.status || '進行中')} · 已投入 ${goalMoney(x.amount)}</div>${x.reviewDate ? `<div style="font-size:11px; color:var(--ink-secondary); margin-top:5px;">下次人工檢查：${escape(x.reviewDate)}</div>` : ''}${x.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.55; margin-top:8px;">${escape(x.notes)}</div>` : ''}</div><button class="btn btn-sm" onclick="openGrowthModal('${escape(x.id)}')">編輯</button></div></div>`).join('') : `<div class="empty-state"><span class="glyph">↗</span><h3>尚無公司或專案投入紀錄</h3><p>公開市場資產已從既有模組讀取。只有公司成長投入或高風險專案需要在這裡另建紀錄。</p></div>`}</div>`;
+      ${s.overdue.length ? `<div style="background:var(--bg-card); border:1px solid var(--danger); border-radius:6px; padding:14px; margin-bottom:18px; font-size:12px; color:var(--ink-secondary);">⚠ 有 ${s.overdue.length} 筆未結束紀錄超過下次檢查日：${s.overdue.map(x => escape(x.name || '未命名')).join('、')}。包含進行中與暫停；系統只提醒，下一步由你決定。</div>` : ''}
+      <div style="display:flex; flex-direction:column; gap:10px;">${s.active.length ? s.active.map(entryHtml).join('') : `<div class="empty-state"><span class="glyph">↗</span><h3>${s.closed.length ? '目前沒有未結束的紀錄' : '尚無公司或專案投入紀錄'}</h3><p>${s.closed.length ? '已結束的紀錄保留在下方，可查看或編輯狀態；不會自動重新計入投入。' : '公開市場資產已從既有模組讀取。只有公司成長投入或高風險專案需要在這裡另建紀錄。'}</p></div>`}</div>
+      ${s.closed.length ? `<details style="margin-top:18px;"><summary style="cursor:pointer;">已結束紀錄（${s.closed.length} 筆）· 不計入目前投入</summary><div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">${s.closed.map(entryHtml).join('')}</div></details>` : ''}`;
   }
   function openGrowthModal(id) {
     const x = growthEntries.find(v => v.id === id);
@@ -35759,9 +35762,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     document.getElementById('growthReviewDate').value = x ? x.reviewDate || '' : '';
     document.getElementById('growthStatus').value = x ? x.status || 'active' : 'active';
     document.getElementById('growthNotes').value = x ? x.notes || '' : '';
-    document.getElementById('growthModal').classList.add('open');
+    openModalOnTop('growthModal');
   }
-  function closeGrowthModal() { document.getElementById('growthModal').classList.remove('open'); }
+  function closeGrowthModal() { closeModalRestore('growthModal'); }
   async function saveGrowthEntry(e) {
     e.preventDefault();
     const id = document.getElementById('growthEditId').value || ('ge_' + Date.now());
