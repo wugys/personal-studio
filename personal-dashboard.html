@@ -9599,7 +9599,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.102 · ◉◉</div>
+    <div>v 16.103 · ◇◆</div>
   </footer>
 </div>
 
@@ -35622,7 +35622,7 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     try { const raw = await readKey(key); return raw ? JSON.parse(raw) : fallback; }
     catch (e) { return fallback; }
   }
-  function weeklyReviewBuild({ rows, policy, alloc, goals, priceRefresh, backupAt, now = Date.now() }) {
+  function weeklyReviewBuild({ rows, policy, alloc, goals, growth = [], priceRefresh, backupAt, now = Date.now() }) {
     const items = [];
     const policyCheck = policyAssessment(policy, now);
     if (policyCheck.reserve.state === 'missing') {
@@ -35659,6 +35659,11 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
         items.push({ level: 'warn', title: `「${String(g.name || '未命名目標')}」期限門檻極高`, detail: `目前輸入條件反推年化複利約 ${c.neededAnnualRate.toFixed(0)}%。這是方程式結果，不是可期待的市場報酬。`, view: 'goalsView', action: '查看目標' });
       }
     });
+    // 和成長頁共用判讀；專案金額不加入上面的個人資產總額。
+    const growthCheck = growthSummary([], growth, new Date(now));
+    if (growthCheck.overdue.length) {
+      items.push({ level: 'warn', title: `成長分流有 ${growthCheck.overdue.length} 筆待人工檢查`, detail: `已超過原訂檢查日：${growthCheck.overdue.map(x => String(x.name || '未命名')).join('、')}。包含進行中與暫停紀錄，不含已結束；只提醒你確認資料與下一步，不會自動調整投入或狀態。`, view: 'growthView', action: '查看成長分流' });
+    }
     // 最後備份時間是匯出成功時才寫入；缺少或過舊都只提醒使用者自行備份，不代替下載或還原。
     const backupAge = backupAgeDays(backupAt, now);
     if (backupAge === null) {
@@ -35691,12 +35696,12 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     return { items, total, activeGoals: activeGoals.length, priceAge, policyCheck, priceCoverage: { hasCoverage, attempted: priceAttempted, ok: priceOk, failed: priceFailed, skipped: priceSkipped } };
   }
   async function loadWeeklyReview() {
-    const [policy, alloc, goals, priceRefresh, backupAt] = await Promise.all([
+    const [policy, alloc, goals, priceRefresh, backupAt, growth] = await Promise.all([
       reviewReadJson(POLICY_STORAGE, {}), reviewReadJson(ALLOC_STORAGE, {}),
-      reviewReadJson(GOAL_STORAGE.goals, []), reviewReadJson('studio_price_refresh_v1', null), readKey('studio_last_backup_v1')
+      reviewReadJson(GOAL_STORAGE.goals, []), reviewReadJson('studio_price_refresh_v1', null), readKey('studio_last_backup_v1'), reviewReadJson(GROWTH_STORAGE, [])
     ]);
     await goalRefreshAssets();
-    const out = weeklyReviewBuild({ rows: goalAssetRows, policy, alloc, goals, priceRefresh, backupAt });
+    const out = weeklyReviewBuild({ rows: goalAssetRows, policy, alloc, goals, growth, priceRefresh, backupAt });
     const statsEl = document.getElementById('reviewStats');
     if (statsEl) statsEl.innerHTML = `
       <div class="stat-card"><div class="stat-label">目前總資產</div><div class="stat-value">${goalMoney(out.total)}</div><div class="stat-sub">現有模組加總；不等於可動用現金</div></div>
