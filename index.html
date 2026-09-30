@@ -8023,6 +8023,7 @@
       <h2 id="growthModalTitle">新增 <em>成長引擎紀錄</em></h2>
       <form onsubmit="saveGrowthEntry(event)">
         <input type="hidden" id="growthEditId">
+        <p id="growthDataHint" style="font-size:12px;color:var(--danger);"></p>
         <div class="form-row"><div class="form-group" style="margin:0;"><label class="form-label">名稱</label><input id="growthName" class="form-input" required placeholder="例如：新產品驗證／合作專案"></div><div class="form-group" style="margin:0;"><label class="form-label">類別</label><select id="growthType" class="form-select"><option value="company">公司成長投入</option><option value="project">高風險專案／私募</option></select></div></div>
         <div class="form-row"><div class="form-group" style="margin:0;"><label class="form-label">已投入金額（NT$）</label><input id="growthAmount" type="number" min="0" class="form-input" required placeholder="自行填入"></div><div class="form-group" style="margin:0;"><label class="form-label">下次人工檢查日</label><input id="growthReviewDate" type="date" class="form-input"></div></div>
         <div class="form-group"><label class="form-label">狀態</label><select id="growthStatus" class="form-select"><option value="active">進行中</option><option value="paused">暫停</option><option value="closed">結束</option></select></div>
@@ -9599,7 +9600,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.103 · ◇◆</div>
+    <div>v 16.104 · ◇◇</div>
   </footer>
 </div>
 
@@ -35661,6 +35662,9 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     });
     // 和成長頁共用判讀；專案金額不加入上面的個人資產總額。
     const growthCheck = growthSummary([], growth, new Date(now));
+    if (growthCheck.invalidAmounts.length || growthCheck.invalidDates.length) {
+      items.push({level:'warn',title:'成長分流資料待補',detail:`${growthCheck.invalidAmounts.length} 筆金額缺漏或無效，${growthCheck.invalidDates.length} 筆日期無效。資料不足不能當成零元或判定已逾期，請進入成長分流確認。`,view:'growthView',action:'查看成長分流'});
+    }
     if (growthCheck.overdue.length) {
       items.push({ level: 'warn', title: `成長分流有 ${growthCheck.overdue.length} 筆待人工檢查`, detail: `已超過原訂檢查日：${growthCheck.overdue.map(x => String(x.name || '未命名')).join('、')}。包含進行中與暫停紀錄，不含已結束；只提醒你確認資料與下一步，不會自動調整投入或狀態。`, view: 'growthView', action: '查看成長分流' });
     }
@@ -35721,15 +35725,36 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   // ============================================================
   const GROWTH_STORAGE = 'growth_engines_v1';
   let growthEntries = [];
+  function growthAmountValue(value) {
+    if (!['number','string'].includes(typeof value) || String(value).trim() === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  function growthValidDate(value) {
+    if (typeof value !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value) || value.startsWith('0000')) return false;
+    const date = new Date(value + 'T00:00:00Z');
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === value;
+  }
+  function growthMoney(value) {
+    const n = growthAmountValue(value);
+    return n === null ? '待補資料' : goalMoney(n);
+  }
   function growthSummary(rows, entries, now = new Date()) {
     const split = allocSplit(rows || [], {});
     const list = Array.isArray(entries) ? entries : [];
     const active = list.filter(x => x && x.status !== 'closed');
     const closed = list.filter(x => x && x.status === 'closed');
-    const sum = type => active.filter(x => x.type === type).reduce((n, x) => n + Math.max(0, Number(x.amount) || 0), 0);
+    const sum = type => {
+      const values = active.filter(x => x.type === type).map(x => growthAmountValue(x.amount));
+      if (values.some(x => x === null)) return null;
+      const total = values.reduce((n,x) => n+x,0);
+      return Number.isFinite(total) ? total : null;
+    };
     const today = goalIso(now);
-    const overdue = active.filter(x => x.reviewDate && String(x.reviewDate) < today);
-    return { publicMarket: split.equity, company: sum('company'), project: sum('project'), active, closed, overdue };
+    const invalidDates = active.filter(x => x.reviewDate && !growthValidDate(x.reviewDate));
+    const invalidAmounts = active.filter(x => growthAmountValue(x.amount) === null);
+    const overdue = active.filter(x => growthValidDate(x.reviewDate) && x.reviewDate < today);
+    return { publicMarket: split.equity, company: sum('company'), project: sum('project'), active, closed, overdue, invalidDates, invalidAmounts };
   }
   async function loadGrowthEngines() {
     const raw = await reviewReadJson(GROWTH_STORAGE, []);
@@ -35743,16 +35768,17 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     const statsEl = document.getElementById('growthStats');
     if (statsEl) statsEl.innerHTML = `
       <div class="stat-card"><div class="stat-label">公開市場資產</div><div class="stat-value">${goalMoney(s.publicMarket)}</div><div class="stat-sub">從現有持股模組讀取</div></div>
-      <div class="stat-card"><div class="stat-label">公司成長投入</div><div class="stat-value">${goalMoney(s.company)}</div><div class="stat-sub">獨立帳，不併入個人總資產</div></div>
-      <div class="stat-card"><div class="stat-label">高風險專案</div><div class="stat-value">${goalMoney(s.project)}</div><div class="stat-sub">獨立帳，不併入個人總資產</div></div>
+      <div class="stat-card"><div class="stat-label">公司成長投入</div><div class="stat-value">${growthMoney(s.company)}</div><div class="stat-sub">獨立帳，不併入個人總資產</div></div>
+      <div class="stat-card"><div class="stat-label">高風險專案</div><div class="stat-value">${growthMoney(s.project)}</div><div class="stat-sub">獨立帳，不併入個人總資產</div></div>
       <div class="stat-card ${s.overdue.length ? 'loss' : 'flat'}"><div class="stat-label">待檢查專案</div><div class="stat-value">${s.overdue.length}</div><div class="stat-sub">到期後由你人工決定下一步</div></div>`;
     const statusText = { active: '進行中', paused: '暫停', closed: '結束' };
     const typeText = { company: '公司成長投入', project: '高風險專案／私募' };
-    const entryHtml = x => `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:15px;"><div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;"><div><strong>${escape(x.name || '未命名')}</strong><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px;">${escape(typeText[x.type] || '未分類')} · ${escape(statusText[x.status] || x.status || '進行中')} · 已投入 ${goalMoney(x.amount)}</div>${x.reviewDate ? `<div style="font-size:11px; color:var(--ink-secondary); margin-top:5px;">${x.status === 'closed' ? '原訂檢查日（已結束，不再提醒）' : '下次人工檢查'}：${escape(x.reviewDate)}</div>` : ''}${x.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.55; margin-top:8px;">${escape(x.notes)}</div>` : ''}</div><button class="btn btn-sm" data-growth-id="${escape(x.id)}" onclick="openGrowthModal(this.dataset.growthId)">編輯</button></div></div>`;
+    const entryHtml = x => `<div style="background:var(--bg-card); border:1px solid var(--line); border-radius:6px; padding:15px;"><div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;"><div><strong>${escape(x.name || '未命名')}</strong><div style="font-family:var(--mono); font-size:10px; color:var(--ink-tertiary); margin-top:5px;">${escape(typeText[x.type] || '未分類')} · ${escape(statusText[x.status] || x.status || '進行中')} · 已投入 ${growthMoney(x.amount)}</div>${x.reviewDate ? `<div style="font-size:11px; color:var(--ink-secondary); margin-top:5px;">${x.status === 'closed' ? '原訂檢查日（已結束，不再提醒）' : '下次人工檢查'}：${escape(x.reviewDate)}${growthValidDate(x.reviewDate) ? '' : '（日期無效，待修正）'}</div>` : ''}${x.notes ? `<div style="font-size:12px; color:var(--ink-secondary); line-height:1.55; margin-top:8px;">${escape(x.notes)}</div>` : ''}</div><button class="btn btn-sm" data-growth-id="${escape(x.id)}" onclick="openGrowthModal(this.dataset.growthId)">編輯</button></div></div>`;
     const bodyEl = document.getElementById('growthBody');
     if (!bodyEl) return;
     bodyEl.innerHTML = `
       <div style="background:rgba(201,123,106,0.09); border-left:2px solid var(--danger); padding:13px 15px; margin-bottom:18px; font-size:12px; line-height:1.7; color:var(--ink-secondary);"><strong>避免重複計算：</strong>這裡的公司與專案投入只作決策追蹤，沒有加入「現金流儀表板」或「資產配置」。若日後它變成你個人可估值的資產，請先決定唯一的記帳位置。</div>
+      ${s.invalidAmounts.length || s.invalidDates.length ? `<div style="color:var(--danger);margin-bottom:14px;">資料待補：${s.invalidAmounts.length} 筆金額缺漏或無效、${s.invalidDates.length} 筆日期無效；待檢查數只包含日期有效且已逾期的紀錄，不能視為全部正常。</div>` : ''}
       ${s.overdue.length ? `<div style="background:var(--bg-card); border:1px solid var(--danger); border-radius:6px; padding:14px; margin-bottom:18px; font-size:12px; color:var(--ink-secondary);">⚠ 有 ${s.overdue.length} 筆未結束紀錄超過下次檢查日：${s.overdue.map(x => escape(x.name || '未命名')).join('、')}。包含進行中與暫停；系統只提醒，下一步由你決定。</div>` : ''}
       <div style="display:flex; flex-direction:column; gap:10px;">${s.active.length ? s.active.map(entryHtml).join('') : `<div class="empty-state"><span class="glyph">↗</span><h3>${s.closed.length ? '目前沒有未結束的紀錄' : '尚無公司或專案投入紀錄'}</h3><p>${s.closed.length ? '已結束的紀錄保留在下方，可查看或編輯狀態；不會自動重新計入投入。' : '公開市場資產已從既有模組讀取。只有公司成長投入或高風險專案需要在這裡另建紀錄。'}</p></div>`}</div>
       ${s.closed.length ? `<details style="margin-top:18px;"><summary style="cursor:pointer;">已結束紀錄（${s.closed.length} 筆）· 不計入目前投入</summary><div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">${s.closed.map(entryHtml).join('')}</div></details>` : ''}`;
@@ -35763,7 +35789,10 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
     document.getElementById('growthEditId').value = x ? x.id : '';
     document.getElementById('growthName').value = x ? x.name || '' : '';
     document.getElementById('growthType').value = x ? x.type || 'company' : 'company';
-    document.getElementById('growthAmount').value = x ? Number(x.amount) || 0 : '';
+    document.getElementById('growthAmount').value = x ? growthAmountValue(x.amount) ?? '' : '';
+    document.getElementById('growthAmount').required = !x || growthAmountValue(x.amount) !== null;
+    document.getElementById('growthDataHint').textContent = x && (growthAmountValue(x.amount) === null || (x.reviewDate && !growthValidDate(x.reviewDate)))
+      ? '此紀錄有金額或日期待補。原本無效的欄位若留空，會保留原值；你可以先改筆記或結案，不必編造數字或日期。填入有效值才會補正。' : '';
     document.getElementById('growthReviewDate').value = x ? x.reviewDate || '' : '';
     document.getElementById('growthStatus').value = x ? x.status || 'active' : 'active';
     document.getElementById('growthNotes').value = x ? x.notes || '' : '';
@@ -35772,10 +35801,21 @@ ${SYNC_MODULES.map(m => `-- ===== ${m.name} =====\n` + m.tables.map(tbl).join('\
   function closeGrowthModal() { closeModalRestore('growthModal'); }
   async function saveGrowthEntry(e) {
     e.preventDefault();
+    const name = document.getElementById('growthName').value.trim();
+    const original = growthEntries.find(x => x.id === document.getElementById('growthEditId').value);
+    const amountInput = document.getElementById('growthAmount');
+    const amount = growthAmountValue(amountInput.value);
+    const preserveAmount = !!original && growthAmountValue(original.amount) === null && amountInput.value === '' && !amountInput.validity.badInput;
+    let reviewDate = document.getElementById('growthReviewDate').value || '';
+    if (!name || (amount === null && !preserveAmount)) { showToast('請填寫名稱與有效的非負金額；未知金額不能當成 0'); return; }
+    if (reviewDate && !growthValidDate(reviewDate)) { showToast('請填寫有效的檢查日期'); return; }
+    if (original?.reviewDate && !growthValidDate(original.reviewDate) && !reviewDate) {
+      reviewDate = original.reviewDate;
+    }
     const id = document.getElementById('growthEditId').value || ('ge_' + Date.now());
     const entry = {
-      id, name: document.getElementById('growthName').value.trim(), type: document.getElementById('growthType').value,
-      amount: Math.max(0, Number(document.getElementById('growthAmount').value) || 0), reviewDate: document.getElementById('growthReviewDate').value || '',
+      id, name, type: document.getElementById('growthType').value,
+      amount: preserveAmount ? original.amount : amount, reviewDate,
       status: document.getElementById('growthStatus').value, notes: document.getElementById('growthNotes').value.trim(), updatedAt: Date.now()
     };
     const i = growthEntries.findIndex(x => x.id === id);
