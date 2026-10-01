@@ -9600,7 +9600,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.104 · ◇◇</div>
+    <div>v 16.105 · ◇↗</div>
   </footer>
 </div>
 
@@ -9858,14 +9858,20 @@ alter publication supabase_realtime add table party_locations;</pre>
     <div id="aiResult" class="ai-result" style="display:none;"></div>
 
     <div class="form-actions">
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button type="button" class="btn btn-sm" onclick="copyAiPrompt()">📋 複製提示詞</button>
+        <button type="button" class="btn btn-sm" id="aiChatGptBtn" onclick="copyAiPrompt(true)">複製並開 ChatGPT ↗</button>
         <button type="button" class="btn btn-sm" onclick="saveAiAsOpp()" id="aiSaveBtn" style="display:none;">+ 存為機會</button>
       </div>
       <div class="form-actions-right">
         <button type="button" class="btn" onclick="closeAiModal()">關閉</button>
         <button type="button" class="btn btn-primary" onclick="runAiAnalysis()" id="aiRunBtn">✦ 用 AI 分析</button>
       </div>
+    </div>
+    <div id="aiCopyHelp" hidden style="font-size:12px;line-height:1.7;margin-top:12px;" role="status">
+      <span id="aiCopyStatus"></span>
+      <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">開啟 ChatGPT ↗</a>
+      <textarea id="aiCopyManual" class="form-textarea" readonly hidden aria-label="完整提示詞，請手動複製" style="margin-top:8px;"></textarea>
     </div>
   </div>
 </div>
@@ -13352,6 +13358,9 @@ alter publication supabase_realtime add table party_locations;</pre>
     document.getElementById('aiResult').style.display = 'none';
     document.getElementById('aiResult').innerHTML = '';
     document.getElementById('aiSaveBtn').style.display = 'none';
+    document.getElementById('aiCopyHelp').hidden = true;
+    document.getElementById('aiCopyManual').value = '';
+    document.getElementById('aiCopyManual').hidden = true;
 
     // Render presets
     const presetsEl = document.getElementById('aiPresets');
@@ -13395,21 +13404,42 @@ alter publication supabase_realtime add table party_locations;</pre>
 ${userQuery}`;
   }
 
-  function copyAiPrompt() {
+  async function copyAiPromptText(prompt) {
+    // 先在點擊手勢內複製，再開新頁，避免換頁後文件失焦造成複製失敗。
+    const focus = document.activeElement;
+    const ta = document.createElement('textarea');
+    ta.value = prompt;
+    ta.readOnly = true;
+    ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0;pointer-events:none;';
+    document.getElementById('aiModal').appendChild(ta);
+    let copied = false;
+    try { ta.select(); ta.setSelectionRange(0, prompt.length); copied = document.execCommand('copy'); } catch (e) { /* 再試 Clipboard API */ }
+    finally { ta.remove(); if (focus?.isConnected) focus.focus({ preventScroll: true }); }
+    if (copied) return true;
+    try { await navigator.clipboard.writeText(prompt); return true; } catch (e) { return false; }
+  }
+
+  async function copyAiPrompt(alsoOpen = false) {
+    document.getElementById('aiCopyHelp').hidden = true;
+    document.getElementById('aiCopyManual').value = '';
+    document.getElementById('aiCopyManual').hidden = true;
     const prompt = buildAiPrompt();
     if (!prompt) { showToast('請先輸入問題'); return; }
-    navigator.clipboard.writeText(prompt).then(() => {
-      showToast('提示詞已複製 · 貼到 Claude/ChatGPT 使用');
-    }).catch(() => {
-      // Fallback
-      const ta = document.createElement('textarea');
-      ta.value = prompt;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      showToast('提示詞已複製');
-    });
+    const copying = copyAiPromptText(prompt);
+    // 開頁仍在使用者點擊的同步呼叫內；不把提示詞或金鑰放進網址。
+    if (alsoOpen) {
+      try { window.open('https://chatgpt.com/', '_blank', 'noopener,noreferrer'); } catch (e) { /* 下方保留手動連結 */ }
+    }
+    const copied = await copying;
+    document.getElementById('aiCopyHelp').hidden = false;
+    document.getElementById('aiCopyStatus').textContent = copied
+      ? (alsoOpen ? '提示詞已複製。請在 ChatGPT 按 Ctrl／⌘＋V（手機長按貼上），確認後自行送出。若新分頁未開啟，請點「開啟 ChatGPT」連結。' : '提示詞已複製。請到 Claude／ChatGPT 貼上，確認後自行送出。')
+      : '無法自動複製。請從下方文字框手動複製完整提示詞，再到 Claude／ChatGPT 貼上；尚未送出任何內容。';
+    const manual = document.getElementById('aiCopyManual');
+    manual.hidden = copied;
+    manual.value = copied ? '' : prompt;
+    showToast(copied ? '提示詞已複製 · 請自行貼上' : '複製失敗 · 請使用下方完整提示詞');
+    return copied;
   }
 
   async function runAiAnalysis() {
