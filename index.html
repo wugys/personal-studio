@@ -3433,6 +3433,10 @@
         <button class="btn btn-sm" type="button" onclick="barsWipe()" style="border-color:var(--danger); color:var(--danger);">🗑 清空本機資料</button>
       </div>
 
+      <div id="barsStartNotice" hidden role="status" style="border:1px solid var(--accent-warm);padding:12px;margin-bottom:14px;line-height:1.75;">
+        <div id="barsStartNoticeText"></div>
+        <button type="button" class="btn btn-sm" onclick="openQuoteSourceModal()">⚙ 設定 Worker</button>
+      </div>
       <div id="barsRangeBox" style="margin-bottom:14px;"></div>
       <div id="barsProgressBox" style="margin-bottom:14px;"></div>
       <div id="barsCheckOut" style="font-size:11.5px; line-height:1.75; margin-bottom:12px;"></div>
@@ -9600,7 +9604,7 @@ alter publication supabase_realtime add table party_locations;</pre>
 
   <footer class="footer">
     <div>BUILT WITH <em>care</em> · 2026</div>
-    <div>v 16.105 · ◇↗</div>
+      <div>v 16.106 · ◇↓</div>
   </footer>
 </div>
 
@@ -29992,6 +29996,15 @@ CREATE POLICY "Allow all" ON ${name} FOR ALL USING (true) WITH CHECK (true);`;
 
   async function barsStartRun() {
     if (barsRunning) { showToast('正在跑了'); return; }
+    const notice = document.getElementById('barsStartNotice');
+    const noticeText = document.getElementById('barsStartNoticeText');
+    notice.hidden = true;
+    if (!(await quoteWorkerBase())) {
+      noticeText.textContent = '尚未開始累積：這個瀏覽器沒有設定 Worker 網址。請先按下方「設定 Worker」，測試並儲存網址，再回來按「開始／繼續累積」。尚未建立或更動工作清單。';
+      notice.hidden = false;
+      notice.scrollIntoView({ block: 'nearest' });
+      return;
+    }
     const mkt = document.getElementById('barsMarket').value;
     const topN = Number(document.getElementById('barsTop').value) || 1000;
     const batch = Number(document.getElementById('barsBatch').value) || 300;
